@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 #[rustfmt::skip]
 #[derive(Debug, PartialEq)]
@@ -33,13 +34,13 @@ pub enum TokenType {
     Ident(String),
     Int(i64), Float(f64),
     Char(char), String(String),
-    Bool(bool),
+    True, False,
 
     // End of the file!
     EOF,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 struct Position {
     /// Line in the source code
     line: usize,
@@ -80,18 +81,21 @@ impl Position {
     }
 }
 
-struct Token {
+#[derive(Debug, PartialEq)]
+pub struct Token {
+    /// What this token contains
     token_type: TokenType,
-    lexeme: String,
-    position: Position,
+    /// The starting position of the token that has been parsed
+    position_from: Position,
+    position_to: Position,
 }
 
 impl Token {
-    fn new(token_type: TokenType, lexeme: String, position: Position) -> Self {
+    fn new(token_type: TokenType, position_from: Position, position_to: Position) -> Self {
         Self {
             token_type,
-            lexeme,
-            position,
+            position_from,
+            position_to,
         }
     }
 }
@@ -120,9 +124,13 @@ impl Lexer {
         self.source.get(self.current.offset..)?.chars().next()
     }
 
-    pub fn peek_n(&self, n: usize) -> Option<&str> {
+    pub fn peek_n(&self, n: usize) -> Option<String> {
         self.source
-            .get(self.current.offset..self.current.offset + n)
+            .get(self.current.offset..)?
+            .chars()
+            .take(n)
+            .collect::<String>()
+            .into()
     }
 
     /// Look at the next character and update the current position
@@ -207,6 +215,18 @@ impl Lexer {
         })
     }
 
+    pub fn lex_bool(&mut self) -> Option<TokenType> {
+        if self.matches("true") {
+            self.pop_n(4);
+            Some(TokenType::True)
+        } else if self.matches("false") {
+            self.pop_n(5);
+            Some(TokenType::False)
+        } else {
+            None
+        }
+    }
+
     pub fn lex_keyword_or_ident(&mut self) -> Option<TokenType> {
         let start = self.peek()?;
         if !start.is_alphabetic() && start != '_' {
@@ -288,7 +308,8 @@ impl Lexer {
 
     pub fn lex_line_comment(&mut self) -> Option<TokenType> {
         let two = self.peek_n(2);
-        if two != Some("--") {
+        // If it does not start with '--', then it is not a line comment, so we return None
+        if two != Some("--".into()) {
             return None;
         }
 
@@ -298,7 +319,40 @@ impl Lexer {
         Some(TokenType::LineComment)
     }
 
-    pub fn lex_next(&mut self) {}
+    pub fn lex_next(&mut self) -> Option<Token> {
+        self.lex_whitespace();
+        let starting_point = self.current;
+        self.lex_number()
+            .or_else(|| self.lex_bool())
+            .or_else(|| self.lex_keyword_or_ident())
+            .or_else(|| self.lex_single_char())
+            .or_else(|| self.lex_line_comment())
+            .or_else(|| self.lex_operator())
+            .map(|token_type| Token::new(token_type, starting_point, self.current))
+    }
+
+    pub fn lex_all(&mut self) {
+        while let Some(token) = self.lex_next() {
+            self.tokens.push(token);
+        }
+
+        // Check if we are at the end of the file
+        if self.peek().is_some() {
+            let p = "There was an issue when tokenizing the source code! We are not at the end of the file, but we failed to parse further.";
+            panic!("{}", p);
+        }
+
+        // We finished tokenizing the file, we are now done!
+        self.tokens
+            .push(Token::new(TokenType::EOF, self.current, self.current));
+    }
+
+    pub fn lex_file(path: &str) -> Result<Self, String> {
+        let source = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let mut lexer = Self::new(source);
+        lexer.lex_all();
+        Ok(lexer)
+    }
 }
 
 #[cfg(test)]
@@ -332,5 +386,53 @@ mod test_lexer {
             let mut lexer = Lexer::new(String::from(format!("{}", s)));
             assert_eq!(lexer.lex_number(), Some(TokenType::Int(s)));
         }
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn text_lexer() {
+        let mut lexer = Lexer::new(String::from("let true ="));
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Let);
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::True);
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Equal);
+
+        let mut lexer = Lexer::new(String::from("x : mut int = 2"));
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Ident("x".into()));
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Colon);
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Mut);
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Ident("int".into()));
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Equal);
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Int(2));
+    }
+
+    #[test]
+    fn test_lex_line_comment() {
+        let mut lexer = Lexer::new(String::from("-- this is a line comment"));
+        assert_eq!(lexer.lex_line_comment().unwrap(), TokenType::LineComment);
+    }
+
+    #[test]
+    fn test_lex_file() {
+        let lexer = Lexer::lex_file("./tests/test_files/sample_file.cal").unwrap();
+        assert_eq!(lexer.tokens.len(), 48);
+    }
+
+    #[test]
+    fn handle_keyw_vs_ident() {
+        let mut lexer = Lexer::new("defx def".into());
+        assert_eq!(
+            lexer.lex_next().unwrap().token_type,
+            TokenType::Ident("defx".into())
+        );
+        assert_eq!(lexer.lex_next().unwrap().token_type, TokenType::Def);
+    }
+
+    #[test]
+    fn handle_ws() {
+        let mut lexer = Lexer::new("   \t\nhey".into());
+        assert_eq!(
+            lexer.lex_next().unwrap().token_type,
+            TokenType::Ident("hey".into())
+        );
     }
 }

@@ -1,0 +1,6 @@
+x : int = 2;
+y : int = 3;
+
+def add(x : int, y: int) = x + y;
+
+list : List[int] = [1, 2, 3, 4, 5];
