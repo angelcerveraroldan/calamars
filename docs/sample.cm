@@ -1,64 +1,75 @@
--- Variables and Values
-foo : mut String = "foo";
-bar : Srting = "bar";
+-- language_tour.ln
+module examples.tour;
 
--- We are able to mutate foo, but not bar
-foo = "foo!";
+foo: mut String = "foo";     -- mutable binding
+bar: String      = "bar";    -- immutable binding
+foo = "foo!";                -- allowed (foo is mut)
 
 
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Functions
-add : Int, Int -> Int = x, y => x + y;
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
--- Functions can take in a mutable input 
-add_mut : mut Int, Int -> () = x, y => {
-	x = (x + y);
+-- Simple expression‑bodied function
+def add(x: Int, y: Int): Int = x + y;
+
+-- Function that mutates one of its parameters
+def add_mut(x: mut Int, y: Int): () = {
+    x = x + y;
 }
 
--- When passing a variable into a function, we will specify that we
--- are okay with allowing its mutation
-x : mut Int = 14;
+-- Using a mutable argument at the call‑site
+x: mut Int = 14;
 add_mut(mut x, 2);
 
---*
-= Longer Comments
-
-You can also make larger comment blocks, such as this one.
-
-These comment blocks allow for typst syntax! This syntax can
-be used to generate docs, by the use of docstring like rusts.
-*--
-
--- The following comment will be part of the documentation
--- as it comes right before the function (maybe different syntax
--- would be better here)
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- Documentation Blocks (Typst‑enabled)
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 --*
-Given $x, y in ZZ$, return
+Given $x, y in ZZ$, returns
 
-$
-	x + e^(y times 1/x)
-$
-
-Becuase of the brackets, you can Curry this function!
+$ x + e^(x/y) $
 *--
-def equation_thing (x : Int) (y : Int) : Float =
-	x + math.exp(y * 1/x)
+def equation_thing(x: Int, y: Int): Float =
+    x + math.exp(y * 1 / x);
 
--- Making structures
-struct Person
-	{ name   : String
-	, age    : Int
-	}
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- Records & Structs
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+struct Person {
+    name : String;
+    age  : Int;
+};
 
+def print_name(p: Person): Unit =
+    println(p.name)
 
-def print_name (p : Person) : () = 
-	println(person.name)
+me: Person = Person { name = "Angel"; age = 21; };
+print_name(me)
 
-me : mut Person = Person
-	( name = "Angel"
-	, age  = 21
-	)
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- Sum Types (Enums)
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
--- This is similar to method syntax
-me |> print_name
+enum Option[A] {
+    None,
+    Some(value: A)
+};
 
+-- map for Option
+def option_map[A, B](opt: Option[A], f: A -> B): Option[B] =
+    match opt {
+        None      => None;
+        Some(v)   => Some(f(v));
+    };
+
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- List Utilities (imported from std.list) – quick demo
+--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+import std.list (map, length, filter);
+
+nums: List[Int] = cons(1, cons(2, cons(3, Nil)));
+
+println(length(nums));            -- 3
+println(nums |> map(n => n * 2));   -- [2, 4, 6]
