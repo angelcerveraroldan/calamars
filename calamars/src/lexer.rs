@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use crate::errors::LexError;
 
 #[rustfmt::skip]
 #[derive(Debug, PartialEq)]
@@ -41,7 +40,7 @@ pub enum TokenType {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-struct Position {
+pub struct Position {
     /// Line in the source code
     line: usize,
     /// Column in the source code
@@ -331,26 +330,27 @@ impl Lexer {
             .map(|token_type| Token::new(token_type, starting_point, self.current))
     }
 
-    pub fn lex_all(&mut self) {
+    pub fn lex_all(&mut self) -> Result<(), LexError> {
         while let Some(token) = self.lex_next() {
             self.tokens.push(token);
         }
 
         // Check if we are at the end of the file
         if self.peek().is_some() {
-            let p = "There was an issue when tokenizing the source code! We are not at the end of the file, but we failed to parse further.";
-            panic!("{}", p);
+            return Err(LexError::CouldNotTokenize(self.current));
         }
 
         // We finished tokenizing the file, we are now done!
         self.tokens
             .push(Token::new(TokenType::EOF, self.current, self.current));
+
+        Ok(())
     }
 
-    pub fn lex_file(path: &str) -> Result<Self, String> {
-        let source = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    pub fn lex_file(path: &str) -> Result<Self, LexError> {
+        let source = std::fs::read_to_string(path).map_err(|e| LexError::FileNotFound(e))?;
         let mut lexer = Self::new(source);
-        lexer.lex_all();
+        lexer.lex_all()?;
         Ok(lexer)
     }
 }
