@@ -16,18 +16,18 @@ pub enum TokenType {
     Dot, Comma, Colon, Semicolon,
 
     // -> and =>
-    Arrow, EqArrow,
+    Arrow, FatArrow,
 
     // Symbols
     Plus, Minus, Star,
     Slash, Equal, EqualEqual,
-    BangEqual, Less, LessEqual,
+    NotEqual, Less, LessEqual,
     Greater, GreaterEqual,
 
     // Comments
-    LineComment(String),
-    BlockComment(String),
-    DocComment(String),
+    LineComment,
+    BlockComment,
+    DocComment,
 
     // Primitives
     Ident(String),
@@ -120,99 +120,182 @@ impl Lexer {
         self.source.get(self.current.offset..)?.chars().next()
     }
 
+    pub fn peek_n(&self, n: usize) -> Option<&str> {
+        self.source
+            .get(self.current.offset..self.current.offset + n)
+    }
+
     /// Look at the next character and update the current position
+    ///
+    /// This will also keep track of the offset
     pub fn pop(&mut self) -> Option<char> {
         let c: char = self.peek()?;
         self.current.record_offset(c);
-        if c != '\n' {
+        if c == '\n' {
             self.current.next_line();
+        } else {
+            self.current.column += 1;
         }
         Some(c)
     }
 
-    pub fn lex_whitespace(&mut self) {
-        while let Some(c) = self.peek() {
-            if c.is_whitespace() {
-                self.pop();
-            } else {
-                break;
-            }
+    pub fn pop_n(&mut self, n: usize) -> Option<String> {
+        let mut ans = String::new();
+        for _ in 0..n {
+            ans.push(self.pop()?);
         }
+        Some(ans)
+    }
+
+    pub fn matches(&self, value: &str) -> bool {
+        let len = value.len();
+        self.source
+            .get(self.current.offset..)
+            .map(|s| s.starts_with(value))
+            .unwrap_or(false)
+    }
+
+    pub fn take_while(&mut self, predicate: impl Fn(char) -> bool) -> Option<String> {
+        let mut result = String::new();
+        while self.peek().map_or(false, &predicate) {
+            result.push(self.pop()?);
+        }
+        (!result.is_empty()).then_some(result)
+    }
+
+    /// Return None if we need to stop taking
+    /// Return Some(A) to keep updating the accumulator
+    pub fn take_while_acc<A>(
+        &mut self,
+        start: A,
+        predicate: impl Fn(&A, char) -> Option<A>,
+    ) -> Option<String> {
+        let mut result = String::new();
+        let mut accumulator = start;
+        while let Some(acc) = self.peek().map_or(None, |c| predicate(&accumulator, c)) {
+            result.push(self.pop()?);
+            accumulator = acc;
+        }
+        (!result.is_empty()).then_some(result)
+    }
+
+    /// Consume all the whitespace -- returns nothing, but updates offset
+    pub fn lex_whitespace(&mut self) {
+        self.take_while(|c| c.is_whitespace());
     }
 
     /// Able to lex integers and floating point numbers
     pub fn lex_number(&mut self) -> Option<TokenType> {
-        let mut number = String::new();
-        let mut found_decimal = false;
-
-        // Handle negative numbers
-        if self.peek() == Some('-') {
+        let is_neg = self.peek() == Some('-');
+        if is_neg {
             self.pop();
-            number.push('-');
-        }
-        loop {
-            match self.pop() {
-                // We reached the end of the file
-                None => break,
-                // Collect all digits
-                Some(c) if c.is_numeric() => {
-                    number.push(c);
-                }
-                // Allow for floats
-                Some('.') if !found_decimal => {
-                    number.push('.');
-                    found_decimal = true;
-                }
-                // Ignore _, this makes it easier to enter large numbers
-                Some('_') => (),
-                // If we find anything else, we are done
-                _ => break,
-            }
         }
 
-        if found_decimal {
-            Some(TokenType::Float(number.parse().unwrap()))
-        } else {
-            Some(TokenType::Int(number.parse().unwrap()))
-        }
-    }
-
-    /// Able to lex an identifier
-    pub fn lex_identifier(&mut self) -> Option<TokenType> {
-        let mut identifier = String::new();
-        while let Some(c) = self.peek() {
-            if c.is_alphanumeric() || c == '_' {
-                identifier.push(c);
-                self.pop();
-            } else {
-                break;
-            }
-        }
-
-        if identifier.is_empty() {
-            None
-        } else {
-            Some(TokenType::Ident(identifier))
-        }
-    }
-
-    pub fn lex_sign(&mut self) -> Option<TokenType> {
-        // FIXME: This is not complete
-        match self.pop() {
-            Some('+') => Some(TokenType::Plus),
-            Some('-') => Some(TokenType::Minus),
-            Some('=') if self.peek() == Some('>') => Some(TokenType::EqArrow),
-            Some('=') if self.peek() == Some('=') => Some(TokenType::EqualEqual),
-            Some('=') => Some(TokenType::Equal),
-            Some('!') if self.peek() == Some('=') => Some(TokenType::BangEqual),
-            Some('>') if self.peek() == Some('=') => Some(TokenType::GreaterEqual),
-            Some('>') => Some(TokenType::Greater),
-            Some('<') if self.peek() == Some('=') => Some(TokenType::LessEqual),
-            Some('<') => Some(TokenType::Less),
-            Some('*') => Some(TokenType::Star),
-            Some('/') => Some(TokenType::Slash),
+        self.take_while_acc::<bool>(false, |acc, c| match c {
+            '.' if !acc => Some(true),
+            '.' => None,
+            d if d.is_digit(10) || d == '_' => Some(*acc),
             _ => None,
+        })
+        .map(|s| {
+            let s = if is_neg { format!("-{}", s) } else { s };
+            if s.contains('.') {
+                TokenType::Float(s.parse().unwrap())
+            } else {
+                TokenType::Int(s.parse().unwrap())
+            }
+        })
+    }
+
+    pub fn lex_keyword_or_ident(&mut self) -> Option<TokenType> {
+        let start = self.peek()?;
+        if !start.is_alphabetic() && start != '_' {
+            return None;
         }
+
+        let ident = self.take_while(|c| c.is_alphanumeric() || c == '_')?;
+        match ident.as_str() {
+            "def" => Some(TokenType::Def),
+            "mut" => Some(TokenType::Mut),
+            "given" => Some(TokenType::Given),
+            "match" => Some(TokenType::Match),
+            "if" => Some(TokenType::If),
+            "else" => Some(TokenType::Else),
+            "let" => Some(TokenType::Let),
+            "return" => Some(TokenType::Return),
+            "module" => Some(TokenType::Module),
+            "import" => Some(TokenType::Import),
+            "struct" => Some(TokenType::Struct),
+            "trait" => Some(TokenType::Trait),
+            "and" => Some(TokenType::And),
+            "or" => Some(TokenType::Or),
+            "not" => Some(TokenType::Not),
+            "enum" => Some(TokenType::Enum),
+            _ => Some(TokenType::Ident(ident)),
+        }
+    }
+
+    /// Single character tokens
+    pub fn lex_single_char(&mut self) -> Option<TokenType> {
+        let c = self.peek()?;
+        let token = match c {
+            '(' => TokenType::LParen,
+            ')' => TokenType::RParen,
+            '{' => TokenType::LBrace,
+            '}' => TokenType::RBrace,
+            '[' => TokenType::LBracket,
+            ']' => TokenType::RBracket,
+            '.' => TokenType::Dot,
+            ',' => TokenType::Comma,
+            ':' => TokenType::Colon,
+            ';' => TokenType::Semicolon,
+            _ => return None,
+        };
+        self.pop(); // consume the matched char
+        Some(token)
+    }
+
+    /// Lex double character operators
+    ///
+    /// Todo:
+    /// - Block comments
+    #[rustfmt::skip]
+    pub fn lex_operator(&mut self) -> Option<TokenType> {
+        let two = self.peek_n(2);
+        let tok = match two.as_deref() {
+            Some("==") => { self.pop_n(2); TokenType::EqualEqual }
+            Some("!=") => { self.pop_n(2); TokenType::NotEqual }
+            Some("<=") => { self.pop_n(2); TokenType::LessEqual }
+            Some(">=") => { self.pop_n(2); TokenType::GreaterEqual }
+            Some("=>") => { self.pop_n(2); TokenType::FatArrow }
+            Some("->") => { self.pop_n(2); TokenType::Arrow }
+            _ => {
+                let one = self.peek()?;
+                match one {
+                    '+' => { self.pop(); TokenType::Plus }
+                    '-' => { self.pop(); TokenType::Minus }
+                    '*' => { self.pop(); TokenType::Star }
+                    '/' => { self.pop(); TokenType::Slash }
+                    '=' => { self.pop(); TokenType::Equal }
+                    '<' => { self.pop(); TokenType::Less }
+                    '>' => { self.pop(); TokenType::Greater }
+                    _   => return None,
+                }
+            }
+        };
+        Some(tok)
+    }
+
+    pub fn lex_line_comment(&mut self) -> Option<TokenType> {
+        let two = self.peek_n(2);
+        if two != Some("--") {
+            return None;
+        }
+
+        self.pop_n(2); // Remove the --
+        self.take_while(|c| c != '\n'); // Remove everything in this line
+        self.pop(); // Go on to the new line
+        Some(TokenType::LineComment)
     }
 
     pub fn lex_next(&mut self) {}
