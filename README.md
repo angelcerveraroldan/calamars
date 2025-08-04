@@ -2,5 +2,5 @@
 
 A fast, functional general purpose programming language with Typst documentation!
 
-![Calamars Mascot](./docs/calamars.png)
+<img src="./docs/calamars.png" alt="Calamars Mascot" height="160">
 
