@@ -5,6 +5,8 @@ use std::io::Error;
 pub enum LexErrorKind {
     UnexpectedEndOfFile,
     CouldNotTokenize,
+    TokenizingError(String),
+    NoCharacterFound,
     FileNotFound(Error),
 }
 

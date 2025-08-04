@@ -128,18 +128,21 @@ impl<'a> Scanner<'a> {
         &self.source[start..start + bytes]
     }
 
-    fn peek(&self) -> Option<u8> {
-        self.source.get(self.current_pos.offset).copied()
+    fn peek(&self) -> Result<u8, LexErrorKind> {
+        match self.source.get(self.current_pos.offset) {
+            Some(c) => Ok(*c),
+            None => Err(LexErrorKind::NoCharacterFound),
+        }
     }
 
     /// Return error if peek is none
     fn consume(&mut self) -> Result<(), LexErrorKind> {
-        if let Some(c) = self.peek() {
+        if let Ok(c) = self.peek() {
             self.current_pos = self.current_pos.process(c);
             return Ok(());
         }
 
-        Err(LexErrorKind::CouldNotTokenize)
+        Err(LexErrorKind::NoCharacterFound)
     }
 
     fn consume_n(&mut self, n: usize) -> Result<(), LexErrorKind> {
@@ -150,7 +153,7 @@ impl<'a> Scanner<'a> {
             return Ok(());
         }
 
-        Err(LexErrorKind::CouldNotTokenize)
+        Err(LexErrorKind::NoCharacterFound)
     }
 
     fn peek_n(&self, n: usize) -> Option<&'a [u8]> {
@@ -173,7 +176,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn advance(&mut self) {
-        if let Some(c) = self.peek() {
+        if let Ok(c) = self.peek() {
             self.current_pos = self.current_pos.process(c);
         }
     }
@@ -185,8 +188,8 @@ impl<'a> Scanner<'a> {
     /// Is the next character whitespace
     fn is_whitespace(&self) -> bool {
         match self.peek() {
-            None => false,
-            Some(c) => c.is_ascii_whitespace(),
+            Err(_) => false,
+            Ok(c) => c.is_ascii_whitespace(),
         }
     }
 
@@ -197,8 +200,10 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn tokenize_keywords(&self) -> Option<Token> {
-        let next_word = self.next_word()?;
+    fn tokenize_keywords(&self) -> Result<Token, LexErrorKind> {
+        let next_word = self.next_word().ok_or(LexErrorKind::TokenizingError(
+            "No next word found".to_string(),
+        ))?;
 
         #[rustfmt::skip]
         let token_type = match next_word {
@@ -223,17 +228,16 @@ impl<'a> Scanner<'a> {
             _         => TokenType::Ident,
         };
 
-        Token {
+        Ok(Token {
             ttype: token_type,
             source: Span {
                 from: self.current_pos,
                 bytes: next_word.len(),
             },
-        }
-        .into()
+        })
     }
 
-    fn tokenize_number(&self) -> Option<Token> {
+    fn tokenize_number(&self) -> Result<Token, LexErrorKind> {
         let start = self.current_pos.offset;
         let mut end = start;
 
@@ -254,29 +258,76 @@ impl<'a> Scanner<'a> {
             end += 1;
         }
 
-        (start != end).then_some({
-            let ttype = found_dot
-                .then_some(TokenType::Float)
-                .unwrap_or(TokenType::Int);
-            Token {
-                ttype,
-                source: Span {
-                    from: self.current_pos,
-                    bytes: end - start,
-                },
-            }
-        })
+        (start != end)
+            .then_some({
+                let ttype = found_dot
+                    .then_some(TokenType::Float)
+                    .unwrap_or(TokenType::Int);
+                Token {
+                    ttype,
+                    source: Span {
+                        from: self.current_pos,
+                        bytes: end - start,
+                    },
+                }
+            })
+            .ok_or(LexErrorKind::TokenizingError(
+                "No number was found".to_string(),
+            ))
     }
 
-    fn next_token(&mut self) -> Option<Token> {
+    fn tokenize_string(&self) -> Result<Token, LexErrorKind> {
+        if self.peek()? != b'"' {
+            return Err(LexErrorKind::CouldNotTokenize);
+        }
+
+        let mut esc = false;
+        let mut end = self.current_pos.offset + 1;
+        while end < self.source.len() {
+            let c = self.source[end];
+
+            // We are ignoring the next char
+            if esc {
+                esc = false;
+                end += 1;
+                continue;
+            }
+
+            if c == b'\\' {
+                esc = true;
+            }
+
+            // We found the closing quote
+            if c == b'"' {
+                let span = Span {
+                    from: self.current_pos,
+                    bytes: end + 1 - self.current_pos.offset,
+                };
+                return Ok(Token {
+                    ttype: TokenType::String,
+                    source: span,
+                });
+            }
+
+            end += 1;
+        }
+
+        Err(LexErrorKind::TokenizingError(
+            "Did not find closing quote".to_string(),
+        ))
+    }
+
+    fn next_token(&mut self) -> Result<Token, LexErrorKind> {
         self.skip_whitespace();
-        self.tokenize_number().or_else(|| self.tokenize_keywords())
+        self.tokenize_number()
+            .or_else(|_| self.tokenize_keywords())
+            .or_else(|_| self.tokenize_string())
     }
 
     /// Turn the source code into a vector of tokens
     fn tokenize_source(&mut self) -> Result<(), LexErrorKind> {
         // If we find a token, we will process it, and push it
-        while let Some(token) = self.next_token() {
+        while let Ok(token) = self.next_token() {
             let source = unsafe { self.get_span(&token.source) };
             self.current_pos = self.current_pos.process_many(source);
             self.tokens.push(token);
@@ -284,7 +335,9 @@ impl<'a> Scanner<'a> {
 
         // Check that we finished the entire code
         if self.current_pos.offset != self.source.len() {
-            Err(LexErrorKind::CouldNotTokenize)
+            Err(LexErrorKind::TokenizingError(
+                "Did not finish tokeinizing all file".to_string(),
+            ))
         } else {
             Ok(())
         }
@@ -335,5 +388,27 @@ mod test_scanner {
         assert_eq!(toks[0].ttype, TokenType::Def);
         assert_eq!(toks[1].ttype, TokenType::Int);
         assert_eq!(toks[2].ttype, TokenType::Float);
+    }
+
+    #[test]
+    fn test_tokenize_string() {
+        let mut s = Scanner::new("def x \"Hye\"");
+        s.tokenize_source().unwrap();
+        assert_eq!(s.tokens.len(), 3);
+        assert_eq!(s.tokens[2].ttype, TokenType::String);
+    }
+
+    #[test]
+    fn test_string_with_inner_quotes() {
+        use crate::token::{Scanner, TokenType};
+
+        let input = r#""say \"hi\" to me""#;
+        let mut scanner = Scanner::new(input);
+
+        let tokens = scanner.tokens();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].ttype, TokenType::String);
+        let span = unsafe { scanner.get_span(&tokens[0].source) };
+        assert_eq!(span, input.as_bytes());
     }
 }
