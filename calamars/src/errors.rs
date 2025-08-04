@@ -1,4 +1,4 @@
-use crate::lexer::Position;
+use crate::token::Position;
 use std::io::Error;
 
 #[derive(Debug)]
