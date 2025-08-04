@@ -1,8 +1,3 @@
-use std::{
-    iter::Peekable,
-    str::{CharIndices, Chars},
-};
-
 use crate::errors::LexErrorKind;
 
 #[allow(dead_code)]
@@ -48,7 +43,7 @@ pub struct Token {
 }
 
 /// A positon in the source code
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Position {
     /// Number of bytes offset
     offset: usize,
@@ -89,6 +84,12 @@ impl Position {
             }
         }
     }
+
+    pub fn process_many(&self, chars: &[u8]) -> Self {
+        chars
+            .iter()
+            .fold(self.clone(), |acc, next| acc.process(*next))
+    }
 }
 
 /// A Span of the source code
@@ -120,8 +121,36 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    /// # Safety
+    /// This assumes that the span is inbounds
+    unsafe fn get_span(&self, Span { from, bytes }: &Span) -> &[u8] {
+        let start = from.offset;
+        &self.source[start..start + bytes]
+    }
+
     fn peek(&self) -> Option<u8> {
         self.source.get(self.current_pos.offset).copied()
+    }
+
+    /// Return error if peek is none
+    fn consume(&mut self) -> Result<(), LexErrorKind> {
+        if let Some(c) = self.peek() {
+            self.current_pos = self.current_pos.process(c);
+            return Ok(());
+        }
+
+        Err(LexErrorKind::CouldNotTokenize)
+    }
+
+    fn consume_n(&mut self, n: usize) -> Result<(), LexErrorKind> {
+        if let Some(cs) = self.peek_n(n) {
+            for c in cs {
+                self.current_pos = self.current_pos.process(*c);
+            }
+            return Ok(());
+        }
+
+        Err(LexErrorKind::CouldNotTokenize)
     }
 
     fn peek_n(&self, n: usize) -> Option<&'a [u8]> {
@@ -131,6 +160,16 @@ impl<'a> Scanner<'a> {
             return None;
         }
         Some(&self.source[start..ending])
+    }
+
+    fn next_word(&self) -> Option<&'a [u8]> {
+        let start = self.current_pos.offset;
+        let mut end = start;
+        while end < self.source.len() && self.source[end].is_ascii_alphanumeric() {
+            end += 1;
+        }
+
+        (start != end).then_some(&self.source[start..end])
     }
 
     fn advance(&mut self) {
@@ -145,10 +184,9 @@ impl<'a> Scanner<'a> {
 
     /// Is the next character whitespace
     fn is_whitespace(&self) -> bool {
-        let ws = [' ', '\t'];
         match self.peek() {
             None => false,
-            Some(c) => ws.contains(&(c as char)),
+            Some(c) => c.is_ascii_whitespace(),
         }
     }
 
@@ -159,12 +197,107 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn tokenize_keywords(&mut self) {}
+    fn tokenize_keywords(&self) -> Option<Token> {
+        let next_word = self.next_word()?;
+
+        #[rustfmt::skip]
+        let token_type = match next_word {
+            b"def"    => TokenType::Def,
+            b"mut"    => TokenType::Mut,
+            b"given"  => TokenType::Given,
+            b"match"  => TokenType::Match,
+            b"if"     => TokenType::If,
+            b"else"   => TokenType::Else,
+            b"let"    => TokenType::Let,
+            b"return" => TokenType::Return,
+            b"module" => TokenType::Module,
+            b"import" => TokenType::Import,
+            b"struct" => TokenType::Struct,
+            b"trait"  => TokenType::Trait,
+            b"and"    => TokenType::And,
+            b"or"     => TokenType::Or,
+            b"not"    => TokenType::Not,
+            b"enum"   => TokenType::Enum,
+            b"true"   => TokenType::True,
+            b"false"  => TokenType::False,
+            _         => TokenType::Ident,
+        };
+
+        Token {
+            ttype: token_type,
+            source: Span {
+                from: self.current_pos,
+                bytes: next_word.len(),
+            },
+        }
+        .into()
+    }
+
+    fn tokenize_number(&self) -> Option<Token> {
+        let start = self.current_pos.offset;
+        let mut end = start;
+
+        let mut found_dot = false;
+        while end < self.source.len()
+            && ((self.source[end] <= b'9' && self.source[end] >= b'0')
+                || self.source[end] == b'_'
+                || self.source[end] == b'.')
+        {
+            // Only allow for puncuation once
+            if self.source[end] == b'.' {
+                if found_dot {
+                    break;
+                }
+                found_dot = true;
+            }
+
+            end += 1;
+        }
+
+        (start != end).then_some({
+            let ttype = found_dot
+                .then_some(TokenType::Float)
+                .unwrap_or(TokenType::Int);
+            Token {
+                ttype,
+                source: Span {
+                    from: self.current_pos,
+                    bytes: end - start,
+                },
+            }
+        })
+    }
+
+    fn next_token(&mut self) -> Option<Token> {
+        self.skip_whitespace();
+        self.tokenize_number().or_else(|| self.tokenize_keywords())
+    }
+
+    /// Turn the source code into a vector of tokens
+    fn tokenize_source(&mut self) -> Result<(), LexErrorKind> {
+        // If we find a token, we will process it, and push it
+        while let Some(token) = self.next_token() {
+            let source = unsafe { self.get_span(&token.source) };
+            self.current_pos = self.current_pos.process_many(source);
+            self.tokens.push(token);
+        }
+
+        // Check that we finished the entire code
+        if self.current_pos.offset != self.source.len() {
+            Err(LexErrorKind::CouldNotTokenize)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn tokens(&self) -> &[Token] {
+        &self.tokens
+    }
 }
 
 #[cfg(test)]
 mod test_scanner {
-    use crate::token::Scanner;
+    use crate::token::{Scanner, TokenType};
 
     fn sample_scanner() -> Scanner<'static> {
         Scanner::new("     this is a test!")
@@ -178,5 +311,29 @@ mod test_scanner {
         assert_eq!(s.peek_n(2), Some("  ".as_bytes()));
         assert_eq!(s.peek_n(10), Some("     this ".as_bytes()));
         assert_eq!(s.peek_n(100), None);
+    }
+
+    #[test]
+    fn test_token_keyw() {
+        let mut scanner = Scanner::new("def let return");
+        let _ = scanner.tokenize_source();
+        let toks = scanner.tokens;
+
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0].ttype, TokenType::Def);
+        assert_eq!(toks[1].ttype, TokenType::Let);
+        assert_eq!(toks[2].ttype, TokenType::Return);
+    }
+
+    #[test]
+    fn test_token_numbers() {
+        let mut scanner = Scanner::new("def 12 12.2");
+        let _ = scanner.tokenize_source();
+        let toks = scanner.tokens;
+
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0].ttype, TokenType::Def);
+        assert_eq!(toks[1].ttype, TokenType::Int);
+        assert_eq!(toks[2].ttype, TokenType::Float);
     }
 }
