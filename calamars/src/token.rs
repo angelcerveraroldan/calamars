@@ -2,7 +2,7 @@ use crate::errors::LexErrorKind;
 
 #[allow(dead_code)]
 #[rustfmt::skip]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// Calamars Toke types
 pub enum TokenType {
     // Keywords
@@ -237,7 +237,66 @@ impl<'a> Scanner<'a> {
         })
     }
 
+    fn tokenize_punctuation(&self) -> Result<Token, LexErrorKind> {
+        let span = |len: usize| Span {
+            from: self.current_pos,
+            bytes: len,
+        };
+
+        if let Some(two) = self.peek_n(2) {
+            #[rustfmt::skip]
+            let tt = match two {
+                b"->" => Some(TokenType::Arrow),
+                b"=>" => Some(TokenType::FatArrow),
+                b"==" => Some(TokenType::EqualEqual),
+                b"!=" => Some(TokenType::NotEqual),
+                b"<=" => Some(TokenType::LessEqual),
+                b">=" => Some(TokenType::GreaterEqual),
+                _ => None,
+            };
+
+            if let Some(token_type) = tt {
+                return Ok(Token {
+                    ttype: token_type,
+                    source: span(2),
+                });
+            }
+        }
+
+        let one = self.peek()?;
+        let token_type = match one {
+            b'(' => TokenType::LParen,
+            b')' => TokenType::RParen,
+            b'{' => TokenType::LBrace,
+            b'}' => TokenType::RBrace,
+            b'[' => TokenType::LBracket,
+            b']' => TokenType::RBracket,
+            b'.' => TokenType::Dot,
+            b',' => TokenType::Comma,
+            b':' => TokenType::Colon,
+            b';' => TokenType::Semicolon,
+            b'+' => TokenType::Plus,
+            b'-' => TokenType::Minus,
+            b'*' => TokenType::Star,
+            b'/' => TokenType::Slash,
+            b'=' => TokenType::Equal,
+            b'<' => TokenType::Less,
+            b'>' => TokenType::Greater,
+            _ => return Err(LexErrorKind::StartingMismatch),
+        };
+
+        Ok(Token {
+            ttype: token_type,
+            source: span(1),
+        })
+    }
+
     fn tokenize_number(&self) -> Result<Token, LexErrorKind> {
+        let p = self.peek()?;
+        if !p.is_ascii_alphanumeric() {
+            return Err(LexErrorKind::StartingMismatch);
+        }
+
         let start = self.current_pos.offset;
         let mut end = start;
 
@@ -317,11 +376,38 @@ impl<'a> Scanner<'a> {
         ))
     }
 
+    fn tokenize_comments(&self) -> Result<Token, LexErrorKind> {
+        if self.peek_n(2).ok_or(LexErrorKind::TokenizingError(
+            "Could not get 2 characters".to_string(),
+        ))? != b"--"
+        {
+            return Err(LexErrorKind::StartingMismatch);
+        }
+
+        let start = self.current_pos.offset;
+        let mut end = start + 2;
+
+        while end < self.source.len() && self.source[end] != b'\n' {
+            end += 1;
+        }
+
+        Ok(Token {
+            ttype: TokenType::LineComment,
+            source: Span {
+                from: self.current_pos,
+                bytes: end - start,
+            },
+        })
+    }
+
     fn next_token(&mut self) -> Result<Token, LexErrorKind> {
         self.skip_whitespace();
-        self.tokenize_number()
+
+        self.tokenize_comments()
+            .or_else(|_| self.tokenize_number())
             .or_else(|_| self.tokenize_keywords())
             .or_else(|_| self.tokenize_string())
+            .or_else(|_| self.tokenize_punctuation())
     }
 
     /// Turn the source code into a vector of tokens
@@ -404,11 +490,48 @@ mod test_scanner {
 
         let input = r#""say \"hi\" to me""#;
         let mut scanner = Scanner::new(input);
-
+        scanner.tokenize_source();
         let tokens = scanner.tokens();
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].ttype, TokenType::String);
         let span = unsafe { scanner.get_span(&tokens[0].source) };
         assert_eq!(span, input.as_bytes());
+    }
+
+    #[test]
+    fn test_tokenize_punct() {
+        use crate::token::TokenType::*;
+        let input = "-> => == != <= >= ( ) { } [ ] . , : ; + - * / = < >";
+        let mut scanner = Scanner::new(input);
+        scanner.tokenize_source().unwrap();
+
+        let expected = vec![
+            Arrow,
+            FatArrow,
+            EqualEqual,
+            NotEqual,
+            LessEqual,
+            GreaterEqual,
+            LParen,
+            RParen,
+            LBrace,
+            RBrace,
+            LBracket,
+            RBracket,
+            Dot,
+            Comma,
+            Colon,
+            Semicolon,
+            Plus,
+            Minus,
+            Star,
+            Slash,
+            Equal,
+            Less,
+            Greater,
+        ];
+
+        let actual: Vec<_> = scanner.tokens().iter().map(|t| t.ttype.clone()).collect();
+        assert_eq!(actual, expected);
     }
 }

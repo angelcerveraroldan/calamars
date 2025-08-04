@@ -7,6 +7,7 @@ pub enum LexErrorKind {
     CouldNotTokenize,
     TokenizingError(String),
     NoCharacterFound,
+    StartingMismatch,
     FileNotFound(Error),
 }
 
