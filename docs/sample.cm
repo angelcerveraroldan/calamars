@@ -2,11 +2,11 @@
 module examples.tour;
 
 foo: mut String = "foo";     -- mutable binding
-bar: String      = "bar";    -- immutable binding
+bar: String     = "bar";     -- immutable binding
 foo = "foo!";                -- allowed (foo is mut)
 
 
---~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Functions
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -71,5 +71,5 @@ import std.list (map, length, filter);
 
 nums: List[Int] = cons(1, cons(2, cons(3, Nil)));
 
-println(length(nums));            -- 3
+println(length(nums));              -- 3
 println(nums |> map(n => n * 2));   -- [2, 4, 6]
