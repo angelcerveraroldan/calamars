@@ -67,3 +67,8 @@ pub enum TokenType {
     // End of the file!
     EOF,
 }
+
+pub struct Position {
+    col: usize,
+    line: usize,
+}
