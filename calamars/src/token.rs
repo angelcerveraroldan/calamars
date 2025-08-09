@@ -1,3 +1,5 @@
+//! Tokenizer for Calamars language using [Logos](https://github.com/maciejhirsz/logos)
+
 use std::{
     fmt::Debug,
     fs::{self, File},
@@ -150,4 +152,3 @@ mod test_tokens {
         );
     }
 }
-
