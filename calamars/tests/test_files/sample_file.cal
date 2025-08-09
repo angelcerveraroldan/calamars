@@ -1,6 +1,8 @@
-x : int = 2;
-y : int = 3;
+val x : int = 2;
+var y : int = 3;
 
+--* Add two integers! *--
 def add(x : int, y: int) = x + y;
 
-list : List[int] = [1, 2, 3, 4, 5];
+-- Just some list!
+var list : List[int] = [1, 2, 3, 4, 5];
