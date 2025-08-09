@@ -1,9 +1,9 @@
 -- language_tour.ln
 module examples.tour;
 
-foo: mut String = "foo";     -- mutable binding
-bar: String     = "bar";     -- immutable binding
-foo = "foo!";                -- allowed (foo is mut)
+var foo: String = "foo";         -- mutable binding
+val bar: String     = "bar";     -- immutable binding
+foo = "foo!";                    -- allowed (foo is mut)
 
 
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -19,7 +19,7 @@ def add_mut(x: mut Int, y: Int): () = {
 }
 
 -- Using a mutable argument at the call‑site
-x: mut Int = 14;
+var x: Int = 14;
 add_mut(mut x, 2);
 
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -45,7 +45,7 @@ struct Person {
 def print_name(p: Person): Unit =
     println(p.name)
 
-me: Person = Person { name = "Angel"; age = 21; };
+val me: Person = Person { name = "Angel"; age = 21; };
 print_name(me)
 
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -69,7 +69,7 @@ def option_map[A, B](opt: Option[A], f: A -> B): Option[B] =
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 import std.list (map, length, filter);
 
-nums: List[Int] = cons(1, cons(2, cons(3, Nil)));
+val nums: List[Int] = cons(1, cons(2, cons(3, Nil)));
 
 println(length(nums));              -- 3
 println(nums |> map(n => n * 2));   -- [2, 4, 6]
