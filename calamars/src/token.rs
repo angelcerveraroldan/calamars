@@ -120,6 +120,19 @@ pub enum Token {
     EOF,
 }
 
+impl Token {
+    pub fn tokenize_line(s: String) -> Vec<Token> {
+        let mut lex = Token::lexer(&s);
+        let mut tokens = vec![];
+        for token in lex.into_iter() {
+            if let Ok(t) = token {
+                tokens.push(t);
+            }
+        }
+        tokens
+    }
+}
+
 #[cfg(test)]
 mod test_tokens {
     use super::*;
