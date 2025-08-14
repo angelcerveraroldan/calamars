@@ -14,7 +14,7 @@ foo = "foo!";              -- allowed (foo is mut)
 def add(x: Int, y: Int): Int = x + y;
 
 -- Function that mutates one of its parameters
-def add_mut(x: mut Int, y: Int): () = {
+def add_mut(x: mut Int, y: Int): Unit = {
     x = x + y;
 }
 
@@ -42,8 +42,7 @@ struct Person {
     age  : Int;
 };
 
-def print_name(p: Person): Unit =
-    println(p.name)
+def print_name(p: Person): Unit = println(p.name)
 
 val me: Person = Person { name = "Angel"; age = 21; };
 print_name(me)
