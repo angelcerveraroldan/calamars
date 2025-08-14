@@ -1,7 +1,8 @@
 use std::io::{Write, stdin, stdout};
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use calamars::{parser::base_type_parser, token::Token};
+use calamars::parser::calamars_parser;
+use calamars::token::Token;
 use chumsky::prelude::*;
 use chumsky::{input::Stream, prelude::*, span::SimpleSpan};
 use logos::Logos;
@@ -25,7 +26,7 @@ fn main() {
         println!("{:?}", tokens);
 
         let stream = Token::tokens_spanned_stream(&line);
-        let (out, errs) = base_type_parser().parse(stream).into_output_errors();
+        let (out, errs) = calamars_parser().parse(stream).into_output_errors();
         println!("{:?}", out);
         errs.into_iter().for_each(|e| {
             Report::build(ReportKind::Error, ((), e.span().into_range()))
