@@ -1,9 +1,9 @@
 -- language_tour.ln
 module examples.tour;
 
-var foo: String = "foo";         -- mutable binding
-val bar: String     = "bar";     -- immutable binding
-foo = "foo!";                    -- allowed (foo is mut)
+var foo: String = "foo";   -- mutable binding
+val bar: String = "bar";   -- immutable binding
+foo = "foo!";              -- allowed (foo is mut)
 
 
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
