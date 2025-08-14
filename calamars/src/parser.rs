@@ -14,6 +14,9 @@ type Ident = String;
 pub enum ClExpression {
     Literal(ClLiteral),
     Type(ClType),
+    // TODO :This is not an expression -- written like this for the time being, for testing
+    // purposes
+    Value(ClBinding),
 }
 
 impl From<ClLiteral> for ClExpression {
@@ -160,14 +163,48 @@ where
     })
 }
 
-/// Parse any base value, including nested arrays
-pub fn calamars_parser<'a, I>()
+/// Value and Variable declaration
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct ClBinding {
+    vname: Ident,
+    vtype: ClType,
+    assigned: Box<ClExpression>,
+    mutable: bool,
+}
+
+fn parse_binding<'a, I>(
+    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
+) -> impl Parser<'a, I, ClBinding, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    let var_or_val = (just(Token::Var).map(|_| true)).or(just(Token::Val).map(|_| false));
+
+    var_or_val
+        .then(select! {Token::Ident(valname) => valname})
+        .then_ignore(just(Token::Colon))
+        .then(parse_cltype_annotation())
+        .then_ignore(just(Token::Equal))
+        .then(expr)
+        .then_ignore(just(Token::Semicolon))
+        .map(|(((mutable, vname), vtype), assigned)| ClBinding {
+            vname,
+            vtype,
+            assigned: Box::new(assigned),
+            mutable,
+        })
+}
+
+pub fn parse_expression<'a, I>()
 -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
 where
     I: TokenInput<'a>,
 {
-    choice((
-        parse_cltype_annotation().map(ClExpression::from),
-        parse_base_type().map(ClExpression::from),
-    ))
+    recursive(|rec| {
+        choice((
+            parse_cltype_annotation().map(ClExpression::from),
+            parse_base_type().map(ClExpression::from),
+            parse_binding(rec).map(ClExpression::Value),
+        ))
+    })
 }
