@@ -4,7 +4,7 @@ use chumsky::{input::ValueInput, prelude::*};
 
 use crate::token::Token;
 
-trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
+pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 
 struct Ident {

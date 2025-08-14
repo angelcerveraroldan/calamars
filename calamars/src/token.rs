@@ -1,12 +1,17 @@
 //! Tokenizer for Calamars language using [Logos](https://github.com/maciejhirsz/logos)
 
 use std::{
+    convert::identity,
     fmt::Debug,
     fs::{self, File},
     process::Output,
     str::FromStr,
 };
 
+use chumsky::{
+    input::{Input, Stream, ValueInput},
+    span::SimpleSpan,
+};
 use logos::{Lexer, Logos};
 
 /// Helper function to parse numbers
@@ -117,11 +122,13 @@ pub enum Token {
         s[1..s.len()-1].to_string() // naive unescape
     })]
     String(String),
+
+    Error,
     EOF,
 }
 
 impl Token {
-    pub fn tokenize_line(s: String) -> Vec<Token> {
+    pub fn tokenize_line<'a>(s: &'a str) -> Vec<Token> {
         let mut lex = Token::lexer(&s);
         let mut tokens = vec![];
         for token in lex.into_iter() {
@@ -131,9 +138,21 @@ impl Token {
         }
         tokens
     }
+
+    pub fn tokens_spanned_stream<'a>(source: &'a str) -> impl TokenInput<'a> {
+        let token_iter = Token::lexer(source)
+            .spanned()
+            .map(|(token, span)| match token {
+                Ok(tok) => (tok, SimpleSpan::from(span)),
+                Err(()) => (Token::Error, SimpleSpan::from(span)),
+            });
+        Stream::from_iter(token_iter).map((0..source.len()).into(), identity)
+    }
 }
 
 use std::fmt;
+
+use crate::parser::TokenInput;
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -225,6 +244,7 @@ impl fmt::Display for Token {
             Token::Char(c) => write!(f, "'{}'", escape_char(*c)),
             Token::String(s) => write!(f, "\"{}\"", escape_str(s)),
 
+            Token::Error => write!(f, "<ERROR>"),
             Token::EOF => write!(f, "<eof>"),
         }
     }

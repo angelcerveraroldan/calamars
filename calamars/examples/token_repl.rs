@@ -6,15 +6,6 @@ use chumsky::prelude::*;
 use chumsky::{input::Stream, prelude::*, span::SimpleSpan};
 use logos::Logos;
 use std::{collections::HashMap, env, fs};
-fn lex_spanned(src: &str) -> Vec<(Token, SimpleSpan)> {
-    let mut out = Vec::new();
-    let mut lex = Token::lexer(src);
-    while let Some(Ok(tok)) = lex.next() {
-        let r = lex.span();
-        out.push((tok, SimpleSpan::new((), lex.span())));
-    }
-    out
-}
 
 fn main() {
     println!("Type a Calamars line. I’ll show tokens and a parsed AST.\n");
@@ -30,20 +21,11 @@ fn main() {
             continue;
         }
 
-        // 1) tokenize
-        let toks = lex_spanned(&line);
-        println!(
-            "tokens: {:?}\n",
-            toks.iter().map(|(t, _)| t).collect::<Vec<_>>()
-        );
+        let tokens = Token::tokenize_line(&line);
+        println!("{:?}", tokens);
 
-        // 2) build chumsky stream
-        let len = line.len() as u32;
-        let stream = Stream::from_iter(toks.into_iter().map(|(a, b)| a));
-        // 3) parse (change `base_type_parser()` to whatever you want to test)
-
+        let stream = Token::tokens_spanned_stream(&line);
         let (out, errs) = base_type_parser().parse(stream).into_output_errors();
-
         println!("{:?}", out);
         errs.into_iter().for_each(|e| {
             Report::build(ReportKind::Error, ((), e.span().into_range()))
