@@ -1,7 +1,6 @@
 //! Parser for Calamars
 
 use chumsky::{input::ValueInput, prelude::*};
-use proptest::array;
 
 use crate::token::Token;
 
@@ -10,13 +9,17 @@ impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = S
 
 type Ident = String;
 
+// TODO: Many of these are not acutally expressions, will be moved later
+
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ClExpression {
     Literal(ClLiteral),
     Type(ClType),
-    // TODO :This is not an expression -- written like this for the time being, for testing
-    // purposes
     Value(ClBinding),
+
+    // Expressions
+    UnaryOp(ClUnaryOp),
+    BinaryOp(ClBinaryOp),
 }
 
 impl From<ClLiteral> for ClExpression {
@@ -163,6 +166,126 @@ where
     })
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum UnaryOperator {
+    Neg,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum BinaryOperator {
+    Add,      // +
+    Sub,      // -
+    Times,    // *
+    Pow,      // ^
+    Div,      // /
+    Concat,   // ++
+    Geq,      // >=
+    Leq,      // <=
+    EqEq,     // ==
+    NotEqual, // !=
+
+    Or,  // or
+    Xor, // xor
+    And, // and
+}
+
+fn parse_unary_op<'a, I>() -> impl Parser<'a, I, UnaryOperator, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    select! { Token::Not => UnaryOperator::Neg }.labelled("unary operator")
+}
+
+fn parse_binary_op<'a, I>()
+-> impl Parser<'a, I, BinaryOperator, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    select! {
+      Token::Plus => BinaryOperator::Add,
+      Token::Minus => BinaryOperator::Sub,
+      Token::Star => BinaryOperator::Times,
+      Token::Pow => BinaryOperator::Pow,
+      Token::Slash => BinaryOperator::Div,
+      Token::Concat => BinaryOperator::Concat,
+      Token::GreaterEqual => BinaryOperator::Geq,
+      Token::LessEqual => BinaryOperator::Leq,
+      Token::EqualEqual => BinaryOperator::EqEq,
+      Token::NotEqual => BinaryOperator::NotEqual,
+      Token::And => BinaryOperator::And,
+      Token::Or => BinaryOperator::Or,
+      Token::Xor => BinaryOperator::Xor,
+    }
+    .labelled("binary operator")
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct ClUnaryOp {
+    operator: UnaryOperator,
+    on: Box<ClExpression>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct ClBinaryOp {
+    operator: BinaryOperator,
+    left: Box<ClExpression>,
+    right: Box<ClExpression>,
+}
+
+fn parse_atom_expr_or_bracketed<'a, I>(
+    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
+) -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    let bracket_expr = expr.delimited_by(just(Token::LParen), just(Token::RParen));
+    (parse_base_type().map(ClExpression::Literal)).or(bracket_expr)
+}
+
+fn parse_unary_oprator<'a, I>(
+    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
+) -> impl Parser<'a, I, ClUnaryOp, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    just(Token::Not).ignore_then(expr).map(|expr| ClUnaryOp {
+        operator: UnaryOperator::Neg,
+        on: Box::new(expr),
+    })
+}
+
+fn parser_binary_op<'a, I>(
+    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
+) -> impl Parser<'a, I, ClBinaryOp, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    let op = select! {
+      Token::Plus => BinaryOperator::Add,
+      Token::Minus => BinaryOperator::Sub,
+      Token::Star => BinaryOperator::Times,
+      Token::Pow => BinaryOperator::Pow,
+      Token::Slash => BinaryOperator::Div,
+      Token::Concat => BinaryOperator::Concat,
+      Token::GreaterEqual => BinaryOperator::Geq,
+      Token::LessEqual => BinaryOperator::Leq,
+      Token::EqualEqual => BinaryOperator::EqEq,
+      Token::NotEqual => BinaryOperator::NotEqual,
+      Token::And => BinaryOperator::And,
+      Token::Or => BinaryOperator::Or,
+      Token::Xor => BinaryOperator::Xor,
+    };
+
+    (parse_atom_expr_or_bracketed(expr.clone()))
+        .then(op)
+        .then(expr)
+        .map(|((el, op), er)| ClBinaryOp {
+            left: Box::new(el),
+            right: Box::new(er),
+            operator: op,
+        })
+}
+
 /// Value and Variable declaration
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct ClBinding {
@@ -201,10 +324,17 @@ where
     I: TokenInput<'a>,
 {
     recursive(|rec| {
+        let bracketed_expr = rec
+            .clone()
+            .delimited_by(just(Token::LParen), just(Token::RParen));
+
         choice((
+            parser_binary_op(rec.clone()).map(ClExpression::BinaryOp),
             parse_cltype_annotation().map(ClExpression::from),
             parse_base_type().map(ClExpression::from),
-            parse_binding(rec).map(ClExpression::Value),
+            parse_binding(rec.clone()).map(ClExpression::Value),
+            parse_unary_oprator(rec).map(ClExpression::UnaryOp),
+            bracketed_expr,
         ))
     })
 }
