@@ -20,6 +20,8 @@ type Ident = String;
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ClExpression {
     Literal(ClLiteral),
+    Identifier(Ident),
+
     Type(ClType),
     Value(ClBinding),
 
@@ -63,40 +65,32 @@ pub enum ClLiteral {
     Array(Vec<Self>),
 }
 
-/// Parse the base types
-fn parse_atom<'a, I>() -> impl Parser<'a, I, ClLiteral, extra::Err<Rich<'a, Token>>> + Clone
-where
-    I: TokenInput<'a>,
-{
-    select! {
-        Token::True      => ClLiteral::Boolean(true),
-        Token::False     => ClLiteral::Boolean(false),
-        Token::Int(i)    => ClLiteral::Integer(i),
-        Token::Float(f)  => ClLiteral::Real(f),
-        Token::String(s) => ClLiteral::String(s),
-        Token::Char(c)   => ClLiteral::Char(c),
-    }
-}
-
 /// Parse any base value, including nested arrays
-pub fn parse_base_type<'a, I>() -> impl Parser<'a, I, ClLiteral, extra::Err<Rich<'a, Token>>> + Clone
+pub fn parse_literal<'a, I>() -> impl Parser<'a, I, ClLiteral, extra::Err<Rich<'a, Token>>> + Clone
 where
     I: TokenInput<'a>,
 {
     recursive(|value| {
+        let atom = select! {
+            Token::True      => ClLiteral::Boolean(true),
+            Token::False     => ClLiteral::Boolean(false),
+            Token::Int(i)    => ClLiteral::Integer(i),
+            Token::Float(f)  => ClLiteral::Real(f),
+            Token::String(s) => ClLiteral::String(s),
+            Token::Char(c)   => ClLiteral::Char(c),
+        };
+
         let arr = value
             .separated_by(just(Token::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
             .delimited_by(just(Token::LBracket), just(Token::RBracket));
 
-        choice((parse_atom(), arr.map(ClLiteral::Array)))
+        choice((atom, arr.map(ClLiteral::Array)))
     })
 }
 
 /// Types for Calamars
-///
-/// TODO: Add a "total_span" to better handle errors
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ClType {
     /// Basic / standard types such as Int, String, Char, Real, ...
@@ -220,14 +214,17 @@ pub struct ClBinaryOp {
     right: Box<ClExpression>,
 }
 
+/// Parse an atom, or a bracketed expression
 fn parse_atom_expr_or_bracketed<'a, I>(
     expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
 ) -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
 where
     I: TokenInput<'a>,
 {
+    let literal = parse_literal().map(ClExpression::Literal);
+    let ident = select! { Token::Ident(s) => s }.map(ClExpression::Identifier);
     let bracket_expr = expr.delimited_by(just(Token::LParen), just(Token::RParen));
-    (parse_base_type().map(ClExpression::Literal)).or(bracket_expr)
+    choice((literal, ident, bracket_expr))
 }
 
 macro_rules! infix_shortcut {
@@ -242,6 +239,7 @@ macro_rules! infix_shortcut {
     };
 }
 
+/// Parse a unary or a binary opearation
 fn parse_binary_unary_ops<'a, I>(
     expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
 ) -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
@@ -274,6 +272,15 @@ where
         infix_shortcut!(left(1), Token::Xor, BinaryOperator::Xor),
         infix_shortcut!(left(1), Token::Or, BinaryOperator::Or),
     ))
+}
+
+fn parse_identifier<'a, I>() -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    select! { Token::Ident(s) => s }
+        .map(ClExpression::Identifier)
+        .labelled("identifier")
 }
 
 /// Value and Variable declaration
@@ -321,9 +328,11 @@ where
         choice((
             parse_binary_unary_ops(rec.clone()),
             parse_cltype_annotation().map(ClExpression::from),
-            parse_base_type().map(ClExpression::from),
+            parse_literal().map(ClExpression::from),
             parse_binding(rec.clone()).map(ClExpression::Value),
+            parse_identifier(),
             bracketed_expr,
         ))
     })
 }
+
