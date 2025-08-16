@@ -24,6 +24,7 @@ pub enum ClExpression {
     BinaryOp(ClBinaryOp),
 
     IfStm(IfStm),
+    FunctionCall(FuncCall),
 }
 
 impl From<ClLiteral> for ClExpression {
@@ -332,6 +333,31 @@ where
         .labelled("if stm")
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct FuncCall {
+    func_name: Ident,
+    params: Vec<ClExpression>,
+}
+
+fn parse_function_call<'a, I>(
+    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
+) -> impl Parser<'a, I, FuncCall, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    let parse_args = expr
+        .clone()
+        .separated_by(just(Token::Comma))
+        .collect::<Vec<ClExpression>>()
+        .delimited_by(just(Token::LParen), just(Token::RParen));
+
+    select! { Token::Ident(s) => s }
+        .then_ignore(just(Token::LParen))
+        .then(expr.separated_by(just(Token::Comma)).collect())
+        .then_ignore(just(Token::RParen))
+        .map(|(func_name, params)| FuncCall { func_name, params })
+}
+
 pub fn parse_expression<'a, I>()
 -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
 where
@@ -343,8 +369,9 @@ where
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
         choice((
-            parse_if(rec.clone()).map(ClExpression::IfStm),
+            parse_function_call(rec.clone()).map(ClExpression::FunctionCall),
             parse_binary_unary_ops(rec.clone()),
+            parse_if(rec.clone()).map(ClExpression::IfStm),
             parse_literal().map(ClExpression::from),
             parse_identifier(),
             bracketed_expr,
