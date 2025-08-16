@@ -1,6 +1,12 @@
 //! Parser for Calamars
 
-use chumsky::{input::ValueInput, prelude::*};
+use std::fmt::Binary;
+
+use chumsky::{
+    input::ValueInput,
+    pratt::{infix, left, prefix, right},
+    prelude::*,
+};
 
 use crate::token::Token;
 
@@ -31,6 +37,18 @@ impl From<ClLiteral> for ClExpression {
 impl From<ClType> for ClExpression {
     fn from(value: ClType) -> Self {
         ClExpression::Type(value)
+    }
+}
+
+impl From<ClBinaryOp> for ClExpression {
+    fn from(value: ClBinaryOp) -> Self {
+        ClExpression::BinaryOp(value)
+    }
+}
+
+impl From<ClUnaryOp> for ClExpression {
+    fn from(value: ClUnaryOp) -> Self {
+        ClExpression::UnaryOp(value)
     }
 }
 
@@ -189,36 +207,6 @@ pub enum BinaryOperator {
     And, // and
 }
 
-fn parse_unary_op<'a, I>() -> impl Parser<'a, I, UnaryOperator, extra::Err<Rich<'a, Token>>> + Clone
-where
-    I: TokenInput<'a>,
-{
-    select! { Token::Not => UnaryOperator::Neg }.labelled("unary operator")
-}
-
-fn parse_binary_op<'a, I>()
--> impl Parser<'a, I, BinaryOperator, extra::Err<Rich<'a, Token>>> + Clone
-where
-    I: TokenInput<'a>,
-{
-    select! {
-      Token::Plus => BinaryOperator::Add,
-      Token::Minus => BinaryOperator::Sub,
-      Token::Star => BinaryOperator::Times,
-      Token::Pow => BinaryOperator::Pow,
-      Token::Slash => BinaryOperator::Div,
-      Token::Concat => BinaryOperator::Concat,
-      Token::GreaterEqual => BinaryOperator::Geq,
-      Token::LessEqual => BinaryOperator::Leq,
-      Token::EqualEqual => BinaryOperator::EqEq,
-      Token::NotEqual => BinaryOperator::NotEqual,
-      Token::And => BinaryOperator::And,
-      Token::Or => BinaryOperator::Or,
-      Token::Xor => BinaryOperator::Xor,
-    }
-    .labelled("binary operator")
-}
-
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct ClUnaryOp {
     operator: UnaryOperator,
@@ -242,48 +230,50 @@ where
     (parse_base_type().map(ClExpression::Literal)).or(bracket_expr)
 }
 
-fn parse_unary_oprator<'a, I>(
-    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
-) -> impl Parser<'a, I, ClUnaryOp, extra::Err<Rich<'a, Token>>> + Clone
-where
-    I: TokenInput<'a>,
-{
-    just(Token::Not).ignore_then(expr).map(|expr| ClUnaryOp {
-        operator: UnaryOperator::Neg,
-        on: Box::new(expr),
-    })
+macro_rules! infix_shortcut {
+    ($order:expr, $from:expr, $to:expr) => {
+        infix($order, just($from), |lhs, _, rhs, _| {
+            ClExpression::BinaryOp(ClBinaryOp {
+                operator: $to,
+                left: Box::new(lhs),
+                right: Box::new(rhs),
+            })
+        })
+    };
 }
 
-fn parser_binary_op<'a, I>(
+fn parse_binary_unary_ops<'a, I>(
     expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
-) -> impl Parser<'a, I, ClBinaryOp, extra::Err<Rich<'a, Token>>> + Clone
+) -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
 where
     I: TokenInput<'a>,
 {
-    let op = select! {
-      Token::Plus => BinaryOperator::Add,
-      Token::Minus => BinaryOperator::Sub,
-      Token::Star => BinaryOperator::Times,
-      Token::Pow => BinaryOperator::Pow,
-      Token::Slash => BinaryOperator::Div,
-      Token::Concat => BinaryOperator::Concat,
-      Token::GreaterEqual => BinaryOperator::Geq,
-      Token::LessEqual => BinaryOperator::Leq,
-      Token::EqualEqual => BinaryOperator::EqEq,
-      Token::NotEqual => BinaryOperator::NotEqual,
-      Token::And => BinaryOperator::And,
-      Token::Or => BinaryOperator::Or,
-      Token::Xor => BinaryOperator::Xor,
-    };
+    let atom = parse_atom_expr_or_bracketed(expr.clone());
 
-    (parse_atom_expr_or_bracketed(expr.clone()))
-        .then(op)
-        .then(expr)
-        .map(|((el, op), er)| ClBinaryOp {
-            left: Box::new(el),
-            right: Box::new(er),
-            operator: op,
-        })
+    atom.pratt((
+        // Not prefix
+        prefix(6, just(Token::Not), |_, rhs, _| {
+            ClExpression::UnaryOp(ClUnaryOp {
+                operator: UnaryOperator::Neg,
+                on: Box::new(rhs),
+            })
+        }),
+        // Infix
+        infix_shortcut!(right(5), Token::Pow, BinaryOperator::Pow),
+        infix_shortcut!(left(4), Token::Star, BinaryOperator::Times),
+        infix_shortcut!(left(4), Token::Slash, BinaryOperator::Div),
+        infix_shortcut!(left(3), Token::Plus, BinaryOperator::Add),
+        infix_shortcut!(left(3), Token::Minus, BinaryOperator::Sub),
+        infix_shortcut!(left(3), Token::Concat, BinaryOperator::Concat),
+        // Comparison
+        infix_shortcut!(left(2), Token::EqualEqual, BinaryOperator::EqEq),
+        infix_shortcut!(left(2), Token::NotEqual, BinaryOperator::NotEqual),
+        infix_shortcut!(left(2), Token::LessEqual, BinaryOperator::Leq),
+        infix_shortcut!(left(2), Token::GreaterEqual, BinaryOperator::Geq),
+        infix_shortcut!(left(1), Token::And, BinaryOperator::And),
+        infix_shortcut!(left(1), Token::Xor, BinaryOperator::Xor),
+        infix_shortcut!(left(1), Token::Or, BinaryOperator::Or),
+    ))
 }
 
 /// Value and Variable declaration
@@ -329,11 +319,10 @@ where
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
         choice((
-            parser_binary_op(rec.clone()).map(ClExpression::BinaryOp),
+            parse_binary_unary_ops(rec.clone()),
             parse_cltype_annotation().map(ClExpression::from),
             parse_base_type().map(ClExpression::from),
             parse_binding(rec.clone()).map(ClExpression::Value),
-            parse_unary_oprator(rec).map(ClExpression::UnaryOp),
             bracketed_expr,
         ))
     })
