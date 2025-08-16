@@ -15,30 +15,20 @@ impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = S
 
 type Ident = String;
 
-// TODO: Many of these are not acutally expressions, will be moved later
-
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ClExpression {
     Literal(ClLiteral),
     Identifier(Ident),
 
-    Type(ClType),
-    Value(ClBinding),
-
-    // Expressions
     UnaryOp(ClUnaryOp),
     BinaryOp(ClBinaryOp),
+
+    IfStm(IfStm),
 }
 
 impl From<ClLiteral> for ClExpression {
     fn from(value: ClLiteral) -> Self {
         ClExpression::Literal(value)
-    }
-}
-
-impl From<ClType> for ClExpression {
-    fn from(value: ClType) -> Self {
-        ClExpression::Type(value)
     }
 }
 
@@ -315,6 +305,33 @@ where
         })
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct IfStm {
+    predicate: Box<ClExpression>,
+    then: Box<ClExpression>,
+    otherwise: Box<ClExpression>,
+}
+
+fn parse_if<'a, I>(
+    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
+) -> impl Parser<'a, I, IfStm, extra::Err<Rich<'a, Token>>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    just(Token::If)
+        .ignore_then(expr.clone())
+        .then_ignore(just(Token::Then))
+        .then(expr.clone())
+        .then_ignore(just(Token::Else))
+        .then(expr.clone())
+        .map(|((e1, e2), e3)| IfStm {
+            predicate: Box::new(e1),
+            then: Box::new(e2),
+            otherwise: Box::new(e3),
+        })
+        .labelled("if stm")
+}
+
 pub fn parse_expression<'a, I>()
 -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
 where
@@ -326,13 +343,11 @@ where
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
         choice((
+            parse_if(rec.clone()).map(ClExpression::IfStm),
             parse_binary_unary_ops(rec.clone()),
-            parse_cltype_annotation().map(ClExpression::from),
             parse_literal().map(ClExpression::from),
-            parse_binding(rec.clone()).map(ClExpression::Value),
             parse_identifier(),
             bracketed_expr,
         ))
     })
 }
-
