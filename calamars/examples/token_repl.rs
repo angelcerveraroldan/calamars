@@ -1,12 +1,9 @@
 use std::io::{Write, stdin, stdout};
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use calamars::parser::parse_expression;
+use calamars::parser::expression::parse_expression;
 use calamars::token::Token;
 use chumsky::prelude::*;
-use chumsky::{input::Stream, prelude::*, span::SimpleSpan};
-use logos::Logos;
-use std::{collections::HashMap, env, fs};
 
 fn main() {
     println!("Type a Calamars line. I’ll show tokens and a parsed AST.\n");
