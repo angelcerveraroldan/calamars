@@ -1,7 +1,5 @@
 //! Parser for Calamars
 
-use std::fmt::Binary;
-
 use chumsky::{
     input::ValueInput,
     pratt::{infix, left, prefix, right},
@@ -69,13 +67,15 @@ where
             Token::Float(f)  => ClLiteral::Real(f),
             Token::String(s) => ClLiteral::String(s),
             Token::Char(c)   => ClLiteral::Char(c),
-        };
+        }
+        .labelled("literal");
 
         let arr = value
             .separated_by(just(Token::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(just(Token::LBracket), just(Token::RBracket));
+            .delimited_by(just(Token::LBracket), just(Token::RBracket))
+            .labelled("array");
 
         choice((atom, arr.map(ClLiteral::Array)))
     })
@@ -167,6 +167,7 @@ where
 
         function_type.or(parse_cltype_path()).or(array_type)
     })
+    .labelled("type annotation")
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -212,9 +213,15 @@ fn parse_atom_expr_or_bracketed<'a, I>(
 where
     I: TokenInput<'a>,
 {
-    let literal = parse_literal().map(ClExpression::Literal);
-    let ident = select! { Token::Ident(s) => s }.map(ClExpression::Identifier);
-    let bracket_expr = expr.delimited_by(just(Token::LParen), just(Token::RParen));
+    let literal = parse_literal()
+        .map(ClExpression::Literal)
+        .labelled("literal");
+    let ident = select! { Token::Ident(s) => s }
+        .map(ClExpression::Identifier)
+        .labelled("identifier");
+    let bracket_expr = expr
+        .delimited_by(just(Token::LParen), just(Token::RParen))
+        .labelled("(<expr>)");
     choice((literal, ident, bracket_expr))
 }
 
@@ -263,6 +270,7 @@ where
         infix_shortcut!(left(1), Token::Xor, BinaryOperator::Xor),
         infix_shortcut!(left(1), Token::Or, BinaryOperator::Or),
     ))
+    .labelled("Binary/Unary operation")
 }
 
 fn parse_identifier<'a, I>() -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
@@ -304,6 +312,7 @@ where
             assigned: Box::new(assigned),
             mutable,
         })
+        .labelled("val/var assignment")
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -349,13 +358,15 @@ where
         .clone()
         .separated_by(just(Token::Comma))
         .collect::<Vec<ClExpression>>()
-        .delimited_by(just(Token::LParen), just(Token::RParen));
+        .delimited_by(just(Token::LParen), just(Token::RParen))
+        .labelled("function arguments");
 
     select! { Token::Ident(s) => s }
         .then_ignore(just(Token::LParen))
         .then(expr.separated_by(just(Token::Comma)).collect())
         .then_ignore(just(Token::RParen))
         .map(|(func_name, params)| FuncCall { func_name, params })
+        .labelled("function call")
 }
 
 pub fn parse_expression<'a, I>()
