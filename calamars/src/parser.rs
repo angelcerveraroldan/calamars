@@ -11,6 +11,7 @@ use crate::token::Token;
 pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 
+type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
 type Ident = String;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -55,7 +56,7 @@ pub enum ClLiteral {
 }
 
 /// Parse any base value, including nested arrays
-pub fn parse_literal<'a, I>() -> impl Parser<'a, I, ClLiteral, extra::Err<Rich<'a, Token>>> + Clone
+pub fn parse_literal<'a, I>() -> impl Parser<'a, I, ClLiteral, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -115,7 +116,7 @@ impl ClType {
     }
 }
 
-fn parse_cltype_path<'a, I>() -> impl Parser<'a, I, ClType, extra::Err<Rich<'a, Token>>> + Clone
+fn parse_cltype_path<'a, I>() -> impl Parser<'a, I, ClType, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -135,8 +136,7 @@ where
 
 // TODO: Maybe its better to have (x, y, z) be a Tuple type, then functions are always A->B, where
 // A and B are standard types ...
-fn parse_cltype_annotation<'a, I>()
--> impl Parser<'a, I, ClType, extra::Err<Rich<'a, Token>>> + Clone
+fn parse_cltype_annotation<'a, I>() -> impl Parser<'a, I, ClType, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -208,8 +208,8 @@ pub struct ClBinaryOp {
 
 /// Parse an atom, or a bracketed expression
 fn parse_atom_expr_or_bracketed<'a, I>(
-    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
-) -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
+    expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
+) -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -239,8 +239,8 @@ macro_rules! infix_shortcut {
 
 /// Parse a unary or a binary opearation
 fn parse_binary_unary_ops<'a, I>(
-    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
-) -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
+    expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
+) -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -273,7 +273,7 @@ where
     .labelled("Binary/Unary operation")
 }
 
-fn parse_identifier<'a, I>() -> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
+fn parse_identifier<'a, I>() -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -292,8 +292,8 @@ pub struct ClBinding {
 }
 
 fn parse_binding<'a, I>(
-    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
-) -> impl Parser<'a, I, ClBinding, extra::Err<Rich<'a, Token>>> + Clone
+    expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
+) -> impl Parser<'a, I, ClBinding, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -323,8 +323,8 @@ pub struct IfStm {
 }
 
 fn parse_if<'a, I>(
-    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
-) -> impl Parser<'a, I, IfStm, extra::Err<Rich<'a, Token>>> + Clone
+    expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
+) -> impl Parser<'a, I, IfStm, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -349,8 +349,8 @@ pub struct FuncCall {
 }
 
 fn parse_function_call<'a, I>(
-    expr: impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone,
-) -> impl Parser<'a, I, FuncCall, extra::Err<Rich<'a, Token>>> + Clone
+    expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
+) -> impl Parser<'a, I, FuncCall, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -369,8 +369,7 @@ where
         .labelled("function call")
 }
 
-pub fn parse_expression<'a, I>()
--> impl Parser<'a, I, ClExpression, extra::Err<Rich<'a, Token>>> + Clone
+pub fn parse_expression<'a, I>() -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
