@@ -2,6 +2,7 @@ use std::io::{Write, stdin, stdout};
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use calamars::parser::expression::parse_expression;
+use calamars::parser::parse_cl_item;
 use calamars::token::Token;
 use chumsky::prelude::*;
 
@@ -23,7 +24,7 @@ fn main() {
         println!("{:?}", tokens);
 
         let stream = Token::tokens_spanned_stream(&line);
-        let (out, errs) = parse_expression().parse(stream).into_output_errors();
+        let (out, errs) = parse_cl_item().parse(stream).into_output_errors();
         println!("{:?}", out);
         errs.into_iter().for_each(|e| {
             Report::build(ReportKind::Error, ((), e.span().into_range()))

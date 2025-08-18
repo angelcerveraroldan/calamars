@@ -7,6 +7,7 @@ use crate::token::Token;
 
 use chumsky::{input::ValueInput, prelude::*};
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ClDeclaration {
     Binding(ClBinding),
     Function(ClFuncDec),
@@ -43,6 +44,7 @@ where
         .labelled("val/var declaration")
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct ClFuncDec {
     fname: Ident,
     inputs: Vec<(Ident, ClType)>,
@@ -50,7 +52,7 @@ pub struct ClFuncDec {
     body: ClExpression,
 }
 
-fn parse_func_input<'a, I>() -> impl Parser<'a, I, Vec<(Ident, ClType)>, ParserErr<'a>>
+fn parse_func_input<'a, I>() -> impl Parser<'a, I, Vec<(Ident, ClType)>, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -64,7 +66,7 @@ where
         .delimited_by(just(Token::LParen), just(Token::RParen))
 }
 
-fn parse_func_declaration<'a, I>() -> impl Parser<'a, I, ClFuncDec, ParserErr<'a>>
+fn parse_func_declaration<'a, I>() -> impl Parser<'a, I, ClFuncDec, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -84,7 +86,7 @@ where
         .labelled("function declaration")
 }
 
-pub fn parse_cldeclaration<'a, I>() -> impl Parser<'a, I, ClDeclaration, ParserErr<'a>>
+pub fn parse_cldeclaration<'a, I>() -> impl Parser<'a, I, ClDeclaration, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {

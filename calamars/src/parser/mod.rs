@@ -5,13 +5,44 @@ pub mod expression;
 
 use chumsky::{input::ValueInput, prelude::*};
 
-use crate::token::Token;
+use crate::{
+    parser::{
+        declaration::{ClDeclaration, parse_cldeclaration},
+        expression::{ClExpression, parse_expression},
+    },
+    token::Token,
+};
 
 pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 
 type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
 type Ident = String;
+
+/// A Calamars module / file
+pub struct Module {
+    items: Vec<ClItem>,
+}
+
+/// Any one thing in the Cl language
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum ClItem {
+    Declaration(ClDeclaration),
+    Expression(ClExpression),
+
+    // TODO:
+    Import,
+}
+
+pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    choice((
+        parse_cldeclaration().map(ClItem::Declaration),
+        parse_expression().map(ClItem::Expression),
+    ))
+}
 
 /// Calamars Base Type Instance
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
