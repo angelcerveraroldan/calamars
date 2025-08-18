@@ -19,7 +19,7 @@ pub enum ClExpression {
     IfStm(IfStm),
     FunctionCall(FuncCall),
 
-    Body(ClCompoundExpression),
+    Block(ClCompoundExpression),
 }
 
 impl From<ClLiteral> for ClExpression {
@@ -248,7 +248,7 @@ where
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
         choice((
-            parse_compound_expression(item.clone(), rec.clone()).map(ClExpression::Body),
+            parse_compound_expression(item.clone(), rec.clone()).map(ClExpression::Block),
             parse_function_call(rec.clone()).map(ClExpression::FunctionCall),
             parse_binary_unary_ops(rec.clone()),
             parse_if(rec.clone()).map(ClExpression::IfStm),
