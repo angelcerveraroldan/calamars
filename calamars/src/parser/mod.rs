@@ -45,14 +45,32 @@ pub enum ClItem {
     Import,
 }
 
+impl ClItem {
+    pub fn is_expression(&self) -> bool {
+        match self {
+            ClItem::Expression(cl_expression) => true,
+            _ => false,
+        }
+    }
+
+    pub fn get_exp(&self) -> &ClExpression {
+        match self {
+            ClItem::Expression(cl_expression) => cl_expression,
+            _ => panic!("Cannot get expression of non-expression type"),
+        }
+    }
+}
+
 pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
-    choice((
-        parse_cldeclaration().map(ClItem::Declaration),
-        parse_expression().map(ClItem::Expression),
-    ))
+    recursive(|item| {
+        choice((
+            parse_cldeclaration(item.clone()).map(ClItem::Declaration),
+            parse_expression(item.clone()).map(ClItem::Expression),
+        ))
+    })
 }
 
 /// Calamars Base Type Instance

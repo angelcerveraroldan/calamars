@@ -3,7 +3,9 @@ use chumsky::{
     prelude::*,
 };
 
-use crate::parser::{ClLiteral, Ident, ParserErr, TokenInput, parse_literal};
+use crate::parser::{
+    ClItem, ClLiteral, Ident, ParserErr, TokenInput, parse_cl_item, parse_literal,
+};
 use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -16,6 +18,8 @@ pub enum ClExpression {
 
     IfStm(IfStm),
     FunctionCall(FuncCall),
+
+    Body(ClCompoundExpression),
 }
 
 impl From<ClLiteral> for ClExpression {
@@ -202,7 +206,39 @@ where
         .labelled("function call")
 }
 
-pub fn parse_expression<'a, I>() -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
+/// An expression in the form
+///
+/// {
+///    (<cl_item>)*
+///    (<cl_expression>)?
+/// }
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct ClCompoundExpression {
+    items: Vec<ClItem>,
+    final_expr: Option<Box<ClExpression>>,
+}
+
+fn parse_compound_expression<'a, I>(
+    item: impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone,
+    expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
+) -> impl Parser<'a, I, ClCompoundExpression, ParserErr<'a>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    just(Token::LBrace)
+        .ignore_then(item.repeated().collect::<Vec<_>>())
+        .then_ignore(just(Token::RBrace))
+        .map(|mut items| {
+            let final_expr = items
+                .pop_if(|item| item.is_expression())
+                .map(|e| Box::new(e.get_exp().clone()));
+            ClCompoundExpression { items, final_expr }
+        })
+}
+
+pub fn parse_expression<'a, I>(
+    item: impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone + 'a,
+) -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -212,6 +248,7 @@ where
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
         choice((
+            parse_compound_expression(item.clone(), rec.clone()).map(ClExpression::Body),
             parse_function_call(rec.clone()).map(ClExpression::FunctionCall),
             parse_binary_unary_ops(rec.clone()),
             parse_if(rec.clone()).map(ClExpression::IfStm),

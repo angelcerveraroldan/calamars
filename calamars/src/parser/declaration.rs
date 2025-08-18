@@ -1,3 +1,4 @@
+use crate::parser::ClItem;
 use crate::parser::expression::parse_expression;
 use crate::parser::{
     ClType, Ident, ParserErr, TokenInput, expression::ClExpression, parse_cltype_annotation,
@@ -22,7 +23,9 @@ pub struct ClBinding {
     mutable: bool,
 }
 
-fn parse_binding<'a, I>() -> impl Parser<'a, I, ClBinding, ParserErr<'a>> + Clone
+fn parse_binding<'a, I>(
+    item: impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone + 'a,
+) -> impl Parser<'a, I, ClBinding, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -33,7 +36,7 @@ where
         .then_ignore(just(Token::Colon))
         .then(parse_cltype_annotation())
         .then_ignore(just(Token::Equal))
-        .then(parse_expression())
+        .then(parse_expression(item.clone()))
         .then_ignore(just(Token::Semicolon))
         .map(|(((mutable, vname), vtype), assigned)| ClBinding {
             vname,
@@ -66,7 +69,9 @@ where
         .delimited_by(just(Token::LParen), just(Token::RParen))
 }
 
-fn parse_func_declaration<'a, I>() -> impl Parser<'a, I, ClFuncDec, ParserErr<'a>> + Clone
+fn parse_func_declaration<'a, I>(
+    item: impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone + 'a,
+) -> impl Parser<'a, I, ClFuncDec, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -76,7 +81,7 @@ where
         .then_ignore(just(Token::Colon))
         .then(parse_cltype_annotation()) // Output type
         .then_ignore(just(Token::Equal))
-        .then(parse_expression()) // Body of the funcion
+        .then(parse_expression(item.clone())) // Body of the funcion
         .map(|(((fname, inputs), out_type), body)| ClFuncDec {
             fname,
             inputs,
@@ -86,12 +91,14 @@ where
         .labelled("function declaration")
 }
 
-pub fn parse_cldeclaration<'a, I>() -> impl Parser<'a, I, ClDeclaration, ParserErr<'a>> + Clone
+pub fn parse_cldeclaration<'a, I>(
+    item: impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone + 'a,
+) -> impl Parser<'a, I, ClDeclaration, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
     choice((
-        parse_func_declaration().map(ClDeclaration::Function),
-        parse_binding().map(ClDeclaration::Binding),
+        parse_func_declaration(item.clone()).map(ClDeclaration::Function),
+        parse_binding(item.clone()).map(ClDeclaration::Binding),
     ))
 }
