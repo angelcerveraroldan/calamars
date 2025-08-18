@@ -20,8 +20,19 @@ type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
 type Ident = String;
 
 /// A Calamars module / file
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Module {
     items: Vec<ClItem>,
+}
+
+pub fn parse_module<'a, I>() -> impl Parser<'a, I, Module, ParserErr<'a>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    parse_cl_item()
+        .repeated()
+        .collect::<Vec<_>>()
+        .map(|items| Module { items })
 }
 
 /// Any one thing in the Cl language
