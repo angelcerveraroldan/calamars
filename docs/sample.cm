@@ -76,5 +76,6 @@ import std.list (map, length, filter);
 
 val nums: List[Int] = cons(1, cons(2, cons(3, Nil)));
 
-println(length(nums));              -- 3
-println(nums |> map(n => n * 2));   -- [2, 4, 6]
+println("nums has " ++ length(nums) ++ " elements");
+nums |> length(_) |> println("nums has " ++ _ ++ " elements")
+nums |> map(_, n => n * 2)) |> println(_);
