@@ -1,9 +1,9 @@
 -- language_tour.ln
 module examples.tour;
 
-var foo: String = "foo";         -- mutable binding
-val bar: String     = "bar";     -- immutable binding
-foo = "foo!";                    -- allowed (foo is mut)
+var foo: String = "foo";   -- mutable binding
+val bar: String = "bar";   -- immutable binding
+foo = "foo!";              -- allowed (foo is mut)
 
 
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -14,7 +14,7 @@ foo = "foo!";                    -- allowed (foo is mut)
 def add(x: Int, y: Int): Int = x + y;
 
 -- Function that mutates one of its parameters
-def add_mut(x: mut Int, y: Int): () = {
+def add_mut(x: mut Int, y: Int): Unit = {
     x = x + y;
 }
 
@@ -32,7 +32,13 @@ Given $x, y in ZZ$, returns
 $ x + e^(x/y) $
 *--
 def equation_thing(x: Int, y: Int): Float =
-    x + math.exp(y * 1 / x);
+    x + exp(y * 1 / x);
+
+
+-- Later, we will have support for currying!!
+def pow(y: Int)(x: Int) = x^y
+
+def square(x: Int): Int = pow(2)
 
 --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -- Records & Structs
@@ -42,8 +48,7 @@ struct Person {
     age  : Int;
 };
 
-def print_name(p: Person): Unit =
-    println(p.name)
+def print_name(p: Person): Unit = println(p.name)
 
 val me: Person = Person { name = "Angel"; age = 21; };
 print_name(me)
@@ -71,5 +76,6 @@ import std.list (map, length, filter);
 
 val nums: List[Int] = cons(1, cons(2, cons(3, Nil)));
 
-println(length(nums));              -- 3
-println(nums |> map(n => n * 2));   -- [2, 4, 6]
+println("nums has " ++ length(nums) ++ " elements");
+nums |> length(_) |> println("nums has " ++ _ ++ " elements")
+nums |> map(_, n => n * 2)) |> println(_);
