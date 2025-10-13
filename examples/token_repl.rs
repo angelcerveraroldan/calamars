@@ -3,7 +3,7 @@ use std::io::{Write, stdin, stdout};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use calamars::parser::expression::parse_expression;
 use calamars::parser::parse_cl_item;
-use calamars::token::Token;
+use calamars::syntax::token::Token;
 use chumsky::prelude::*;
 
 fn main() {

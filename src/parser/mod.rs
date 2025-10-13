@@ -1,4 +1,4 @@
-//! Parser for Calamars
+//! The calamars parser
 
 pub mod declaration;
 pub mod expression;
@@ -6,24 +6,9 @@ pub mod expression;
 use chumsky::{input::ValueInput, prelude::*};
 
 use crate::{
-    parser::{
-        declaration::{ClDeclaration, parse_cldeclaration},
-        expression::{ClExpression, parse_expression},
-    },
-    token::Token,
+    parser::{declaration::parse_cldeclaration, expression::parse_expression},
+    syntax::{ast::*, token::Token},
 };
-
-pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
-impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
-
-type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
-type Ident = String;
-
-/// A Calamars module / file
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct Module {
-    items: Vec<ClItem>,
-}
 
 pub fn parse_module<'a, I>() -> impl Parser<'a, I, Module, ParserErr<'a>> + Clone
 where
@@ -33,16 +18,6 @@ where
         .repeated()
         .collect::<Vec<_>>()
         .map(|items| Module { items })
-}
-
-/// Any one thing in the Cl language
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum ClItem {
-    Declaration(ClDeclaration),
-    Expression(ClExpression),
-
-    // TODO:
-    Import,
 }
 
 impl ClItem {
@@ -73,17 +48,6 @@ where
     })
 }
 
-/// Calamars Base Type Instance
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum ClLiteral {
-    Integer(i64),
-    Real(f64),
-    String(String),
-    Boolean(bool),
-    Char(char),
-    Array(Vec<Self>),
-}
-
 /// Parse any base value, including nested arrays
 pub fn parse_literal<'a, I>() -> impl Parser<'a, I, ClLiteral, ParserErr<'a>> + Clone
 where
@@ -109,21 +73,6 @@ where
 
         choice((atom, arr.map(ClLiteral::Array)))
     })
-}
-
-/// Types for Calamars
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum ClType {
-    /// Basic / standard types such as Int, String, Char, Real, ...
-    /// as well as types that require many segments, such as people.Person
-    Path { segments: Vec<Ident> },
-    /// An array of some type such as [Int]
-    Array { elem_type: Box<Self> },
-    /// A function (I1, I2, I3, ...) -> (O1, O2, O3, ...)
-    Func {
-        inputs: Vec<Self>,
-        output: Vec<Self>,
-    },
 }
 
 impl ClType {

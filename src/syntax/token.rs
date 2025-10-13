@@ -156,7 +156,7 @@ impl Token {
 
 use std::fmt;
 
-use crate::parser::TokenInput;
+use crate::syntax::ast::TokenInput;
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

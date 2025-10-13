@@ -1,4 +1,4 @@
-use calamars::token::Token;
+use calamars::syntax::token::Token;
 use logos::Logos;
 use std::fs;
 

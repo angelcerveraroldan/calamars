@@ -1,2 +1,10 @@
-[workspace]
-members = ["calamars"]
+[package]
+name = "calamars"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ariadne = "0.5.1"
+chumsky = { version = "0.10.1", features = ["pratt"] }
+logos = "0.15.0"
+proptest = "1.7.0"

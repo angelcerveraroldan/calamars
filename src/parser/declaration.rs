@@ -1,27 +1,10 @@
-use crate::parser::ClItem;
 use crate::parser::expression::parse_expression;
-use crate::parser::{
-    ClType, Ident, ParserErr, TokenInput, expression::ClExpression, parse_cltype_annotation,
-};
+use crate::parser::parse_cltype_annotation;
 
-use crate::token::Token;
+use crate::syntax::ast::*;
+use crate::syntax::token::Token;
 
 use chumsky::{input::ValueInput, prelude::*};
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum ClDeclaration {
-    Binding(ClBinding),
-    Function(ClFuncDec),
-}
-
-/// Value and Variable declaration
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct ClBinding {
-    vname: Ident,
-    vtype: ClType,
-    assigned: Box<ClExpression>,
-    mutable: bool,
-}
 
 fn parse_binding<'a, I>(
     item: impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone + 'a,
@@ -38,21 +21,10 @@ where
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone()))
         .then_ignore(just(Token::Semicolon))
-        .map(|(((mutable, vname), vtype), assigned)| ClBinding {
-            vname,
-            vtype,
-            assigned: Box::new(assigned),
-            mutable,
+        .map(|(((mutable, vname), vtype), assigned)| {
+            ClBinding::new(vname, vtype, Box::new(assigned), mutable)
         })
         .labelled("val/var declaration")
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct ClFuncDec {
-    fname: Ident,
-    inputs: Vec<(Ident, ClType)>,
-    out_type: ClType,
-    body: ClExpression,
 }
 
 fn parse_func_input<'a, I>() -> impl Parser<'a, I, Vec<(Ident, ClType)>, ParserErr<'a>> + Clone
@@ -82,12 +54,7 @@ where
         .then(parse_cltype_annotation()) // Output type
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone())) // Body of the funcion
-        .map(|(((fname, inputs), out_type), body)| ClFuncDec {
-            fname,
-            inputs,
-            out_type,
-            body,
-        })
+        .map(|(((fname, inputs), out_type), body)| ClFuncDec::new(fname, inputs, out_type, body))
         .labelled("function declaration")
 }
 
