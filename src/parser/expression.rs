@@ -3,80 +3,13 @@ use chumsky::{
     prelude::*,
 };
 
-use crate::parser::{
-    ClItem, ClLiteral, Ident, ParserErr, TokenInput, parse_cl_item, parse_literal,
+use crate::syntax::ast::*;
+use crate::{
+    parser::{parse_cl_item, parse_literal},
+    syntax::token::Token,
 };
-use crate::token::Token;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum ClExpression {
-    Literal(ClLiteral),
-    Identifier(Ident),
-
-    UnaryOp(ClUnaryOp),
-    BinaryOp(ClBinaryOp),
-
-    IfStm(IfStm),
-    FunctionCall(FuncCall),
-
-    Block(ClCompoundExpression),
-}
-
-impl From<ClLiteral> for ClExpression {
-    fn from(value: ClLiteral) -> Self {
-        ClExpression::Literal(value)
-    }
-}
-
-impl From<ClBinaryOp> for ClExpression {
-    fn from(value: ClBinaryOp) -> Self {
-        ClExpression::BinaryOp(value)
-    }
-}
-
-impl From<ClUnaryOp> for ClExpression {
-    fn from(value: ClUnaryOp) -> Self {
-        ClExpression::UnaryOp(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum UnaryOperator {
-    Neg,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum BinaryOperator {
-    Add,      // +
-    Sub,      // -
-    Times,    // *
-    Pow,      // ^
-    Div,      // /
-    Concat,   // ++
-    Geq,      // >=
-    Leq,      // <=
-    EqEq,     // ==
-    NotEqual, // !=
-
-    Or,  // or
-    Xor, // xor
-    And, // and
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct ClUnaryOp {
-    operator: UnaryOperator,
-    on: Box<ClExpression>,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct ClBinaryOp {
-    operator: BinaryOperator,
-    left: Box<ClExpression>,
-    right: Box<ClExpression>,
-}
-
-/// Parse an atom, or a bracketed expression
+/// Prse an atom, or a bracketed expression
 fn parse_atom_expr_or_bracketed<'a, I>(
     expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
 ) -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
@@ -98,11 +31,7 @@ where
 macro_rules! infix_shortcut {
     ($order:expr, $from:expr, $to:expr) => {
         infix($order, just($from), |lhs, _, rhs, _| {
-            ClExpression::BinaryOp(ClBinaryOp {
-                operator: $to,
-                left: Box::new(lhs),
-                right: Box::new(rhs),
-            })
+            ClExpression::BinaryOp(ClBinaryOp::new($to, Box::new(lhs), Box::new(rhs)))
         })
     };
 }
@@ -119,10 +48,7 @@ where
     atom.pratt((
         // Not prefix
         prefix(6, just(Token::Not), |_, rhs, _| {
-            ClExpression::UnaryOp(ClUnaryOp {
-                operator: UnaryOperator::Neg,
-                on: Box::new(rhs),
-            })
+            ClExpression::UnaryOp(ClUnaryOp::new(UnaryOperator::Neg, Box::new(rhs)))
         }),
         // Infix
         infix_shortcut!(right(5), Token::Pow, BinaryOperator::Pow),
@@ -152,13 +78,6 @@ where
         .labelled("identifier")
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct IfStm {
-    predicate: Box<ClExpression>,
-    then: Box<ClExpression>,
-    otherwise: Box<ClExpression>,
-}
-
 fn parse_if<'a, I>(
     expr: impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone,
 ) -> impl Parser<'a, I, IfStm, ParserErr<'a>> + Clone
@@ -171,18 +90,8 @@ where
         .then(expr.clone())
         .then_ignore(just(Token::Else))
         .then(expr.clone())
-        .map(|((e1, e2), e3)| IfStm {
-            predicate: Box::new(e1),
-            then: Box::new(e2),
-            otherwise: Box::new(e3),
-        })
+        .map(|((e1, e2), e3)| IfStm::new(Box::new(e1), Box::new(e2), Box::new(e3)))
         .labelled("if stm")
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct FuncCall {
-    func_name: Ident,
-    params: Vec<ClExpression>,
 }
 
 fn parse_function_call<'a, I>(
@@ -202,20 +111,8 @@ where
         .then_ignore(just(Token::LParen))
         .then(expr.separated_by(just(Token::Comma)).collect())
         .then_ignore(just(Token::RParen))
-        .map(|(func_name, params)| FuncCall { func_name, params })
+        .map(|(func_name, params)| FuncCall::new(func_name, params))
         .labelled("function call")
-}
-
-/// An expression in the form
-///
-/// {
-///    (<cl_item>)*
-///    (<cl_expression>)?
-/// }
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct ClCompoundExpression {
-    items: Vec<ClItem>,
-    final_expr: Option<Box<ClExpression>>,
 }
 
 fn parse_compound_expression<'a, I>(
@@ -232,7 +129,7 @@ where
             let final_expr = items
                 .pop_if(|item| item.is_expression())
                 .map(|e| Box::new(e.get_exp().clone()));
-            ClCompoundExpression { items, final_expr }
+            ClCompoundExpression::new(items, final_expr)
         })
 }
 
