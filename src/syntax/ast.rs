@@ -46,6 +46,16 @@ pub enum ClItem {
     Import,
 }
 
+impl ClItem {
+    pub fn span(&self) -> Span {
+        match self {
+            ClItem::Declaration(cl_declaration) => cl_declaration.span(),
+            ClItem::Expression(cl_expression) => cl_expression.span(),
+            ClItem::Import => todo!("import not yet handled"),
+        }
+    }
+}
+
 /// Calamars Base Type kind and value
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClLiteralKind {
