@@ -417,4 +417,8 @@ impl ClFuncDec {
     pub fn span(&self) -> Span {
         self.span
     }
+
+    pub fn name_span(&self) -> Span {
+        self.fname.span()
+    }
 }
