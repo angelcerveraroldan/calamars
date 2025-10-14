@@ -10,7 +10,7 @@ use crate::{
         declaration::parse_cldeclaration,
         expression::{parse_expression, parse_identifier},
     },
-    syntax::{ast::*, token::Token},
+    syntax::{ast::*, span::Span, token::Token},
 };
 
 pub fn parse_module<'a, I>() -> impl Parser<'a, I, Module, ParserErr<'a>> + Clone
@@ -84,21 +84,23 @@ where
 }
 
 impl ClType {
-    pub fn new_func((from, to): (Vec<Self>, Vec<Self>)) -> Self {
+    pub fn new_func((from, to): (Vec<Self>, Vec<Self>), span: Span) -> Self {
         Self::Func {
             inputs: from,
             output: to,
+            span,
         }
     }
 
-    pub fn new_arr(t: Self) -> Self {
+    pub fn new_arr(t: Self, span: Span) -> Self {
         Self::Array {
             elem_type: Box::new(t),
+            span,
         }
     }
 
-    pub fn new_path(p: Vec<Ident>) -> Self {
-        Self::Path { segments: p }
+    pub fn new_path(p: Vec<Ident>, span: Span) -> Self {
+        Self::Path { segments: p, span }
     }
 }
 
@@ -112,11 +114,14 @@ where
     ident_p
         .clone()
         .then(just(Token::Dot).ignore_then(ident_p).repeated().collect())
-        .map(|(head, tail): (Ident, Vec<Ident>)| {
+        .map_with(|(head, tail): (Ident, Vec<Ident>), extra| {
             let mut tmp = Vec::with_capacity(tail.len() + 1);
             tmp.push(head);
             tmp.extend(tail);
-            ClType::Path { segments: tmp }
+            ClType::Path {
+                segments: tmp,
+                span: extra.span(),
+            }
         })
 }
 
@@ -131,7 +136,7 @@ where
         let array_type = rec
             .clone()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
-            .map(ClType::new_arr);
+            .map_with(|arr, extra| ClType::new_arr(arr, extra.span()));
 
         let params_many = rec
             .clone()
@@ -149,7 +154,7 @@ where
             .clone()
             .then_ignore(just(Token::Arrow))
             .then(params)
-            .map(ClType::new_func);
+            .map_with(|f, extra| ClType::new_func(f, extra.span()));
 
         function_type.or(parse_cltype_path()).or(array_type)
     })
