@@ -303,8 +303,8 @@ impl FuncCall {
 /// }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClCompoundExpression {
-    items: Vec<ClItem>,
-    final_expr: Option<Box<ClExpression>>,
+    pub items: Vec<ClItem>,
+    pub final_expr: Option<Box<ClExpression>>,
 
     span: Span,
 }
@@ -336,6 +336,13 @@ impl ClDeclaration {
         match self {
             ClDeclaration::Binding(cl_binding) => cl_binding.span(),
             ClDeclaration::Function(cl_func_dec) => cl_func_dec.span(),
+        }
+    }
+
+    pub fn name_span(&self) -> Span {
+        match self {
+            ClDeclaration::Binding(cl_binding) => cl_binding.name_span(),
+            ClDeclaration::Function(cl_func_dec) => cl_func_dec.name_span(),
         }
     }
 }

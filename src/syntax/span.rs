@@ -9,7 +9,7 @@ mod test_span {
     use crate::{
         parser::{declaration::parse_cldeclaration, parse_cl_item},
         syntax::{
-            ast::{ClDeclaration, ClExpression, ClItem, IfStm, TokenInput},
+            ast::{ClCompoundExpression, ClDeclaration, ClExpression, ClItem, IfStm, TokenInput},
             token::Token,
         },
     };
@@ -103,6 +103,52 @@ mod test_span {
             SimpleSpan {
                 start: 20,
                 end: 21,
+                context: ()
+            }
+        );
+    }
+
+    #[test]
+    pub fn block_expr() {
+        let source = "{ var x: int = 2; 2 } ";
+        let stream = stream_for(source);
+        let (out, errors) = parse_cl_item().parse(stream).into_output_errors();
+
+        assert!(out.is_some());
+        let out = out.unwrap();
+        assert_eq!(
+            out.span(),
+            SimpleSpan {
+                start: 0,
+                end: source.len() - 1,
+                context: ()
+            }
+        );
+
+        let block = match out.get_exp() {
+            ClExpression::Block(block) => block,
+            _ => panic!("This sould be a compound exp"),
+        };
+
+        let dec = match block.items[0].get_dec() {
+            ClDeclaration::Binding(cl_binding) => cl_binding,
+            ClDeclaration::Function(cl_func_dec) => panic!("This sould be a varible declaration"),
+        };
+
+        assert_eq!(
+            dec.name_span(),
+            SimpleSpan {
+                start: 6,
+                end: 7,
+                context: ()
+            }
+        );
+
+        assert_eq!(
+            dec.type_span(),
+            SimpleSpan {
+                start: 9,
+                end: 12,
                 context: ()
             }
         );

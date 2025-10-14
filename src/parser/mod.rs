@@ -37,6 +37,13 @@ impl ClItem {
             _ => panic!("Cannot get expression of non-expression type"),
         }
     }
+
+    pub fn get_dec(&self) -> &ClDeclaration {
+        match self {
+            ClItem::Declaration(cl_declaration) => cl_declaration,
+            _ => panic!("Cannot get declaration of non-declaration type"),
+        }
+    }
 }
 
 pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone
