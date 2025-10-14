@@ -8,13 +8,13 @@ pub type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
 pub type Ident = String;
 
 /// A Calamars module / file
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub(crate) items: Vec<ClItem>,
 }
 
 /// Any one thing in the Cl language
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClItem {
     Declaration(ClDeclaration),
     Expression(ClExpression),
@@ -24,7 +24,7 @@ pub enum ClItem {
 }
 
 /// Calamars Base Type Instance
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClLiteral {
     Integer(i64),
     Real(f64),
@@ -41,7 +41,7 @@ impl From<ClLiteral> for ClExpression {
 }
 
 /// Types for Calamars
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClType {
     /// Basic / standard types such as Int, String, Char, Real, ...
     /// as well as types that require many segments, such as people.Person
@@ -57,7 +57,7 @@ pub enum ClType {
 
 // Expressions
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClExpression {
     Literal(ClLiteral),
     Identifier(Ident),
@@ -71,12 +71,12 @@ pub enum ClExpression {
     Block(ClCompoundExpression),
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOperator {
     Neg,
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOperator {
     Add,      // +
     Sub,      // -
@@ -94,7 +94,7 @@ pub enum BinaryOperator {
     And, // and
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClUnaryOp {
     operator: UnaryOperator,
     on: Box<ClExpression>,
@@ -112,7 +112,7 @@ impl ClUnaryOp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClBinaryOp {
     operator: BinaryOperator,
     left: Box<ClExpression>,
@@ -139,7 +139,7 @@ impl ClBinaryOp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IfStm {
     predicate: Box<ClExpression>,
     then: Box<ClExpression>,
@@ -160,7 +160,7 @@ impl IfStm {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FuncCall {
     func_name: Ident,
     params: Vec<ClExpression>,
@@ -178,7 +178,7 @@ impl FuncCall {
 ///    (<cl_item>)*
 ///    (<cl_expression>)?
 /// }
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClCompoundExpression {
     items: Vec<ClItem>,
     final_expr: Option<Box<ClExpression>>,
@@ -192,14 +192,14 @@ impl ClCompoundExpression {
 
 // DECLARATIONS
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClDeclaration {
     Binding(ClBinding),
     Function(ClFuncDec),
 }
 
 /// Value and Variable declaration
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClBinding {
     vname: Ident,
     vtype: ClType,
@@ -218,7 +218,7 @@ impl ClBinding {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClFuncDec {
     fname: Ident,
     inputs: Vec<(Ident, ClType)>,
