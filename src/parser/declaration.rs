@@ -1,4 +1,4 @@
-use crate::parser::expression::parse_expression;
+use crate::parser::expression::{parse_expression, parse_identifier};
 use crate::parser::parse_cltype_annotation;
 
 use crate::syntax::ast::*;
@@ -15,7 +15,7 @@ where
     let var_or_val = (just(Token::Var).map(|_| true)).or(just(Token::Val).map(|_| false));
 
     var_or_val
-        .then(select! {Token::Ident(valname) => valname})
+        .then(parse_identifier())
         .then_ignore(just(Token::Colon))
         .then(parse_cltype_annotation())
         .then_ignore(just(Token::Equal))
@@ -31,7 +31,7 @@ fn parse_func_input<'a, I>() -> impl Parser<'a, I, Vec<(Ident, ClType)>, ParserE
 where
     I: TokenInput<'a>,
 {
-    let name_type = select! { Token::Ident(s) => s }
+    let name_type = parse_identifier()
         .then_ignore(just(Token::Colon))
         .then(parse_cltype_annotation());
 
@@ -48,7 +48,7 @@ where
     I: TokenInput<'a>,
 {
     just(Token::Def)
-        .ignore_then(select! { Token::Ident(s) => s}) // Function name
+        .ignore_then(parse_identifier()) // Function name
         .then(parse_func_input()) // Input types, and names
         .then_ignore(just(Token::Colon))
         .then(parse_cltype_annotation()) // Output type

@@ -19,7 +19,7 @@ where
     let literal = parse_literal()
         .map(ClExpression::Literal)
         .labelled("literal");
-    let ident = select! { Token::Ident(s) => s }
+    let ident = parse_identifier()
         .map(ClExpression::Identifier)
         .labelled("identifier");
     let bracket_expr = expr
@@ -69,12 +69,12 @@ where
     .labelled("Binary/Unary operation")
 }
 
-fn parse_identifier<'a, I>() -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
+pub fn parse_identifier<'a, I>() -> impl Parser<'a, I, Ident, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
     select! { Token::Ident(s) => s }
-        .map(ClExpression::Identifier)
+        .map_with(|ident, extra| Ident::new(ident, extra.span()))
         .labelled("identifier")
 }
 
@@ -107,11 +107,11 @@ where
         .delimited_by(just(Token::LParen), just(Token::RParen))
         .labelled("function arguments");
 
-    select! { Token::Ident(s) => s }
+    parse_identifier()
         .then_ignore(just(Token::LParen))
         .then(expr.separated_by(just(Token::Comma)).collect())
         .then_ignore(just(Token::RParen))
-        .map(|(func_name, params)| FuncCall::new(func_name, params))
+        .map(|(func_ident, params)| FuncCall::new(func_ident, params))
         .labelled("function call")
 }
 
@@ -150,7 +150,7 @@ where
             parse_binary_unary_ops(rec.clone()),
             parse_if(rec.clone()).map(ClExpression::IfStm),
             parse_literal().map(ClExpression::from),
-            parse_identifier(),
+            parse_identifier().map(ClExpression::Identifier),
             bracketed_expr,
         ))
     })

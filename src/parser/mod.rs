@@ -6,7 +6,10 @@ pub mod expression;
 use chumsky::{input::ValueInput, prelude::*};
 
 use crate::{
-    parser::{declaration::parse_cldeclaration, expression::parse_expression},
+    parser::{
+        declaration::parse_cldeclaration,
+        expression::{parse_expression, parse_identifier},
+    },
     syntax::{ast::*, token::Token},
 };
 
@@ -99,12 +102,12 @@ where
     I: TokenInput<'a>,
 {
     // Parse just an ident
-    let ident_p = select! { Token::Ident(x)  => x };
+    let ident_p = parse_identifier();
 
     ident_p
         .clone()
         .then(just(Token::Dot).ignore_then(ident_p).repeated().collect())
-        .map(|(head, tail): (String, Vec<String>)| {
+        .map(|(head, tail): (Ident, Vec<Ident>)| {
             let mut tmp = Vec::with_capacity(tail.len() + 1);
             tmp.push(head);
             tmp.extend(tail);

@@ -1,11 +1,30 @@
-use crate::syntax::token::Token;
-use chumsky::{error::Rich, extra, input::ValueInput, span::SimpleSpan};
+use crate::syntax::{Span, token::Token};
+use chumsky::{
+    error::Rich,
+    extra::{self, Full},
+    input::{MapExtra, ValueInput},
+    span::SimpleSpan,
+};
 
 pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 
 pub type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
-pub type Ident = String;
+
+/// An identifier
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ident {
+    /// The identifier
+    ident: String,
+    /// Where it is found in the source
+    span: Span,
+}
+
+impl Ident {
+    pub fn new(ident: String, span: Span) -> Self {
+        Self { ident, span }
+    }
+}
 
 /// A Calamars module / file
 #[derive(Debug, Clone, PartialEq)]
