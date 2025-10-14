@@ -113,9 +113,7 @@ where
         .labelled("function arguments");
 
     parse_identifier()
-        .then_ignore(just(Token::LParen))
-        .then(expr.separated_by(just(Token::Comma)).collect())
-        .then_ignore(just(Token::RParen))
+        .then(parse_args)
         .map(|(func_ident, params)| FuncCall::new(func_ident, params))
         .labelled("function call")
 }
