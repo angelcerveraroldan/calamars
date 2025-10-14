@@ -17,7 +17,7 @@ pub struct Ident {
     /// The identifier
     ident: String,
     /// Where it is found in the source
-    span: Span,
+    pub span: Span,
 }
 
 impl Ident {
@@ -57,7 +57,7 @@ pub enum ClLiteralKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClLiteral {
     kind: ClLiteralKind,
-    span: Span,
+    pub span: Span,
 }
 
 impl ClLiteral {
@@ -66,9 +66,9 @@ impl ClLiteral {
     }
 }
 
-impl From<ClLiteral> for ClExpression {
+impl From<ClLiteral> for ClExpressionKind {
     fn from(value: ClLiteral) -> Self {
-        ClExpression::Literal(value)
+        ClExpressionKind::Literal(value)
     }
 }
 
@@ -87,10 +87,9 @@ pub enum ClType {
     },
 }
 
-// Expressions
-
+/// All types of possible expressions
 #[derive(Debug, Clone, PartialEq)]
-pub enum ClExpression {
+pub enum ClExpressionKind {
     Literal(ClLiteral),
     Identifier(Ident),
 
@@ -101,6 +100,33 @@ pub enum ClExpression {
     FunctionCall(FuncCall),
 
     Block(ClCompoundExpression),
+}
+
+/// An expression along with its span
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClExpression {
+    kind: ClExpressionKind,
+    span: Span,
+}
+
+impl ClExpression {
+    pub fn new(kind: ClExpressionKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    pub fn from_expk(kind: ClExpressionKind) -> Option<Self> {
+        match kind.clone() {
+            ClExpressionKind::Literal(lit) => {
+                let span = lit.span;
+                Some(Self::new(kind, span))
+            }
+            ClExpressionKind::Identifier(id) => {
+                let span = id.span;
+                Some(Self::new(kind, span))
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -132,9 +158,9 @@ pub struct ClUnaryOp {
     on: Box<ClExpression>,
 }
 
-impl From<ClUnaryOp> for ClExpression {
+impl From<ClUnaryOp> for ClExpressionKind {
     fn from(value: ClUnaryOp) -> Self {
-        ClExpression::UnaryOp(value)
+        ClExpressionKind::UnaryOp(value)
     }
 }
 
@@ -151,9 +177,9 @@ pub struct ClBinaryOp {
     right: Box<ClExpression>,
 }
 
-impl From<ClBinaryOp> for ClExpression {
+impl From<ClBinaryOp> for ClExpressionKind {
     fn from(value: ClBinaryOp) -> Self {
-        ClExpression::BinaryOp(value)
+        ClExpressionKind::BinaryOp(value)
     }
 }
 
