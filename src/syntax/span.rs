@@ -9,7 +9,7 @@ mod test_span {
     use crate::{
         parser::{declaration::parse_cldeclaration, parse_cl_item},
         syntax::{
-            ast::{ClDeclaration, ClExpression, ClExpressionKind, ClItem, IfStm, TokenInput},
+            ast::{ClDeclaration, ClExpression, ClItem, IfStm, TokenInput},
             token::Token,
         },
     };
@@ -32,13 +32,31 @@ mod test_span {
 
         // Test the span of the name
         assert_eq!(
-            dec.vname.span,
+            dec.name_span(),
             SimpleSpan {
                 start: 4,
                 end: 8,
                 context: ()
             }
         );
+
+        assert_eq!(
+            dec.span(),
+            SimpleSpan {
+                start: 0,
+                end: source.len(),
+                context: ()
+            }
+        );
+
+        assert_eq!(
+            dec.type_span(),
+            SimpleSpan {
+                start: 10,
+                end: 13,
+                context: ()
+            }
+        )
     }
 
     #[test]
@@ -48,16 +66,13 @@ mod test_span {
         let (out, errors) = parse_cl_item().parse(stream).into_output_errors();
 
         assert!(out.is_some());
-        let (ifstm, exp_span) = match out.unwrap() {
-            ClItem::Expression(ClExpression {
-                kind: ClExpressionKind::IfStm(i),
-                span,
-            }) => (i, span),
+        let ifstm = match out.unwrap() {
+            ClItem::Expression(ClExpression::IfStm(i)) => i,
             _ => panic!("This shuold be an if statment"),
         };
 
         assert_eq!(
-            exp_span,
+            ifstm.span(),
             SimpleSpan {
                 start: 0,
                 end: source.len(),
