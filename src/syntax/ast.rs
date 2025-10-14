@@ -105,8 +105,8 @@ pub enum ClExpressionKind {
 /// An expression along with its span
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClExpression {
-    kind: ClExpressionKind,
-    span: Span,
+    pub kind: ClExpressionKind,
+    pub span: Span,
 }
 
 impl ClExpression {
@@ -216,6 +216,18 @@ impl IfStm {
             otherwise,
         }
     }
+
+    pub fn pred_span(&self) -> SimpleSpan {
+        self.predicate.span
+    }
+
+    pub fn then_span(&self) -> SimpleSpan {
+        self.then.span
+    }
+
+    pub fn else_span(&self) -> SimpleSpan {
+        self.otherwise.span
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -259,10 +271,10 @@ pub enum ClDeclaration {
 /// Value and Variable declaration
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClBinding {
-    vname: Ident,
-    vtype: ClType,
-    assigned: Box<ClExpression>,
-    mutable: bool,
+    pub vname: Ident,
+    pub vtype: ClType,
+    pub assigned: Box<ClExpression>,
+    pub mutable: bool,
 }
 
 impl ClBinding {
