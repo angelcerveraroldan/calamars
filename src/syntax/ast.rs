@@ -17,12 +17,16 @@ pub struct Ident {
     /// The identifier
     ident: String,
     /// Where it is found in the source
-    pub span: Span,
+    span: Span,
 }
 
 impl Ident {
     pub fn new(ident: String, span: Span) -> Self {
         Self { ident, span }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -57,18 +61,22 @@ pub enum ClLiteralKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClLiteral {
     kind: ClLiteralKind,
-    pub span: Span,
+    span: Span,
 }
 
 impl ClLiteral {
     pub fn new(kind: ClLiteralKind, span: Span) -> Self {
         Self { kind, span }
     }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
 }
 
-impl From<ClLiteral> for ClExpressionKind {
+impl From<ClLiteral> for ClExpression {
     fn from(value: ClLiteral) -> Self {
-        ClExpressionKind::Literal(value)
+        ClExpression::Literal(value)
     }
 }
 
@@ -77,19 +85,34 @@ impl From<ClLiteral> for ClExpressionKind {
 pub enum ClType {
     /// Basic / standard types such as Int, String, Char, Real, ...
     /// as well as types that require many segments, such as people.Person
-    Path { segments: Vec<Ident> },
+    Path { segments: Vec<Ident>, span: Span },
     /// An array of some type such as [Int]
-    Array { elem_type: Box<Self> },
+    Array { elem_type: Box<Self>, span: Span },
     /// A function (I1, I2, I3, ...) -> (O1, O2, O3, ...)
     Func {
         inputs: Vec<Self>,
         output: Vec<Self>,
+        span: Span,
     },
+}
+
+impl ClType {
+    pub fn span(&self) -> Span {
+        *match self {
+            ClType::Path { segments, span } => span,
+            ClType::Array { elem_type, span } => span,
+            ClType::Func {
+                inputs,
+                output,
+                span,
+            } => span,
+        }
+    }
 }
 
 /// All types of possible expressions
 #[derive(Debug, Clone, PartialEq)]
-pub enum ClExpressionKind {
+pub enum ClExpression {
     Literal(ClLiteral),
     Identifier(Ident),
 
@@ -102,29 +125,16 @@ pub enum ClExpressionKind {
     Block(ClCompoundExpression),
 }
 
-/// An expression along with its span
-#[derive(Debug, Clone, PartialEq)]
-pub struct ClExpression {
-    pub kind: ClExpressionKind,
-    pub span: Span,
-}
-
 impl ClExpression {
-    pub fn new(kind: ClExpressionKind, span: Span) -> Self {
-        Self { kind, span }
-    }
-
-    pub fn from_expk(kind: ClExpressionKind) -> Option<Self> {
-        match kind.clone() {
-            ClExpressionKind::Literal(lit) => {
-                let span = lit.span;
-                Some(Self::new(kind, span))
-            }
-            ClExpressionKind::Identifier(id) => {
-                let span = id.span;
-                Some(Self::new(kind, span))
-            }
-            _ => None,
+    pub fn span(&self) -> Span {
+        match self {
+            ClExpression::Literal(cl_literal) => cl_literal.span(),
+            ClExpression::Identifier(ident) => ident.span(),
+            ClExpression::UnaryOp(cl_unary_op) => cl_unary_op.span(),
+            ClExpression::BinaryOp(cl_binary_op) => cl_binary_op.span(),
+            ClExpression::IfStm(if_stm) => if_stm.span(),
+            ClExpression::FunctionCall(func_call) => func_call.span(),
+            ClExpression::Block(cl_compound_expression) => cl_compound_expression.span(),
         }
     }
 }
@@ -156,17 +166,22 @@ pub enum BinaryOperator {
 pub struct ClUnaryOp {
     operator: UnaryOperator,
     on: Box<ClExpression>,
+    span: Span,
 }
 
-impl From<ClUnaryOp> for ClExpressionKind {
+impl From<ClUnaryOp> for ClExpression {
     fn from(value: ClUnaryOp) -> Self {
-        ClExpressionKind::UnaryOp(value)
+        ClExpression::UnaryOp(value)
     }
 }
 
 impl ClUnaryOp {
-    pub fn new(operator: UnaryOperator, on: Box<ClExpression>) -> Self {
-        Self { operator, on }
+    pub fn new(operator: UnaryOperator, on: Box<ClExpression>, span: Span) -> Self {
+        Self { operator, on, span }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -175,11 +190,12 @@ pub struct ClBinaryOp {
     operator: BinaryOperator,
     left: Box<ClExpression>,
     right: Box<ClExpression>,
+    span: Span,
 }
 
-impl From<ClBinaryOp> for ClExpressionKind {
+impl From<ClBinaryOp> for ClExpression {
     fn from(value: ClBinaryOp) -> Self {
-        ClExpressionKind::BinaryOp(value)
+        ClExpression::BinaryOp(value)
     }
 }
 
@@ -188,12 +204,18 @@ impl ClBinaryOp {
         operator: BinaryOperator,
         left: Box<ClExpression>,
         right: Box<ClExpression>,
+        span: Span,
     ) -> Self {
         Self {
             operator,
             left,
             right,
+            span,
         }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -202,6 +224,8 @@ pub struct IfStm {
     predicate: Box<ClExpression>,
     then: Box<ClExpression>,
     otherwise: Box<ClExpression>,
+
+    span: Span,
 }
 
 impl IfStm {
@@ -209,24 +233,30 @@ impl IfStm {
         predicate: Box<ClExpression>,
         then: Box<ClExpression>,
         otherwise: Box<ClExpression>,
+        span: Span,
     ) -> Self {
         Self {
             predicate,
             then,
             otherwise,
+            span,
         }
     }
 
+    pub fn span(&self) -> SimpleSpan {
+        self.span
+    }
+
     pub fn pred_span(&self) -> SimpleSpan {
-        self.predicate.span
+        self.predicate.span()
     }
 
     pub fn then_span(&self) -> SimpleSpan {
-        self.then.span
+        self.then.span()
     }
 
     pub fn else_span(&self) -> SimpleSpan {
-        self.otherwise.span
+        self.otherwise.span()
     }
 }
 
@@ -234,11 +264,24 @@ impl IfStm {
 pub struct FuncCall {
     func_name: Ident,
     params: Vec<ClExpression>,
+    span: Span,
 }
 
 impl FuncCall {
-    pub fn new(func_name: Ident, params: Vec<ClExpression>) -> Self {
-        Self { func_name, params }
+    pub fn new(func_name: Ident, params: Vec<ClExpression>, span: Span) -> Self {
+        Self {
+            func_name,
+            params,
+            span,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
+
+    pub fn name_span(&self) -> Span {
+        self.func_name.span()
     }
 }
 
@@ -252,11 +295,21 @@ impl FuncCall {
 pub struct ClCompoundExpression {
     items: Vec<ClItem>,
     final_expr: Option<Box<ClExpression>>,
+
+    span: Span,
 }
 
 impl ClCompoundExpression {
-    pub fn new(items: Vec<ClItem>, final_expr: Option<Box<ClExpression>>) -> Self {
-        Self { items, final_expr }
+    pub fn new(items: Vec<ClItem>, final_expr: Option<Box<ClExpression>>, span: Span) -> Self {
+        Self {
+            items,
+            final_expr,
+            span,
+        }
+    }
+
+    pub fn span(&self) -> SimpleSpan {
+        self.span
     }
 }
 
@@ -268,6 +321,15 @@ pub enum ClDeclaration {
     Function(ClFuncDec),
 }
 
+impl ClDeclaration {
+    pub fn span(&self) -> Span {
+        match self {
+            ClDeclaration::Binding(cl_binding) => cl_binding.span(),
+            ClDeclaration::Function(cl_func_dec) => cl_func_dec.span(),
+        }
+    }
+}
+
 /// Value and Variable declaration
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClBinding {
@@ -275,16 +337,37 @@ pub struct ClBinding {
     pub vtype: ClType,
     pub assigned: Box<ClExpression>,
     pub mutable: bool,
+
+    span: Span,
 }
 
 impl ClBinding {
-    pub fn new(vname: Ident, vtype: ClType, assigned: Box<ClExpression>, mutable: bool) -> Self {
+    pub fn new(
+        vname: Ident,
+        vtype: ClType,
+        assigned: Box<ClExpression>,
+        mutable: bool,
+        span: Span,
+    ) -> Self {
         Self {
             vname,
             vtype,
             assigned,
             mutable,
+            span,
         }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
+
+    pub fn name_span(&self) -> Span {
+        self.vname.span()
+    }
+
+    pub fn type_span(&self) -> Span {
+        self.vtype.span()
     }
 }
 
@@ -294,6 +377,7 @@ pub struct ClFuncDec {
     inputs: Vec<(Ident, ClType)>,
     out_type: ClType,
     body: ClExpression,
+    span: Span,
 }
 
 impl ClFuncDec {
@@ -302,12 +386,18 @@ impl ClFuncDec {
         inputs: Vec<(Ident, ClType)>,
         out_type: ClType,
         body: ClExpression,
+        span: Span,
     ) -> Self {
         Self {
             fname,
             inputs,
             out_type,
             body,
+            span,
         }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
     }
 }

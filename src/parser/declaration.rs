@@ -21,8 +21,8 @@ where
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone()))
         .then_ignore(just(Token::Semicolon))
-        .map(|(((mutable, vname), vtype), assigned)| {
-            ClBinding::new(vname, vtype, Box::new(assigned), mutable)
+        .map_with(|(((mutable, vname), vtype), assigned), extra| {
+            ClBinding::new(vname, vtype, Box::new(assigned), mutable, extra.span())
         })
         .labelled("val/var declaration")
 }
@@ -54,7 +54,9 @@ where
         .then(parse_cltype_annotation()) // Output type
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone())) // Body of the funcion
-        .map(|(((fname, inputs), out_type), body)| ClFuncDec::new(fname, inputs, out_type, body))
+        .map_with(|(((fname, inputs), out_type), body), extra| {
+            ClFuncDec::new(fname, inputs, out_type, body, extra.span())
+        })
         .labelled("function declaration")
 }
 

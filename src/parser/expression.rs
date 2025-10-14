@@ -17,12 +17,10 @@ where
     I: TokenInput<'a>,
 {
     let literal = parse_literal()
-        .map(ClExpressionKind::Literal)
-        .map(|l| ClExpression::from_expk(l).unwrap())
+        .map(ClExpression::Literal)
         .labelled("literal");
     let ident = parse_identifier()
-        .map(ClExpressionKind::Identifier)
-        .map(|l| ClExpression::from_expk(l).unwrap())
+        .map(ClExpression::Identifier)
         .labelled("identifier");
     let bracket_expr = expr
         .delimited_by(just(Token::LParen), just(Token::RParen))
@@ -33,9 +31,12 @@ where
 macro_rules! infix_shortcut {
     ($order:expr, $from:expr, $to:expr) => {
         infix($order, just($from), |lhs, _, rhs, extra| {
-            let expk =
-                ClExpressionKind::BinaryOp(ClBinaryOp::new($to, Box::new(lhs), Box::new(rhs)));
-            ClExpression::new(expk, extra.span())
+            ClExpression::BinaryOp(ClBinaryOp::new(
+                $to,
+                Box::new(lhs),
+                Box::new(rhs),
+                extra.span(),
+            ))
         })
     };
 }
@@ -52,8 +53,11 @@ where
     atom.pratt((
         // Not prefix
         prefix(6, just(Token::Not), |_, rhs, extra| {
-            let expk = ClExpressionKind::UnaryOp(ClUnaryOp::new(UnaryOperator::Neg, Box::new(rhs)));
-            ClExpression::new(expk, extra.span())
+            ClExpression::UnaryOp(ClUnaryOp::new(
+                UnaryOperator::Neg,
+                Box::new(rhs),
+                extra.span(),
+            ))
         }),
         // Infix
         infix_shortcut!(right(5), Token::Pow, BinaryOperator::Pow),
@@ -95,7 +99,9 @@ where
         .then(expr.clone())
         .then_ignore(just(Token::Else))
         .then(expr.clone())
-        .map(|((e1, e2), e3)| IfStm::new(Box::new(e1), Box::new(e2), Box::new(e3)))
+        .map_with(|((e1, e2), e3), extra| {
+            IfStm::new(Box::new(e1), Box::new(e2), Box::new(e3), extra.span())
+        })
         .labelled("if stm")
 }
 
@@ -114,7 +120,7 @@ where
 
     parse_identifier()
         .then(parse_args)
-        .map(|(func_ident, params)| FuncCall::new(func_ident, params))
+        .map_with(|(func_ident, params), extra| FuncCall::new(func_ident, params, extra.span()))
         .labelled("function call")
 }
 
@@ -128,11 +134,11 @@ where
     just(Token::LBrace)
         .ignore_then(item.repeated().collect::<Vec<_>>())
         .then_ignore(just(Token::RBrace))
-        .map(|mut items| {
+        .map_with(|mut items, extra| {
             let final_expr = items
                 .pop_if(|item| item.is_expression())
                 .map(|e| Box::new(e.get_exp().clone()));
-            ClCompoundExpression::new(items, final_expr)
+            ClCompoundExpression::new(items, final_expr, extra.span())
         })
 }
 
@@ -148,20 +154,12 @@ where
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
         choice((
-            parse_compound_expression(item.clone(), rec.clone()).map_with(|comp, extra| {
-                ClExpression::new(ClExpressionKind::Block(comp), extra.span())
-            }),
-            parse_function_call(rec.clone()).map_with(|i, extra| {
-                ClExpression::new(ClExpressionKind::FunctionCall(i), extra.span())
-            }),
+            parse_compound_expression(item.clone(), rec.clone()).map(ClExpression::Block),
+            parse_function_call(rec.clone()).map(ClExpression::FunctionCall),
             parse_binary_unary_ops(rec.clone()),
-            parse_if(rec.clone())
-                .map_with(|i, extra| ClExpression::new(ClExpressionKind::IfStm(i), extra.span())),
-            parse_literal()
-                .map_with(|i, extra| ClExpression::new(ClExpressionKind::Literal(i), extra.span())),
-            parse_identifier().map_with(|i, extra| {
-                ClExpression::new(ClExpressionKind::Identifier(i), extra.span())
-            }),
+            parse_if(rec.clone()).map(ClExpression::IfStm),
+            parse_literal().map(ClExpression::Literal),
+            parse_identifier().map(ClExpression::Identifier),
             bracketed_expr,
         ))
     })
