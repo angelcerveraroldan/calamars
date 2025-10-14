@@ -19,7 +19,7 @@ where
     let literal = parse_literal()
         .map(ClExpression::Literal)
         .labelled("literal");
-    let ident = select! { Token::Ident(s) => s }
+    let ident = parse_identifier()
         .map(ClExpression::Identifier)
         .labelled("identifier");
     let bracket_expr = expr
@@ -30,8 +30,13 @@ where
 
 macro_rules! infix_shortcut {
     ($order:expr, $from:expr, $to:expr) => {
-        infix($order, just($from), |lhs, _, rhs, _| {
-            ClExpression::BinaryOp(ClBinaryOp::new($to, Box::new(lhs), Box::new(rhs)))
+        infix($order, just($from), |lhs, _, rhs, extra| {
+            ClExpression::BinaryOp(ClBinaryOp::new(
+                $to,
+                Box::new(lhs),
+                Box::new(rhs),
+                extra.span(),
+            ))
         })
     };
 }
@@ -47,8 +52,12 @@ where
 
     atom.pratt((
         // Not prefix
-        prefix(6, just(Token::Not), |_, rhs, _| {
-            ClExpression::UnaryOp(ClUnaryOp::new(UnaryOperator::Neg, Box::new(rhs)))
+        prefix(6, just(Token::Not), |_, rhs, extra| {
+            ClExpression::UnaryOp(ClUnaryOp::new(
+                UnaryOperator::Neg,
+                Box::new(rhs),
+                extra.span(),
+            ))
         }),
         // Infix
         infix_shortcut!(right(5), Token::Pow, BinaryOperator::Pow),
@@ -69,12 +78,12 @@ where
     .labelled("Binary/Unary operation")
 }
 
-fn parse_identifier<'a, I>() -> impl Parser<'a, I, ClExpression, ParserErr<'a>> + Clone
+pub fn parse_identifier<'a, I>() -> impl Parser<'a, I, Ident, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
     select! { Token::Ident(s) => s }
-        .map(ClExpression::Identifier)
+        .map_with(|ident, extra| Ident::new(ident, extra.span()))
         .labelled("identifier")
 }
 
@@ -90,7 +99,9 @@ where
         .then(expr.clone())
         .then_ignore(just(Token::Else))
         .then(expr.clone())
-        .map(|((e1, e2), e3)| IfStm::new(Box::new(e1), Box::new(e2), Box::new(e3)))
+        .map_with(|((e1, e2), e3), extra| {
+            IfStm::new(Box::new(e1), Box::new(e2), Box::new(e3), extra.span())
+        })
         .labelled("if stm")
 }
 
@@ -107,11 +118,9 @@ where
         .delimited_by(just(Token::LParen), just(Token::RParen))
         .labelled("function arguments");
 
-    select! { Token::Ident(s) => s }
-        .then_ignore(just(Token::LParen))
-        .then(expr.separated_by(just(Token::Comma)).collect())
-        .then_ignore(just(Token::RParen))
-        .map(|(func_name, params)| FuncCall::new(func_name, params))
+    parse_identifier()
+        .then(parse_args)
+        .map_with(|(func_ident, params), extra| FuncCall::new(func_ident, params, extra.span()))
         .labelled("function call")
 }
 
@@ -125,11 +134,11 @@ where
     just(Token::LBrace)
         .ignore_then(item.repeated().collect::<Vec<_>>())
         .then_ignore(just(Token::RBrace))
-        .map(|mut items| {
+        .map_with(|mut items, extra| {
             let final_expr = items
                 .pop_if(|item| item.is_expression())
                 .map(|e| Box::new(e.get_exp().clone()));
-            ClCompoundExpression::new(items, final_expr)
+            ClCompoundExpression::new(items, final_expr, extra.span())
         })
 }
 
@@ -149,8 +158,8 @@ where
             parse_function_call(rec.clone()).map(ClExpression::FunctionCall),
             parse_binary_unary_ops(rec.clone()),
             parse_if(rec.clone()).map(ClExpression::IfStm),
-            parse_literal().map(ClExpression::from),
-            parse_identifier(),
+            parse_literal().map(ClExpression::Literal),
+            parse_identifier().map(ClExpression::Identifier),
             bracketed_expr,
         ))
     })

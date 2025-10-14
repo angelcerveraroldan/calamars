@@ -6,8 +6,11 @@ pub mod expression;
 use chumsky::{input::ValueInput, prelude::*};
 
 use crate::{
-    parser::{declaration::parse_cldeclaration, expression::parse_expression},
-    syntax::{ast::*, token::Token},
+    parser::{
+        declaration::parse_cldeclaration,
+        expression::{parse_expression, parse_identifier},
+    },
+    syntax::{ast::*, span::Span, token::Token},
 };
 
 pub fn parse_module<'a, I>() -> impl Parser<'a, I, Module, ParserErr<'a>> + Clone
@@ -34,6 +37,13 @@ impl ClItem {
             _ => panic!("Cannot get expression of non-expression type"),
         }
     }
+
+    pub fn get_dec(&self) -> &ClDeclaration {
+        match self {
+            ClItem::Declaration(cl_declaration) => cl_declaration,
+            _ => panic!("Cannot get declaration of non-declaration type"),
+        }
+    }
 }
 
 pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone
@@ -55,13 +65,14 @@ where
 {
     recursive(|value| {
         let atom = select! {
-            Token::True      => ClLiteral::Boolean(true),
-            Token::False     => ClLiteral::Boolean(false),
-            Token::Int(i)    => ClLiteral::Integer(i),
-            Token::Float(f)  => ClLiteral::Real(f),
-            Token::String(s) => ClLiteral::String(s),
-            Token::Char(c)   => ClLiteral::Char(c),
+            Token::True      => ClLiteralKind::Boolean(true),
+            Token::False     => ClLiteralKind::Boolean(false),
+            Token::Int(i)    => ClLiteralKind::Integer(i),
+            Token::Float(f)  => ClLiteralKind::Real(f),
+            Token::String(s) => ClLiteralKind::String(s),
+            Token::Char(c)   => ClLiteralKind::Char(c),
         }
+        .map_with(|kind, extra| ClLiteral::new(kind, extra.span()))
         .labelled("literal");
 
         let arr = value
@@ -69,28 +80,34 @@ where
             .allow_trailing()
             .collect::<Vec<_>>()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
+            .map_with(|arr, extra| {
+                let cl_lkind = ClLiteralKind::Array(arr);
+                ClLiteral::new(cl_lkind, extra.span())
+            })
             .labelled("array");
 
-        choice((atom, arr.map(ClLiteral::Array)))
+        choice((atom, arr))
     })
 }
 
 impl ClType {
-    pub fn new_func((from, to): (Vec<Self>, Vec<Self>)) -> Self {
+    pub fn new_func((from, to): (Vec<Self>, Vec<Self>), span: Span) -> Self {
         Self::Func {
             inputs: from,
             output: to,
+            span,
         }
     }
 
-    pub fn new_arr(t: Self) -> Self {
+    pub fn new_arr(t: Self, span: Span) -> Self {
         Self::Array {
             elem_type: Box::new(t),
+            span,
         }
     }
 
-    pub fn new_path(p: Vec<Ident>) -> Self {
-        Self::Path { segments: p }
+    pub fn new_path(p: Vec<Ident>, span: Span) -> Self {
+        Self::Path { segments: p, span }
     }
 }
 
@@ -99,16 +116,19 @@ where
     I: TokenInput<'a>,
 {
     // Parse just an ident
-    let ident_p = select! { Token::Ident(x)  => x };
+    let ident_p = parse_identifier();
 
     ident_p
         .clone()
         .then(just(Token::Dot).ignore_then(ident_p).repeated().collect())
-        .map(|(head, tail): (String, Vec<String>)| {
+        .map_with(|(head, tail): (Ident, Vec<Ident>), extra| {
             let mut tmp = Vec::with_capacity(tail.len() + 1);
             tmp.push(head);
             tmp.extend(tail);
-            ClType::Path { segments: tmp }
+            ClType::Path {
+                segments: tmp,
+                span: extra.span(),
+            }
         })
 }
 
@@ -123,7 +143,7 @@ where
         let array_type = rec
             .clone()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
-            .map(ClType::new_arr);
+            .map_with(|arr, extra| ClType::new_arr(arr, extra.span()));
 
         let params_many = rec
             .clone()
@@ -141,7 +161,7 @@ where
             .clone()
             .then_ignore(just(Token::Arrow))
             .then(params)
-            .map(ClType::new_func);
+            .map_with(|f, extra| ClType::new_func(f, extra.span()));
 
         function_type.or(parse_cltype_path()).or(array_type)
     })
