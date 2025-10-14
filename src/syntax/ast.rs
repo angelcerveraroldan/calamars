@@ -1,4 +1,4 @@
-use crate::syntax::{Span, token::Token};
+use crate::syntax::{span::Span, token::Token};
 use chumsky::{
     error::Rich,
     extra::{self, Full},
@@ -42,15 +42,28 @@ pub enum ClItem {
     Import,
 }
 
-/// Calamars Base Type Instance
+/// Calamars Base Type kind and value
 #[derive(Debug, Clone, PartialEq)]
-pub enum ClLiteral {
+pub enum ClLiteralKind {
     Integer(i64),
     Real(f64),
     String(String),
     Boolean(bool),
     Char(char),
-    Array(Vec<Self>),
+    Array(Vec<ClLiteral>),
+}
+
+/// Calamars Base Type, along with its span in the source
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClLiteral {
+    kind: ClLiteralKind,
+    span: Span,
+}
+
+impl ClLiteral {
+    pub fn new(kind: ClLiteralKind, span: Span) -> Self {
+        Self { kind, span }
+    }
 }
 
 impl From<ClLiteral> for ClExpression {

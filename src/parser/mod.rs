@@ -58,13 +58,14 @@ where
 {
     recursive(|value| {
         let atom = select! {
-            Token::True      => ClLiteral::Boolean(true),
-            Token::False     => ClLiteral::Boolean(false),
-            Token::Int(i)    => ClLiteral::Integer(i),
-            Token::Float(f)  => ClLiteral::Real(f),
-            Token::String(s) => ClLiteral::String(s),
-            Token::Char(c)   => ClLiteral::Char(c),
+            Token::True      => ClLiteralKind::Boolean(true),
+            Token::False     => ClLiteralKind::Boolean(false),
+            Token::Int(i)    => ClLiteralKind::Integer(i),
+            Token::Float(f)  => ClLiteralKind::Real(f),
+            Token::String(s) => ClLiteralKind::String(s),
+            Token::Char(c)   => ClLiteralKind::Char(c),
         }
+        .map_with(|kind, extra| ClLiteral::new(kind, extra.span()))
         .labelled("literal");
 
         let arr = value
@@ -72,9 +73,13 @@ where
             .allow_trailing()
             .collect::<Vec<_>>()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
+            .map_with(|arr, extra| {
+                let cl_lkind = ClLiteralKind::Array(arr);
+                ClLiteral::new(cl_lkind, extra.span())
+            })
             .labelled("array");
 
-        choice((atom, arr.map(ClLiteral::Array)))
+        choice((atom, arr))
     })
 }
 
