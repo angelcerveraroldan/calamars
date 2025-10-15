@@ -1,5 +1,10 @@
 use std::collections::HashMap;
 
+use crate::{
+    sematic::error::SemanticError,
+    syntax::ast::{self, Ident},
+};
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct TypeId(usize);
 
@@ -14,7 +19,7 @@ pub enum Type {
     Array(TypeId),
 
     Function {
-        input: Vec<TypeId>, output: TypeId,
+        input: Vec<TypeId>, output: Vec<TypeId>,
     }
 
     // TODO: (later)
@@ -68,8 +73,12 @@ impl TypeArena {
                     .map(|x| self.as_string(*x))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let out = self.as_string(*output);
-                format!("({}) -> {}", inp, out)
+                let out = output
+                    .iter()
+                    .map(|x| self.as_string(*x))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("fn({}) -> ({})", inp, out)
             }
         }
     }
@@ -92,5 +101,105 @@ impl TypeArena {
 
     pub fn unchecked_get(&self, id: TypeId) -> &Type {
         &self.arena[id.0]
+    }
+
+    /// Convert a type from the ast to a semantic type
+    pub fn intern_cltype(&mut self, ast_type: &ast::ClType) -> Result<TypeId, SemanticError> {
+        match ast_type {
+            ast::ClType::Path { segments, span } => match &segments[..] {
+                [ident] => match ident.ident() {
+                    "Int" => Ok(self.intern(Type::Integer)),
+                    "Float" => Ok(self.intern(Type::Float)),
+                    "Bool" => Ok(self.intern(Type::Boolean)),
+                    "String" => Ok(self.intern(Type::String)),
+                    "Char" => Ok(self.intern(Type::Char)),
+                    "()" => Ok(self.intern(Type::Unit)),
+                    otherwise => Err(SemanticError::TypeNotFound {
+                        type_name: otherwise.into(),
+                        span: *span,
+                    }),
+                },
+                _ => Err(SemanticError::QualifiedTypeNotSupported { span: *span }),
+            },
+            ast::ClType::Array { elem_type, span } => {
+                let inner_type = self.intern_cltype(&*elem_type)?;
+                Ok(self.intern(Type::Array(inner_type)))
+            }
+            ast::ClType::Func { inputs, output, .. } => {
+                let input = inputs
+                    .iter()
+                    .map(|t| self.intern_cltype(t))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let output = output
+                    .iter()
+                    .map(|t| self.intern_cltype(t))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let func = Type::Function { input, output };
+                Ok(self.intern(func))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_types_sem {
+    use chumsky::Parser;
+
+    use crate::{
+        parser::{declaration::parse_cldeclaration, parse_cl_item},
+        syntax::token::Token,
+    };
+
+    use super::*;
+
+    fn make_arena() -> TypeArena {
+        TypeArena::default()
+    }
+
+    #[test]
+    fn test_cltype_var_insertion() {
+        let mut arena = make_arena();
+
+        // Make a small tree from source code
+        let line = "var x: Int = 2;";
+        let stream = Token::tokens_spanned_stream(&line);
+        let out = parse_cl_item().parse(stream).unwrap();
+        let binding = match out.get_dec() {
+            ast::ClDeclaration::Binding(cl_binding) => cl_binding,
+            ast::ClDeclaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
+        };
+        let id = arena.intern_cltype(&binding.vtype).unwrap();
+        let ty = arena.get(id).unwrap();
+        assert_eq!(*ty, Type::Integer);
+    }
+
+    #[test]
+    fn test_cltype_lambda_insertion() {
+        let mut arena = make_arena();
+
+        let integer = arena.intern(Type::Integer);
+
+        /// This makes no sense semantically, as the type is wrong, but we will not be running the
+        /// check. Just making sure that the lambda type parses.
+        let line = "var foo: Int -> Int = 2;";
+        let stream = Token::tokens_spanned_stream(&line);
+        let out = parse_cl_item().parse(stream).unwrap();
+        let binding = match out.get_dec() {
+            ast::ClDeclaration::Binding(cl_binding) => cl_binding,
+            ast::ClDeclaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
+        };
+
+        let id = arena.intern_cltype(&binding.vtype).unwrap();
+        let ty = arena.get(id).unwrap();
+
+        assert_eq!(
+            *ty,
+            Type::Function {
+                input: vec![integer],
+                output: vec![integer],
+            }
+        );
     }
 }

@@ -25,6 +25,10 @@ impl Ident {
         Self { ident, span }
     }
 
+    pub fn ident(&self) -> &str {
+        &self.ident
+    }
+
     pub fn span(&self) -> Span {
         self.span
     }
