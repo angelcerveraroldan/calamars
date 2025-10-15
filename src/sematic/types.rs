@@ -25,11 +25,28 @@ pub enum Type {
     // - traits and generics
 }
 
+#[derive(Debug)]
 pub struct TypeArena {
     // An arena containing all types
     arena: Vec<Type>,
     /// Given a type, return its id. The id will be the index in the arena vector.
     index: HashMap<Type, TypeId>,
+}
+
+impl Default for TypeArena {
+    fn default() -> Self {
+        let mut arena = TypeArena {
+            arena: vec![],
+            index: HashMap::new(),
+        };
+        arena.intern(Type::Integer);
+        arena.intern(Type::Float);
+        arena.intern(Type::Boolean);
+        arena.intern(Type::String);
+        arena.intern(Type::Char);
+        arena.intern(Type::Unit);
+        arena
+    }
 }
 
 impl TypeArena {
