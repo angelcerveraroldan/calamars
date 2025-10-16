@@ -184,4 +184,39 @@ mod test_resolver {
 
         assert_eq!(resolver.symbols.len(), 3);
     }
+
+    #[test]
+    fn phase_a_duplicate_var_in_same_scope_is_error() {
+        let mut resolver = Resolver::default();
+        let a1 = make_var("a");
+        let a2 = make_var("a");
+
+        assert!(resolver.push_ast_binding(&a1).is_ok());
+        let dup = resolver.push_ast_binding(&a2);
+        assert!(dup.is_err(), "expected duplicate var error");
+        assert_eq!(resolver.symbols.len(), 1);
+    }
+
+    #[test]
+    fn phase_a_duplicate_func_in_same_scope_is_error() {
+        let mut resolver = Resolver::default();
+        let f1 = make_ast_func("f");
+        let f2 = make_ast_func("f");
+
+        assert!(resolver.push_ast_function(&f1).is_ok());
+        let dup = resolver.push_ast_function(&f2);
+        assert!(dup.is_err(), "expected duplicate func error");
+        assert_eq!(resolver.symbols.len(), 1);
+    }
+
+    #[test]
+    fn phase_a_function_and_var_same_name() {
+        let mut resolver = Resolver::default();
+        let f = make_ast_func("f");
+        let v = make_var("f");
+        assert!(resolver.push_ast_function(&f).is_ok());
+        let dup = resolver.push_ast_binding(&v);
+        assert!(dup.is_err(), "expected duplicate name error");
+        assert_eq!(resolver.symbols.len(), 1);
+    }
 }
