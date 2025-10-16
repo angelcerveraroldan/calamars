@@ -3,10 +3,10 @@ use chumsky::container::Seq;
 use crate::{
     sematic::{
         error::SemanticError,
-        symbols::{Symbol, SymbolArena, SymbolId, SymbolScope},
+        symbols::{DefKind, Symbol, SymbolArena, SymbolId, SymbolScope},
         types::TypeArena,
     },
-    syntax::span::Span,
+    syntax::{ast, span::Span},
 };
 
 pub mod error;
@@ -62,5 +62,37 @@ impl Resolver {
             name: name.into(),
             span: usage_loc,
         })
+    }
+
+    /// Given some function declaration in the ast, add it to the symbol table in the current
+    /// scope.
+    fn push_ast_function(&mut self, node: ast::ClFuncDec) -> Result<SymbolId, SemanticError> {
+        let ty = node.fntype().clone();
+        let ty = self.types.intern_cltype(&ty)?;
+        let sym = Symbol {
+            name: node.name().clone(),
+            kind: symbols::DefKind::Func,
+            arity: Some(node.airity()),
+            ty: Some(ty),
+            name_span: node.name_span(),
+            decl_span: node.span(),
+        };
+        self.declare(sym)
+    }
+
+    /// Given some binding in the ast, add it to the symbol table in the current scope.
+    fn push_ast_binding(&mut self, node: ast::ClBinding) -> Result<SymbolId, SemanticError> {
+        #[rustfmt::skip]
+        let kind = if node.mutable { DefKind::Var } else { DefKind::Val };
+        let ty = self.types.intern_cltype(&node.vtype)?;
+        let sym = Symbol {
+            name: node.vname.ident().into(),
+            kind,
+            arity: None,
+            ty: Some(ty),
+            name_span: node.name_span(),
+            decl_span: node.span(),
+        };
+        self.declare(sym)
     }
 }
