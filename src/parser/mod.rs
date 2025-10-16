@@ -91,10 +91,10 @@ where
 }
 
 impl ClType {
-    pub fn new_func((from, to): (Vec<Self>, Vec<Self>), span: Span) -> Self {
+    pub fn new_func((from, to): (Vec<Self>, Self), span: Span) -> Self {
         Self::Func {
             inputs: from,
-            output: to,
+            output: to.into(),
             span,
         }
     }
@@ -152,15 +152,16 @@ where
             .collect::<Vec<ClType>>()
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
-        let params_one = parse_cltype_path().map(|z| vec![z]);
+        let params_one = parse_cltype_path();
+        let params_one_vec = params_one.clone().map(|z| vec![z]);
 
         // Funcitons may have one input
-        let params = params_one.or(params_many);
+        let params = params_one_vec.or(params_many);
 
         let function_type = params
             .clone()
             .then_ignore(just(Token::Arrow))
-            .then(params)
+            .then(params_one)
             .map_with(|f, extra| ClType::new_func(f, extra.span()));
 
         function_type.or(parse_cltype_path()).or(array_type)

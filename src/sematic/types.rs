@@ -19,7 +19,7 @@ pub enum Type {
     Array(TypeId),
 
     Function {
-        input: Vec<TypeId>, output: Vec<TypeId>,
+        input: Vec<TypeId>, output: TypeId,
     }
 
     // TODO: (later)
@@ -73,11 +73,7 @@ impl TypeArena {
                     .map(|x| self.as_string(*x))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let out = output
-                    .iter()
-                    .map(|x| self.as_string(*x))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let out = self.as_string(*output);
                 format!("fn({}) -> ({})", inp, out)
             }
         }
@@ -131,10 +127,7 @@ impl TypeArena {
                     .map(|t| self.intern_cltype(t))
                     .collect::<Result<Vec<_>, _>>()?;
 
-                let output = output
-                    .iter()
-                    .map(|t| self.intern_cltype(t))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let output = self.intern_cltype(&output)?;
 
                 let func = Type::Function { input, output };
                 Ok(self.intern(func))
@@ -198,7 +191,7 @@ mod test_types_sem {
             *ty,
             Type::Function {
                 input: vec![integer],
-                output: vec![integer],
+                output: integer,
             }
         );
     }

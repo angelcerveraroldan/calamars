@@ -105,7 +105,7 @@ pub enum ClType {
     /// A function (I1, I2, I3, ...) -> (O1, O2, O3, ...)
     Func {
         inputs: Vec<Self>,
-        output: Vec<Self>,
+        output: Box<Self>,
         span: Span,
     },
 }
@@ -426,7 +426,7 @@ impl ClFuncDec {
                 inputs,
                 // TODO: I am not completely sure what to make the span here...
                 span: out_type.span().clone(),
-                output: vec![out_type],
+                output: out_type.into(),
             },
             body,
             span,
