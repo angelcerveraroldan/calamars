@@ -50,6 +50,10 @@ impl SymbolArena {
     pub fn get_mut(&mut self, id: &SymbolId) -> Option<&mut Symbol> {
         self.arena.get_mut(id.0)
     }
+
+    pub fn len(&self) -> usize {
+        self.arena.len()
+    }
 }
 
 #[derive(Debug, Default)]
