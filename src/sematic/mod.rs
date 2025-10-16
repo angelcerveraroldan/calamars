@@ -119,32 +119,68 @@ impl Resolver {
 
 #[cfg(test)]
 mod test_resolver {
-    use chumsky::Parser;
+    use chumsky::{Parser, span::SimpleSpan};
 
-    use crate::{parser::parse_cl_item, sematic::Resolver, syntax::token::Token};
+    use crate::{
+        parser::parse_cl_item,
+        sematic::Resolver,
+        syntax::{
+            ast::{self, ClBinding, ClLiteral, ClType, Ident},
+            token::Token,
+        },
+    };
+
+    fn fake_span() -> SimpleSpan {
+        SimpleSpan {
+            start: 0,
+            end: 0,
+            context: (),
+        }
+    }
+
+    fn cltype_int() -> ClType {
+        ClType::Path {
+            segments: vec![Ident::new("Int".to_string(), fake_span())],
+            span: fake_span(),
+        }
+    }
+
+    fn integer_literal() -> ClLiteral {
+        ClLiteral::new(ast::ClLiteralKind::Integer(10), fake_span())
+    }
+
+    fn make_ast_func(name: &str) -> ast::ClFuncDec {
+        let fake = fake_span();
+
+        ast::ClFuncDec::new(
+            Ident::new(name.to_string(), fake),
+            vec![(Ident::new("x".to_string(), fake), cltype_int())],
+            cltype_int(),
+            ast::ClExpression::Literal(integer_literal()),
+            fake_span(),
+        )
+    }
+
+    fn make_var(name: &str) -> ast::ClBinding {
+        ClBinding::new(
+            Ident::new(name.to_string(), fake_span()),
+            cltype_int(),
+            Box::new(ast::ClExpression::Literal(integer_literal())),
+            false,
+            fake_span(),
+        )
+    }
 
     #[test]
     fn happy_resolver() {
         let mut resolver = Resolver::default();
+        let f = make_ast_func("f");
+        let y = make_var("y");
+        let g = make_ast_func("g");
 
-        let source = [
-            "def f(x: Int): Int = 2",
-            "var y: Int = 2;",
-            "def g(x: Int): Int = 2",
-        ];
-
-        for s in source {
-            let stream = Token::tokens_spanned_stream(s);
-            let out = parse_cl_item().parse(stream);
-
-            if let Some(out) = out.output() {
-                println!("Sucessfully parsed and added {}", s);
-                let dec = out.get_dec();
-                resolver.push_ast_declaration(dec).unwrap();
-            } else {
-                panic!("Could not parse ({})", s);
-            }
-        }
+        resolver.push_ast_function(&f).unwrap();
+        resolver.push_ast_binding(&y).unwrap();
+        resolver.push_ast_function(&g).unwrap();
 
         assert_eq!(resolver.symbols.len(), 3);
     }
