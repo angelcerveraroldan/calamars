@@ -395,8 +395,8 @@ impl ClBinding {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClFuncDec {
     fname: Ident,
-    inputs: Vec<(Ident, ClType)>,
-    out_type: ClType,
+    input_idents: Vec<Ident>,
+    functype: ClType,
     body: ClExpression,
     span: Span,
 }
@@ -409,13 +409,40 @@ impl ClFuncDec {
         body: ClExpression,
         span: Span,
     ) -> Self {
+        let cap = inputs.len();
+        let (input_idents, inputs) = inputs.into_iter().fold(
+            (Vec::with_capacity(cap), Vec::with_capacity(cap)),
+            |(mut idents, mut tys), (ident, ty)| {
+                idents.push(ident);
+                tys.push(ty);
+                (idents, tys)
+            },
+        );
+
         Self {
             fname,
-            inputs,
-            out_type,
+            input_idents,
+            functype: ClType::Func {
+                inputs,
+                // TODO: I am not completely sure what to make the span here...
+                span: out_type.span().clone(),
+                output: vec![out_type],
+            },
             body,
             span,
         }
+    }
+
+    pub fn airity(&self) -> u16 {
+        self.input_idents.len() as u16
+    }
+
+    pub fn fntype(&self) -> &ClType {
+        &self.functype
+    }
+
+    pub fn name(&self) -> &String {
+        &self.fname.ident
     }
 
     pub fn span(&self) -> Span {
