@@ -106,7 +106,7 @@ impl Resolver {
         self.declare(sym)
     }
 
-    fn push_ast_declaration(
+    pub fn push_ast_declaration(
         &mut self,
         node: &ast::ClDeclaration,
     ) -> Result<SymbolId, SemanticError> {

@@ -37,7 +37,7 @@ impl Ident {
 /// A Calamars module / file
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
-    pub(crate) items: Vec<ClItem>,
+    pub items: Vec<ClItem>,
 }
 
 /// Any one thing in the Cl language
