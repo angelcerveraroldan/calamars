@@ -394,6 +394,8 @@ impl ClBinding {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClFuncDec {
+    pub doc_comment: Option<String>,
+
     fname: Ident,
     input_idents: Vec<Ident>,
     functype: ClType,
@@ -408,6 +410,7 @@ impl ClFuncDec {
         out_type: ClType,
         body: ClExpression,
         span: Span,
+        doc_comment: Option<String>,
     ) -> Self {
         let cap = inputs.len();
         let (input_idents, inputs) = inputs.into_iter().fold(
@@ -430,6 +433,7 @@ impl ClFuncDec {
             },
             body,
             span,
+            doc_comment,
         }
     }
 

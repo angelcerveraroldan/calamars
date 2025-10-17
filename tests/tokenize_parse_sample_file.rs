@@ -1,4 +1,11 @@
-use calamars::syntax::token::Token;
+use calamars::{
+    parser::parse_module,
+    syntax::{
+        ast::{ClDeclaration, ClFuncDec},
+        token::Token,
+    },
+};
+use chumsky::Parser;
 use logos::Logos;
 use std::fs;
 
@@ -46,35 +53,47 @@ fn tokenize_file() {
             Colon,
             Ident("int".to_string()),
             RParen,
+            Colon,
+            Ident("int".to_string()),
             Equal,
             Ident("x".to_string()),
             Plus,
             Ident("y".to_string()),
-            Semicolon,
             // var list : List[int] = [1, 2, 3, 4, 5];
-            LineComment,
             Var,
             Ident("list".to_string()),
             Colon,
-            Ident("List".to_string()),
-            LBracket,
-            Ident("int".to_string()),
-            RBracket,
+            Ident("string".to_string()),
             Equal,
-            LBracket,
-            Int(1),
-            Comma,
-            Int(2),
-            Comma,
-            Int(3),
-            Comma,
-            Int(4),
-            Comma,
-            Int(5),
-            RBracket,
+            String("hello".to_string()),
             Semicolon,
         ]
     };
 
     assert_eq!(actual, expected)
+}
+
+#[test]
+fn parse_file() {
+    let source = fs::read_to_string("tests/test_files/sample_file.cm").unwrap();
+    let stream = Token::tokens_spanned_stream(&source);
+    let (out, errs) = parse_module().parse(stream).into_output_errors();
+
+    for err in errs {
+        println!("{:?}", err);
+    }
+
+    // Parsing should pass
+    assert!(out.is_some());
+
+    let out = out.unwrap();
+    assert!(out.items.len() == 4);
+
+    let finalf = match out.items[3].get_dec() {
+        ClDeclaration::Binding(cl_binding) => todo!(),
+        ClDeclaration::Function(cl_func_dec) => cl_func_dec,
+    };
+
+    /// Check that the parser is handling the doc comment properly
+    assert_eq!(finalf.doc_comment, Some(" Add two integers! ".to_string()));
 }
