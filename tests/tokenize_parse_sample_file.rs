@@ -89,7 +89,7 @@ fn parse_file() {
     let out = out.unwrap();
     assert!(out.items.len() == 4);
 
-    let finalf = match out.items[3].get_dec() {
+    let finalf = match out.items[2].get_dec() {
         ClDeclaration::Binding(cl_binding) => todo!(),
         ClDeclaration::Function(cl_func_dec) => cl_func_dec,
     };
