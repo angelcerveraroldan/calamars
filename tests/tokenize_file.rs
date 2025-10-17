@@ -4,7 +4,7 @@ use std::fs;
 
 #[test]
 fn tokenize_file() {
-    let source = fs::read_to_string("tests/test_files/sample_file.cal").unwrap();
+    let source = fs::read_to_string("tests/test_files/sample_file.cm").unwrap();
     let mut lex = Token::lexer(source.as_str());
     let mut actual = Vec::new();
     while let Some(tok) = lex.next() {
