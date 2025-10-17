@@ -1,4 +1,6 @@
-
+--*
+Given two integers, just return 2.
+*--
 def foo(x: Int, y: Int): Int = 2
 
 var x: Int = 2;
@@ -6,4 +8,4 @@ val y: Int = 3;
 
 var x: Int = 14;
 
-var foo = 2;
+var foo: Int = 2;
