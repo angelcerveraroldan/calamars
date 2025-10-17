@@ -158,6 +158,7 @@ mod test_resolver {
             cltype_int(),
             ast::ClExpression::Literal(integer_literal()),
             fake_span(),
+            None,
         )
     }
 

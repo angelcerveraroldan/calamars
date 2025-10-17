@@ -47,15 +47,18 @@ fn parse_func_declaration<'a, I>(
 where
     I: TokenInput<'a>,
 {
-    just(Token::Def)
-        .ignore_then(parse_identifier()) // Function name
+    let doc_comment = select! { Token::DocComment(s) => s }.or_not();
+
+    doc_comment
+        .then_ignore(just(Token::Def))
+        .then(parse_identifier()) // Function name
         .then(parse_func_input()) // Input types, and names
         .then_ignore(just(Token::Colon))
         .then(parse_cltype_annotation()) // Output type
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone())) // Body of the funcion
-        .map_with(|(((fname, inputs), out_type), body), extra| {
-            ClFuncDec::new(fname, inputs, out_type, body, extra.span())
+        .map_with(|((((comment, fname), inputs), out_type), body), extra| {
+            ClFuncDec::new(fname, inputs, out_type, body, extra.span(), comment)
         })
         .labelled("function declaration")
 }
