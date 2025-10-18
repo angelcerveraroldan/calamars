@@ -8,6 +8,7 @@ val y: Int = 3;
 
 var x2 = 2;
 
+-- redeclaration gives error
 var x: Int = 14;
 
 var foo: Int = 2;

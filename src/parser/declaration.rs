@@ -55,6 +55,7 @@ where
         .separated_by(just(Token::Comma))
         .collect::<Vec<(Ident, Option<ClType>)>>()
         .delimited_by(just(Token::LParen), just(Token::RParen))
+        .labelled("Function input")
 }
 
 fn parse_func_declaration<'a, I>(
@@ -65,17 +66,23 @@ where
 {
     let doc_comment = select! { Token::DocComment(s) => s }.or_not();
 
-    doc_comment // Perhaps parse the documentation for this function
-        .then_ignore(just(Token::Def).labelled("'Function declaration after doc comment'"))
-        .then(parse_identifier()) // Function name
+    let funcp = just(Token::Def)
+        .ignore_then(parse_identifier()) // Function name
         .then(parse_func_input()) // Input types, and names
         .then(parse_maybe_type()) // Output type
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone())) // Body of the funcion
-        .map_with(|((((comment, fname), inputs), out_type), body), extra| {
-            ClFuncDec::new(fname, inputs, out_type, body, extra.span(), comment)
+        .map_with(|(((fname, inputs), out_type), body), extra| {
+            ClFuncDec::new(fname, inputs, out_type, body, extra.span(), None)
         })
-        .labelled("function declaration")
+        .labelled("function declaration");
+
+    doc_comment // Perhaps parse the documentation for this function
+        .then(funcp)
+        .map(|(comment, mut func)| {
+            func.doc_comment = comment;
+            func
+        })
 }
 
 pub fn parse_cldeclaration<'a, I>(

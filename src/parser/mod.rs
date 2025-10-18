@@ -50,12 +50,16 @@ pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, ClItem, ParserErr<'a>> + Clo
 where
     I: TokenInput<'a>,
 {
-    recursive(|item| {
+    // TODO: Line comments should be removed when tokenizing, but it makes tests annoying. So until
+    // we get to a point where we have nice functinaliy to open files, tokenize, and pass to the
+    // parser, we will ignore line comments here. This does not fully work (comments only allowed
+    // before declarations, not in between)
+    (just(Token::LineComment).or_not()).ignore_then(recursive(|item| {
         choice((
             parse_cldeclaration(item.clone()).map(ClItem::Declaration),
             parse_expression(item.clone()).map(ClItem::Expression),
         ))
-    })
+    }))
 }
 
 /// Parse any base value, including nested arrays
