@@ -195,7 +195,7 @@ impl Resolver {
     }
 }
 
-// HANDLE AST DECLARATIONS
+// HANDLE AST TYPE CHECKS
 impl Resolver {
     fn ast_literal_type(&mut self, lit: &ast::ClLiteral) -> ResolverTypeOut {
         let ty = match lit.kind() {
@@ -256,7 +256,7 @@ impl Resolver {
         let else_type = self.ast_expression_type(else_expr.as_ref());
 
         if (then_type.is_err() || else_type.is_err()) {
-            return ResolverTypeOut::Fatal;
+            return ResolverTypeOut::Recoverable(self.types.intern(Type::Error));
         }
 
         let then_type = then_type.inner();
@@ -269,7 +269,7 @@ impl Resolver {
                     then_span: then_expr.span(),
                     else_span: else_expr.span(),
                 });
-            ResolverTypeOut::Fatal
+            ResolverTypeOut::Recoverable(self.types.intern(Type::Error))
         }
     }
 
