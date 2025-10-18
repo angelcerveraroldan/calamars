@@ -84,6 +84,10 @@ impl ClLiteral {
         Self { kind, span }
     }
 
+    pub fn kind(&self) -> &ClLiteralKind {
+        &self.kind
+    }
+
     pub fn span(&self) -> Span {
         self.span
     }
@@ -289,6 +293,14 @@ impl FuncCall {
             params,
             span,
         }
+    }
+
+    pub fn params(&self) -> &Vec<ClExpression> {
+        &self.params
+    }
+
+    pub fn name(&self) -> &str {
+        &self.func_name.ident
     }
 
     pub fn span(&self) -> Span {
