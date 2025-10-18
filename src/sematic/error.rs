@@ -24,4 +24,8 @@ pub enum SemanticError {
     QualifiedTypeNotSupported {
         span: Span,
     },
+
+    WrongType {
+        span: Span,
+    },
 }
