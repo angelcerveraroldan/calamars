@@ -28,4 +28,8 @@ pub enum SemanticError {
     WrongType {
         span: Span,
     },
+    NotSupported {
+        msg: &'static str,
+        span: Span,
+    },
 }
