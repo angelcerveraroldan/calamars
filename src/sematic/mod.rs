@@ -211,7 +211,7 @@ impl Resolver {
                 let ty = symbol.ty;
                 ResolverTypeOut::Ok(ty)
             }
-            // The type was not found, nothing we can do
+            // The symbol was not found, nothing we can do
             Err(e) => {
                 self.dignostics_errors.push(e);
                 ResolverTypeOut::Fatal
