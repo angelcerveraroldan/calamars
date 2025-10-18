@@ -119,7 +119,10 @@ impl Resolver {
             span: usage_loc,
         })
     }
+}
 
+// HANDLE AST DECLARATIONS
+impl Resolver {
     /// Given some function declaration in the ast, add it to the symbol table in the current
     /// scope.
     fn push_ast_function(&mut self, node: &ast::ClFuncDec) -> ResolverSymbolOut {
@@ -136,7 +139,7 @@ impl Resolver {
             name: node.name().clone(),
             kind: symbols::DefKind::Func,
             arity: Some(node.airity()),
-            ty: Some(ty),
+            ty: ty,
             name_span: node.name_span(),
             decl_span: node.span(),
         };
@@ -167,7 +170,7 @@ impl Resolver {
             name: node.vname.ident().into(),
             kind,
             arity: None,
-            ty: Some(ty),
+            ty: ty,
             name_span: node.name_span(),
             decl_span: node.span(),
         };
