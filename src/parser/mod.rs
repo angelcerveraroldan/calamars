@@ -91,10 +91,10 @@ where
 }
 
 impl ClType {
-    pub fn new_func((from, to): (Vec<Self>, Self), span: Span) -> Self {
+    pub fn new_func((from, to): (Vec<Option<Self>>, Option<Self>), span: Option<Span>) -> Self {
         Self::Func {
             inputs: from,
-            output: to.into(),
+            output: Box::new(to),
             span,
         }
     }
@@ -158,11 +158,19 @@ where
         // Funcitons may have one input
         let params = params_one_vec.or(params_many);
 
+        /// Parse the type of a lambda function
+        ///
+        /// e.g. `Int -> Bool`
         let function_type = params
             .clone()
             .then_ignore(just(Token::Arrow))
             .then(params_one)
-            .map_with(|f, extra| ClType::new_func(f, extra.span()));
+            .map_with(|(inp, out), extra| {
+                ClType::new_func(
+                    (inp.into_iter().map(Option::from).collect(), Some(out)),
+                    Some(extra.span()),
+                )
+            });
 
         function_type.or(parse_cltype_path()).or(array_type)
     })

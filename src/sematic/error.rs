@@ -16,6 +16,11 @@ pub enum SemanticError {
         type_name: String,
         span: Span,
     },
+    /// Something is missing it's type!
+    TypeMissing,
+    TypeMissingCtx {
+        for_identifier: Span,
+    },
     QualifiedTypeNotSupported {
         span: Span,
     },

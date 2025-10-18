@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     sematic::error::SemanticError,
-    syntax::ast::{self, Ident},
+    syntax::{
+        ast::{self, Ident},
+        span::Span,
+    },
 };
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -11,7 +14,12 @@ pub struct TypeId(usize);
 #[rustfmt::skip]
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum Type {
-    Error,
+    /// Among other things, this is used for when we expected a type, but found ClType::None
+    ///
+    /// We can:
+    /// 1. Try to recover (type inference)
+    /// 2. Throw a detailed error
+    Error(String),
 
     // Primitives
     Integer, Float, Boolean, String, Char, Unit,
@@ -30,6 +38,12 @@ pub enum Type {
     // - traits and generics
 }
 
+impl Type {
+    pub fn missing_type_annotation() -> Self {
+        Self::Error("Type annotation needed".to_string())
+    }
+}
+
 #[derive(Debug)]
 pub struct TypeArena {
     // An arena containing all types
@@ -44,6 +58,10 @@ impl Default for TypeArena {
             arena: vec![],
             index: HashMap::new(),
         };
+        // Add the default errors to the arena
+        arena.intern(Type::missing_type_annotation());
+
+        // Add the default types to the arena
         arena.intern(Type::Integer);
         arena.intern(Type::Float);
         arena.intern(Type::Boolean);
@@ -59,7 +77,7 @@ impl TypeArena {
     pub fn as_string(&self, type_id: TypeId) -> String {
         let ty = &self.arena[type_id.0];
         match ty {
-            Type::Error => "Error".into(),
+            Type::Error(s) => format!("Error: {}", s),
             Type::Integer => "int".into(),
             Type::Float => "float".into(),
             Type::Boolean => "bool".into(),
@@ -124,10 +142,17 @@ impl TypeArena {
             ast::ClType::Func { inputs, output, .. } => {
                 let input = inputs
                     .iter()
-                    .map(|t| self.intern_cltype(t))
+                    .map(|ty| match ty {
+                        Some(t) => self.intern_cltype(t),
+                        None => Ok(self.intern(Type::missing_type_annotation())),
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
 
-                let output = self.intern_cltype(&output)?;
+                // If no output is defined for the function, the default will be Unit
+                let output = match output.as_ref() {
+                    Some(out) => self.intern_cltype(&out)?,
+                    None => self.intern(Type::Unit),
+                };
 
                 let func = Type::Function { input, output };
                 Ok(self.intern(func))
@@ -163,7 +188,9 @@ mod test_types_sem {
             ast::ClDeclaration::Binding(cl_binding) => cl_binding,
             ast::ClDeclaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
         };
-        let id = arena.intern_cltype(&binding.vtype).unwrap();
+        let id = arena
+            .intern_cltype(binding.vtype.as_ref().unwrap())
+            .unwrap();
         let ty = arena.get(id).unwrap();
         assert_eq!(*ty, Type::Integer);
     }
@@ -184,7 +211,9 @@ mod test_types_sem {
             ast::ClDeclaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
         };
 
-        let id = arena.intern_cltype(&binding.vtype).unwrap();
+        let id = arena
+            .intern_cltype(binding.vtype.as_ref().unwrap())
+            .unwrap();
         let ty = arena.get(id).unwrap();
 
         assert_eq!(

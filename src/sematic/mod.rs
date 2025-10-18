@@ -94,7 +94,21 @@ impl Resolver {
     fn push_ast_binding(&mut self, node: &ast::ClBinding) -> Result<SymbolId, SemanticError> {
         #[rustfmt::skip]
         let kind = if node.mutable { DefKind::Var } else { DefKind::Val };
-        let ty = self.types.intern_cltype(&node.vtype)?;
+
+        // If there was no type provided, we cannot push the ast_binding
+        //
+        // TODO: Push the binding anyways - So that we wont give errors later such as "usage of `x`
+        // not defined ..."
+        let node_ty = match &node.vtype {
+            Some(ty) => ty,
+            None => {
+                return Err(SemanticError::TypeMissingCtx {
+                    for_identifier: node.vname.span(),
+                });
+            }
+        };
+
+        let ty = self.types.intern_cltype(node_ty)?;
         let sym = Symbol {
             name: node.vname.ident().into(),
             kind,
@@ -154,8 +168,8 @@ mod test_resolver {
 
         ast::ClFuncDec::new(
             Ident::new(name.to_string(), fake),
-            vec![(Ident::new("x".to_string(), fake), cltype_int())],
-            cltype_int(),
+            vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
+            cltype_int().into(),
             ast::ClExpression::Literal(integer_literal()),
             fake_span(),
             None,
@@ -165,7 +179,7 @@ mod test_resolver {
     fn make_var(name: &str) -> ast::ClBinding {
         ClBinding::new(
             Ident::new(name.to_string(), fake_span()),
-            cltype_int(),
+            cltype_int().into(),
             Box::new(ast::ClExpression::Literal(integer_literal())),
             false,
             fake_span(),
