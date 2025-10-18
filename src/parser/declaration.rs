@@ -50,7 +50,7 @@ where
     let doc_comment = select! { Token::DocComment(s) => s }.or_not();
 
     doc_comment
-        .then_ignore(just(Token::Def))
+        .then_ignore(just(Token::Def).labelled("'Function declaration after doc comment'"))
         .then(parse_identifier()) // Function name
         .then(parse_func_input()) // Input types, and names
         .then_ignore(just(Token::Colon))
