@@ -50,7 +50,7 @@ mod test_span {
         );
 
         assert_eq!(
-            dec.type_span(),
+            dec.type_span().unwrap(),
             SimpleSpan {
                 start: 10,
                 end: 13,
@@ -145,7 +145,7 @@ mod test_span {
         );
 
         assert_eq!(
-            dec.type_span(),
+            dec.type_span().unwrap(),
             SimpleSpan {
                 start: 9,
                 end: 12,

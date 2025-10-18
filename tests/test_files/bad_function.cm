@@ -1,0 +1,6 @@
+--*
+Bad function should parse:
+- Output should be automatically turned into Unit
+- x should have None type - the semantics will handle the error
+*--
+def foo(x, y: Int) = 2

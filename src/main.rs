@@ -44,12 +44,10 @@ fn main() {
     let out = out.unwrap();
     let mut module_resolver = Resolver::default();
 
-    let mut errors = vec![];
     for item in out.items {
         match item {
             calamars::syntax::ast::ClItem::Declaration(cl_declaration) => {
                 let r = module_resolver.push_ast_declaration(&cl_declaration);
-                r.is_err().then(|| errors.push(r.unwrap_err()));
             }
             calamars::syntax::ast::ClItem::Expression(cl_expression) => {
                 println!("Expressions not yet handled")
@@ -59,7 +57,7 @@ fn main() {
     }
 
     // Now we display the errors:
-    for error in errors {
+    for error in module_resolver.errors() {
         println!("{:?}", error);
     }
 }

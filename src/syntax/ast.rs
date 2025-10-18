@@ -5,6 +5,7 @@ use chumsky::{
     input::{MapExtra, ValueInput},
     span::SimpleSpan,
 };
+use proptest::option;
 
 pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
@@ -104,22 +105,22 @@ pub enum ClType {
     Array { elem_type: Box<Self>, span: Span },
     /// A function (I1, I2, I3, ...) -> (O1, O2, O3, ...)
     Func {
-        inputs: Vec<Self>,
-        output: Box<Self>,
-        span: Span,
+        inputs: Vec<Option<Self>>,
+        output: Box<Option<Self>>,
+        /// Lambdas have a very clear "full span", where as functions dont
+        span: Option<Span>,
     },
 }
 
 impl ClType {
-    pub fn span(&self) -> Span {
-        *match self {
-            ClType::Path { segments, span } => span,
-            ClType::Array { elem_type, span } => span,
-            ClType::Func {
-                inputs,
-                output,
-                span,
-            } => span,
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            ClType::Path { span, .. }
+            | ClType::Array { span, .. }
+            | ClType::Func {
+                span: Some(span), ..
+            } => Some(*span),
+            _ => None,
         }
     }
 }
@@ -355,7 +356,7 @@ impl ClDeclaration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClBinding {
     pub vname: Ident,
-    pub vtype: ClType,
+    pub vtype: Option<ClType>,
     pub assigned: Box<ClExpression>,
     pub mutable: bool,
 
@@ -365,7 +366,7 @@ pub struct ClBinding {
 impl ClBinding {
     pub fn new(
         vname: Ident,
-        vtype: ClType,
+        vtype: Option<ClType>,
         assigned: Box<ClExpression>,
         mutable: bool,
         span: Span,
@@ -387,8 +388,8 @@ impl ClBinding {
         self.vname.span()
     }
 
-    pub fn type_span(&self) -> Span {
-        self.vtype.span()
+    pub fn type_span(&self) -> Option<Span> {
+        self.vtype.clone().map(|ty| ty.span()).flatten()
     }
 }
 
@@ -406,8 +407,8 @@ pub struct ClFuncDec {
 impl ClFuncDec {
     pub fn new(
         fname: Ident,
-        inputs: Vec<(Ident, ClType)>,
-        out_type: ClType,
+        inputs: Vec<(Ident, Option<ClType>)>,
+        out_type: Option<ClType>,
         body: ClExpression,
         span: Span,
         doc_comment: Option<String>,
@@ -427,8 +428,7 @@ impl ClFuncDec {
             input_idents,
             functype: ClType::Func {
                 inputs,
-                // TODO: I am not completely sure what to make the span here...
-                span: out_type.span().clone(),
+                span: None,
                 output: out_type.into(),
             },
             body,
