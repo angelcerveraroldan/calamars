@@ -197,7 +197,13 @@ impl Resolver {
             ast::ClLiteralKind::String(_) => Type::String,
             ast::ClLiteralKind::Boolean(_) => Type::Boolean,
             ast::ClLiteralKind::Char(_) => Type::Char,
-            ast::ClLiteralKind::Array(cl_literals) => panic!("Array not yet supported"),
+            ast::ClLiteralKind::Array(_cl_literals) => {
+                self.dignostics_errors.push(SemanticError::NotSupported {
+                    msg: "Arrays not yet supported",
+                    span: lit.span(),
+                });
+                return ResolverTypeOut::Recoverable(self.types.intern(Type::Error));
+            }
         };
 
         ResolverTypeOut::Ok(self.types.intern(ty))
