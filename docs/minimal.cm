@@ -6,6 +6,8 @@ def foo(x: Int, y: Int): Int = 2
 var x: Int = 2;
 val y: Int = 3;
 
+var x2 = 2;
+
 var x: Int = 14;
 
 var foo: Int = 2;
