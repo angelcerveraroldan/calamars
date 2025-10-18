@@ -1,14 +1,17 @@
-use std::{any::TypeId, fmt::Debug};
+use std::{any::Any, fmt::Debug, process::id};
 
-use chumsky::container::Seq;
+use chumsky::{container::Seq, span::SimpleSpan, text::ascii::ident};
 
 use crate::{
     sematic::{
         error::SemanticError,
         symbols::{DefKind, Symbol, SymbolArena, SymbolId, SymbolScope},
-        types::TypeArena,
+        types::{Type, TypeArena, TypeId},
     },
-    syntax::{ast, span::Span},
+    syntax::{
+        ast::{self, ClCompoundExpression, Ident},
+        span::Span,
+    },
 };
 
 pub mod error;
@@ -181,6 +184,67 @@ impl Resolver {
         match &node {
             ast::ClDeclaration::Binding(node_bind) => self.push_ast_binding(node_bind),
             ast::ClDeclaration::Function(node_fn) => self.push_ast_function(node_fn),
+        }
+    }
+}
+
+// HANDLE AST DECLARATIONS
+impl Resolver {
+    fn ast_literal_type(&mut self, lit: &ast::ClLiteral) -> ResolverTypeOut {
+        let ty = match lit.kind() {
+            ast::ClLiteralKind::Integer(_) => Type::Integer,
+            ast::ClLiteralKind::Real(_) => Type::Float,
+            ast::ClLiteralKind::String(_) => Type::String,
+            ast::ClLiteralKind::Boolean(_) => Type::Boolean,
+            ast::ClLiteralKind::Char(_) => Type::Char,
+            ast::ClLiteralKind::Array(cl_literals) => panic!("Array not yet supported"),
+        };
+
+        ResolverTypeOut::Ok(self.types.intern(ty))
+    }
+
+    fn ast_identifier_type(&mut self, ident: &Ident) -> ResolverTypeOut {
+        match self.resolve_ident(ident.ident(), ident.span()) {
+            Ok(symbol_id) => {
+                // We know that this will not fail as the id is the index
+                let symbol = self.symbols.get(&symbol_id).unwrap();
+                let ty = symbol.ty;
+                ResolverTypeOut::Ok(ty)
+            }
+            // The type was not found, nothing we can do
+            Err(e) => {
+                self.dignostics_errors.push(e);
+                ResolverTypeOut::Fatal
+            }
+        }
+    }
+
+    fn ast_function_call_type(&mut self, func_call: &ast::FuncCall) -> ResolverTypeOut {
+        match self.resolve_ident(func_call.name(), func_call.span()) {
+            Ok(func_id) => {
+                let symbol = self.symbols.get(&func_id).unwrap();
+                ResolverTypeOut::Ok(symbol.ty)
+            }
+            Err(e) => {
+                self.dignostics_errors.push(e);
+                ResolverTypeOut::Fatal
+            }
+        }
+    }
+
+    /// Given some expression, return the TypeId of the expressions return type
+    pub fn ast_expression_type(&mut self, node: &ast::ClExpression) -> ResolverTypeOut {
+        match node {
+            ast::ClExpression::Literal(cl_literal) => self.ast_literal_type(cl_literal),
+            ast::ClExpression::Identifier(ident) => self.ast_identifier_type(ident),
+            ast::ClExpression::UnaryOp(cl_unary_op) => todo!(),
+            ast::ClExpression::BinaryOp(cl_binary_op) => todo!(),
+            ast::ClExpression::IfStm(if_stm) => todo!(),
+            ast::ClExpression::FunctionCall(func_call) => self.ast_function_call_type(func_call),
+            ast::ClExpression::Block(ClCompoundExpression { final_expr, .. }) => match final_expr {
+                Some(exp) => self.ast_expression_type(exp),
+                None => ResolverTypeOut::Ok(self.types.intern(Type::Unit)),
+            },
         }
     }
 }
