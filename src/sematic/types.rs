@@ -19,7 +19,7 @@ pub enum Type {
     /// We can:
     /// 1. Try to recover (type inference)
     /// 2. Throw a detailed error
-    Error(String),
+    Error,
 
     // Primitives
     Integer, Float, Boolean, String, Char, Unit,
@@ -38,12 +38,6 @@ pub enum Type {
     // - traits and generics
 }
 
-impl Type {
-    pub fn missing_type_annotation() -> Self {
-        Self::Error("Type annotation needed".to_string())
-    }
-}
-
 #[derive(Debug)]
 pub struct TypeArena {
     // An arena containing all types
@@ -59,7 +53,7 @@ impl Default for TypeArena {
             index: HashMap::new(),
         };
         // Add the default errors to the arena
-        arena.intern(Type::missing_type_annotation());
+        arena.intern(Type::Error);
 
         // Add the default types to the arena
         arena.intern(Type::Integer);
@@ -77,7 +71,7 @@ impl TypeArena {
     pub fn as_string(&self, type_id: TypeId) -> String {
         let ty = &self.arena[type_id.0];
         match ty {
-            Type::Error(s) => format!("Error: {}", s),
+            Type::Error => "Error".into(),
             Type::Integer => "int".into(),
             Type::Float => "float".into(),
             Type::Boolean => "bool".into(),
@@ -144,7 +138,7 @@ impl TypeArena {
                     .iter()
                     .map(|ty| match ty {
                         Some(t) => self.intern_cltype(t),
-                        None => Ok(self.intern(Type::missing_type_annotation())),
+                        None => Ok(self.intern(Type::Error)),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 

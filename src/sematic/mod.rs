@@ -1,3 +1,5 @@
+use std::{any::TypeId, fmt::Debug};
+
 use chumsky::container::Seq;
 
 use crate::{
@@ -14,11 +16,40 @@ pub mod symbols;
 pub mod types;
 
 #[derive(Debug)]
+pub enum ResolverOutput<T: Debug> {
+    /// Everything went so perfect
+    Ok(T),
+    /// There was an error when inserting the symbol/type, but parsing can continue
+    Recoverable(T),
+    /// Nothing could be inserted to the resolver due to a fatal error
+    Fatal,
+}
+
+impl<T: Debug> ResolverOutput<T> {
+    pub fn is_ok(&self) -> bool {
+        matches!(self, ResolverOutput::Ok(_))
+    }
+
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, ResolverOutput::Recoverable(_))
+    }
+
+    pub fn is_err(&self) -> bool {
+        matches!(self, ResolverOutput::Fatal)
+    }
+}
+
+pub type ResolverSymbolOut = ResolverOutput<SymbolId>;
+pub type ResolverTypeOut = ResolverOutput<TypeId>;
+
+#[derive(Debug)]
 pub struct Resolver {
     types: TypeArena,
 
     symbols: SymbolArena,
     scopes: Vec<SymbolScope>,
+
+    dignostics_errors: Vec<SemanticError>,
 }
 
 impl Default for Resolver {
@@ -27,6 +58,8 @@ impl Default for Resolver {
             types: TypeArena::default(),
             symbols: SymbolArena::default(),
             scopes: vec![SymbolScope::default()],
+
+            dignostics_errors: vec![],
         }
     }
 }
@@ -40,27 +73,40 @@ impl Resolver {
         self.scopes.pop();
     }
 
+    pub fn errors(&self) -> &Vec<SemanticError> {
+        &self.dignostics_errors
+    }
+
     /// Insert symbol into the current scope. The symbols id will be returned if correctly
     /// inserted. Nothing will be returned if the type already existed (error).
-    pub fn declare(&mut self, sym: Symbol) -> Result<SymbolId, SemanticError> {
+    pub fn declare(&mut self, sym: Symbol) -> ResolverSymbolOut {
         let curr_scope = self.scopes.last_mut().unwrap();
+        let mut redeclared = false;
         if let Some(original) = curr_scope.map.get(&sym.name) {
             let original = self.symbols.get(original).unwrap();
-            return Err(SemanticError::Redeclaration {
+            self.dignostics_errors.push(SemanticError::Redeclaration {
                 original_span: original.name_span,
                 redec_span: sym.name_span,
             });
+            redeclared = true;
         }
 
+        // Todo: Not sure if here we should insert (end of scope stack) or overwrite (replace the
+        // current duplicate in the scope)
         let name = sym.name.clone();
         let id = self.symbols.insert(sym);
         curr_scope.map.insert(name, id);
-        Ok(id)
+
+        if redeclared {
+            ResolverOutput::Recoverable(id)
+        } else {
+            ResolverOutput::Ok(id)
+        }
     }
 
     /// Find the symbol id for a symbol with a given name. This will look though the current scope,
     /// and then though parent scopes and return the first match. If no matches are found, then an
-    /// error will be returned.
+    /// error will be returned (but not pushed to the resolver)
     pub fn resolve_ident(&self, name: &str, usage_loc: Span) -> Result<SymbolId, SemanticError> {
         for scope in self.scopes.iter().rev() {
             if let Some(symid) = scope.map.get(name) {
@@ -76,9 +122,16 @@ impl Resolver {
 
     /// Given some function declaration in the ast, add it to the symbol table in the current
     /// scope.
-    fn push_ast_function(&mut self, node: &ast::ClFuncDec) -> Result<SymbolId, SemanticError> {
+    fn push_ast_function(&mut self, node: &ast::ClFuncDec) -> ResolverSymbolOut {
         let ty = node.fntype().clone();
-        let ty = self.types.intern_cltype(&ty)?;
+        let ty = match self.types.intern_cltype(&ty) {
+            Ok(ty) => ty,
+            Err(sem_err) => {
+                self.dignostics_errors.push(sem_err);
+                println!("There was an error getting the typeid");
+                self.types.intern(types::Type::Error)
+            }
+        };
         let sym = Symbol {
             name: node.name().clone(),
             kind: symbols::DefKind::Func,
@@ -91,24 +144,25 @@ impl Resolver {
     }
 
     /// Given some binding in the ast, add it to the symbol table in the current scope.
-    fn push_ast_binding(&mut self, node: &ast::ClBinding) -> Result<SymbolId, SemanticError> {
+    fn push_ast_binding(&mut self, node: &ast::ClBinding) -> ResolverSymbolOut {
         #[rustfmt::skip]
         let kind = if node.mutable { DefKind::Var } else { DefKind::Val };
 
-        // If there was no type provided, we cannot push the ast_binding
-        //
-        // TODO: Push the binding anyways - So that we wont give errors later such as "usage of `x`
-        // not defined ..."
-        let node_ty = match &node.vtype {
-            Some(ty) => ty,
+        // If the binding had no type, then we will keep the type error attached to it and proceed
+        // with the analysis, and push an error to the diagnostics.
+        let ty = match &node.vtype {
+            Some(ty) => self.types.intern_cltype(ty).unwrap_or_else(|e| {
+                self.dignostics_errors.push(e);
+                self.types.intern(types::Type::Error)
+            }),
             None => {
-                return Err(SemanticError::TypeMissingCtx {
+                self.dignostics_errors.push(SemanticError::TypeMissingCtx {
                     for_identifier: node.vname.span(),
                 });
+                self.types.intern(types::Type::Error)
             }
         };
 
-        let ty = self.types.intern_cltype(node_ty)?;
         let sym = Symbol {
             name: node.vname.ident().into(),
             kind,
@@ -120,10 +174,7 @@ impl Resolver {
         self.declare(sym)
     }
 
-    pub fn push_ast_declaration(
-        &mut self,
-        node: &ast::ClDeclaration,
-    ) -> Result<SymbolId, SemanticError> {
+    pub fn push_ast_declaration(&mut self, node: &ast::ClDeclaration) -> ResolverSymbolOut {
         match &node {
             ast::ClDeclaration::Binding(node_bind) => self.push_ast_binding(node_bind),
             ast::ClDeclaration::Function(node_fn) => self.push_ast_function(node_fn),
@@ -193,10 +244,11 @@ mod test_resolver {
         let y = make_var("y");
         let g = make_ast_func("g");
 
-        resolver.push_ast_function(&f).unwrap();
-        resolver.push_ast_binding(&y).unwrap();
-        resolver.push_ast_function(&g).unwrap();
+        let a = resolver.push_ast_function(&f);
+        let b = resolver.push_ast_binding(&y);
+        let c = resolver.push_ast_function(&g);
 
+        assert!(a.is_ok() & b.is_ok() & c.is_ok());
         assert_eq!(resolver.symbols.len(), 3);
     }
 
@@ -207,9 +259,11 @@ mod test_resolver {
         let a2 = make_var("a");
 
         assert!(resolver.push_ast_binding(&a1).is_ok());
-        let dup = resolver.push_ast_binding(&a2);
-        assert!(dup.is_err(), "expected duplicate var error");
-        assert_eq!(resolver.symbols.len(), 1);
+        assert!(
+            resolver.push_ast_binding(&a2).is_recoverable(),
+            "redecalring a is a recoverable error"
+        );
+        assert_eq!(resolver.symbols.len(), 2);
     }
 
     #[test]
@@ -219,9 +273,11 @@ mod test_resolver {
         let f2 = make_ast_func("f");
 
         assert!(resolver.push_ast_function(&f1).is_ok());
-        let dup = resolver.push_ast_function(&f2);
-        assert!(dup.is_err(), "expected duplicate func error");
-        assert_eq!(resolver.symbols.len(), 1);
+        assert!(
+            resolver.push_ast_function(&f2).is_recoverable(),
+            "duplicate function is a recoverable error"
+        );
+        assert_eq!(resolver.symbols.len(), 2);
     }
 
     #[test]
@@ -230,8 +286,10 @@ mod test_resolver {
         let f = make_ast_func("f");
         let v = make_var("f");
         assert!(resolver.push_ast_function(&f).is_ok());
-        let dup = resolver.push_ast_binding(&v);
-        assert!(dup.is_err(), "expected duplicate name error");
-        assert_eq!(resolver.symbols.len(), 1);
+        assert!(
+            resolver.push_ast_binding(&v).is_recoverable(),
+            "function and var having the same name is a recovarble error"
+        );
+        assert_eq!(resolver.symbols.len(), 2);
     }
 }
