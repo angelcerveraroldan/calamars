@@ -277,6 +277,14 @@ impl IfStm {
     pub fn else_span(&self) -> SimpleSpan {
         self.otherwise.span()
     }
+
+    pub fn then_expr(&self) -> &Box<ClExpression> {
+        &self.then
+    }
+
+    pub fn else_expr(&self) -> &Box<ClExpression> {
+        &self.otherwise
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

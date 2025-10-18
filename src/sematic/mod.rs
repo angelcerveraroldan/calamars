@@ -40,6 +40,13 @@ impl<T: Debug> ResolverOutput<T> {
     pub fn is_err(&self) -> bool {
         matches!(self, ResolverOutput::Fatal)
     }
+
+    pub fn inner(&self) -> &T {
+        match self {
+            Self::Ok(t) | Self::Recoverable(t) => t,
+            _ => panic!("Can only call inner if you know the type is ok or recoverable"),
+        }
+    }
 }
 
 pub type ResolverSymbolOut = ResolverOutput<SymbolId>;
@@ -238,6 +245,34 @@ impl Resolver {
         }
     }
 
+    /// Get the return type of an if expression.
+    ///
+    /// This will also make sure that both the if then and the else expressions have the same type.
+    fn ast_if_stm_type(&mut self, if_stm: &ast::IfStm) -> ResolverTypeOut {
+        let then_expr = if_stm.then_expr();
+        let else_expr = if_stm.else_expr();
+
+        let then_type = self.ast_expression_type(then_expr.as_ref());
+        let else_type = self.ast_expression_type(else_expr.as_ref());
+
+        if (then_type.is_err() || else_type.is_err()) {
+            return ResolverTypeOut::Fatal;
+        }
+
+        let then_type = then_type.inner();
+        let else_type = else_type.inner();
+        if (then_type == else_type) {
+            ResolverTypeOut::Ok(*then_type)
+        } else {
+            self.dignostics_errors
+                .push(SemanticError::MismatchedIfBranches {
+                    then_span: then_expr.span(),
+                    else_span: else_expr.span(),
+                });
+            ResolverTypeOut::Fatal
+        }
+    }
+
     /// Given some expression, return the TypeId of the expressions return type
     pub fn ast_expression_type(&mut self, node: &ast::ClExpression) -> ResolverTypeOut {
         match node {
@@ -245,7 +280,7 @@ impl Resolver {
             ast::ClExpression::Identifier(ident) => self.ast_identifier_type(ident),
             ast::ClExpression::UnaryOp(cl_unary_op) => todo!(),
             ast::ClExpression::BinaryOp(cl_binary_op) => todo!(),
-            ast::ClExpression::IfStm(if_stm) => todo!(),
+            ast::ClExpression::IfStm(if_stm) => self.ast_if_stm_type(if_stm),
             ast::ClExpression::FunctionCall(func_call) => self.ast_function_call_type(func_call),
             ast::ClExpression::Block(ClCompoundExpression { final_expr, .. }) => match final_expr {
                 Some(exp) => self.ast_expression_type(exp),

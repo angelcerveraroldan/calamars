@@ -24,7 +24,13 @@ pub enum SemanticError {
     QualifiedTypeNotSupported {
         span: Span,
     },
-
+    /// Return types on if and else are not the same, so error
+    MismatchedIfBranches {
+        /// Span of the expressoin being returned in the `then`
+        then_span: Span,
+        /// Span of the expression being returned in the `else`
+        else_span: Span,
+    },
     WrongType {
         span: Span,
     },
