@@ -1,14 +1,17 @@
-use std::{any::TypeId, fmt::Debug};
+use std::{any::Any, fmt::Debug, process::id, string};
 
-use chumsky::container::Seq;
+use chumsky::{container::Seq, span::SimpleSpan, text::ascii::ident};
 
 use crate::{
     sematic::{
         error::SemanticError,
         symbols::{DefKind, Symbol, SymbolArena, SymbolId, SymbolScope},
-        types::TypeArena,
+        types::{Type, TypeArena, TypeId},
     },
-    syntax::{ast, span::Span},
+    syntax::{
+        ast::{self, ClCompoundExpression, Ident},
+        span::Span,
+    },
 };
 
 pub mod error;
@@ -36,6 +39,13 @@ impl<T: Debug> ResolverOutput<T> {
 
     pub fn is_err(&self) -> bool {
         matches!(self, ResolverOutput::Fatal)
+    }
+
+    pub fn inner(&self) -> &T {
+        match self {
+            Self::Ok(t) | Self::Recoverable(t) => t,
+            _ => panic!("Can only call inner if you know the type is ok or recoverable"),
+        }
     }
 }
 
@@ -119,7 +129,10 @@ impl Resolver {
             span: usage_loc,
         })
     }
+}
 
+// HANDLE AST DECLARATIONS
+impl Resolver {
     /// Given some function declaration in the ast, add it to the symbol table in the current
     /// scope.
     fn push_ast_function(&mut self, node: &ast::ClFuncDec) -> ResolverSymbolOut {
@@ -136,7 +149,7 @@ impl Resolver {
             name: node.name().clone(),
             kind: symbols::DefKind::Func,
             arity: Some(node.airity()),
-            ty: Some(ty),
+            ty: ty,
             name_span: node.name_span(),
             decl_span: node.span(),
         };
@@ -167,7 +180,7 @@ impl Resolver {
             name: node.vname.ident().into(),
             kind,
             arity: None,
-            ty: Some(ty),
+            ty: ty,
             name_span: node.name_span(),
             decl_span: node.span(),
         };
@@ -182,20 +195,336 @@ impl Resolver {
     }
 }
 
+// HANDLE AST TYPE CHECKS
+impl Resolver {
+    fn ast_literal_type(&mut self, lit: &ast::ClLiteral) -> ResolverTypeOut {
+        let ty = match lit.kind() {
+            ast::ClLiteralKind::Integer(_) => Type::Integer,
+            ast::ClLiteralKind::Real(_) => Type::Float,
+            ast::ClLiteralKind::String(_) => Type::String,
+            ast::ClLiteralKind::Boolean(_) => Type::Boolean,
+            ast::ClLiteralKind::Char(_) => Type::Char,
+            ast::ClLiteralKind::Array(_cl_literals) => {
+                self.dignostics_errors.push(SemanticError::NotSupported {
+                    msg: "Arrays not yet supported",
+                    span: lit.span(),
+                });
+                return ResolverTypeOut::Recoverable(self.types.intern(Type::Error));
+            }
+        };
+
+        ResolverTypeOut::Ok(self.types.intern(ty))
+    }
+
+    fn ast_identifier_type(&mut self, ident: &Ident) -> ResolverTypeOut {
+        match self.resolve_ident(ident.ident(), ident.span()) {
+            Ok(symbol_id) => {
+                // We know that this will not fail as the id is the index
+                let symbol = self.symbols.get(&symbol_id).unwrap();
+                let ty = symbol.ty;
+                ResolverTypeOut::Ok(ty)
+            }
+            // The symbol was not found, nothing we can do
+            Err(e) => {
+                self.dignostics_errors.push(e);
+                ResolverTypeOut::Fatal
+            }
+        }
+    }
+
+    fn ast_function_call_return_type(&mut self, func_call: &ast::FuncCall) -> ResolverTypeOut {
+        match self.resolve_ident(func_call.name(), func_call.span()) {
+            Ok(func_id) => {
+                let symbol = self.symbols.get(&func_id).unwrap();
+                let out_ty = match self.types.get(symbol.ty).unwrap() {
+                    Type::Function { output, .. } => output,
+                    _ => unreachable!("Functions can only have function type"),
+                };
+                ResolverTypeOut::Ok(*out_ty)
+            }
+            Err(e) => {
+                self.dignostics_errors.push(e);
+                ResolverTypeOut::Fatal
+            }
+        }
+    }
+
+    /// Get the return type of an if expression.
+    ///
+    /// This will also make sure that both the if then and the else expressions have the same type.
+    fn ast_if_stm_type(&mut self, if_stm: &ast::IfStm) -> ResolverTypeOut {
+        let then_expr = if_stm.then_expr();
+        let else_expr = if_stm.else_expr();
+
+        let then_type = self.ast_expression_type(then_expr.as_ref());
+        let else_type = self.ast_expression_type(else_expr.as_ref());
+
+        if (then_type.is_err() || else_type.is_err()) {
+            return ResolverTypeOut::Recoverable(self.types.intern(Type::Error));
+        }
+
+        let then_type = then_type.inner();
+        let else_type = else_type.inner();
+        if (then_type == else_type) {
+            ResolverTypeOut::Ok(*then_type)
+        } else {
+            self.dignostics_errors
+                .push(SemanticError::MismatchedIfBranches {
+                    then_span: then_expr.span(),
+                    else_span: else_expr.span(),
+                });
+            ResolverTypeOut::Recoverable(self.types.intern(Type::Error))
+        }
+    }
+
+    fn ast_unary_type(&mut self, unary: &ast::ClUnaryOp) -> ResolverTypeOut {
+        if *unary.operator() != ast::UnaryOperator::Neg {
+            self.dignostics_errors.push(SemanticError::NotSupported {
+                msg: "unary operator not supported yet",
+                span: unary.span(),
+            });
+            return ResolverTypeOut::Recoverable(self.types.err());
+        }
+        let inner_type = self.ast_expression_type(unary.inner_exp());
+        if inner_type.is_err() {
+            return ResolverTypeOut::Fatal;
+        }
+        let inner_type = *inner_type.inner();
+
+        let integer_type = self.types.int();
+        let boolean_type = self.types.bool();
+
+        // We can only negate booleans an integers
+        if inner_type == integer_type || inner_type == boolean_type {
+            ResolverTypeOut::Ok(inner_type)
+        } else {
+            self.dignostics_errors.push(SemanticError::WrongType {
+                expected: self
+                    .types
+                    .many_types_as_str(vec![integer_type, boolean_type]),
+                actual: self.types.as_string(inner_type),
+                span: unary.span(),
+            });
+            ResolverTypeOut::Recoverable(self.types.err())
+        }
+    }
+
+    fn ast_binary_op_type(&mut self, binary: &ast::ClBinaryOp) -> ResolverTypeOut {
+        use ast::BinaryOperator::*; // match later is mess, import in this scope
+
+        let (lhs, rhs) = (binary.lhs(), binary.rhs());
+
+        let lhs_type = self.ast_expression_type(&lhs);
+        let rhs_type = self.ast_expression_type(&rhs);
+        if lhs_type.is_err() || rhs_type.is_err() {
+            return ResolverTypeOut::Fatal;
+        }
+
+        let int_type = self.types.int();
+        let float_type = self.types.float();
+        let bool_type = self.types.bool();
+        let string_type = self.types.string();
+
+        let lhs_type = *lhs_type.inner();
+        let rhs_type = *rhs_type.inner();
+
+        match binary.operator() {
+            // Basic mathematics ops are supported if both types are numerical
+            Add | Sub | Times | Pow | Div => {
+                // No errors
+                if lhs_type == int_type && rhs_type == int_type {
+                    return ResolverTypeOut::Ok(int_type);
+                }
+                if lhs_type == float_type && rhs_type == float_type {
+                    return ResolverTypeOut::Ok(float_type);
+                }
+
+                // Handle case where the left and right are type mismatches, but numerical
+                if lhs_type == int_type || lhs_type == float_type {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(lhs_type),
+                        actual: self.types.as_string(rhs_type),
+                        span: rhs.span(),
+                    });
+                    return ResolverTypeOut::Recoverable(lhs_type);
+                }
+
+                if rhs_type == int_type || rhs_type == float_type {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(rhs_type),
+                        actual: self.types.as_string(lhs_type),
+                        span: lhs.span(),
+                    });
+                    return ResolverTypeOut::Recoverable(rhs_type);
+                }
+
+                self.dignostics_errors.push(SemanticError::WrongType {
+                    expected: self.types.many_types_as_str(vec![int_type, float_type]),
+                    actual: self.types.as_string(lhs_type),
+                    span: lhs.span(),
+                });
+                self.dignostics_errors.push(SemanticError::WrongType {
+                    expected: self.types.many_types_as_str(vec![int_type, float_type]),
+                    actual: self.types.as_string(rhs_type),
+                    span: rhs.span(),
+                });
+
+                // Both wrong. We could assume int/float, but I dont think that is a good idea
+                // for now.
+                ResolverTypeOut::Recoverable(self.types.err())
+            }
+            Geq | Leq => {
+                let lint = lhs_type == int_type;
+                let rint = rhs_type == int_type;
+                let lflt = lhs_type == float_type;
+                let rflt = rhs_type == float_type;
+
+                if (lint && rint) || (lflt && rflt) {
+                    return ResolverTypeOut::Ok(bool_type);
+                }
+
+                if lint || lflt {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(lhs_type),
+                        actual: self.types.as_string(rhs_type),
+                        span: rhs.span(),
+                    });
+                    return ResolverTypeOut::Recoverable(bool_type);
+                }
+
+                if rint || rflt {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(rhs_type),
+                        actual: self.types.as_string(lhs_type),
+                        span: lhs.span(),
+                    });
+                    return ResolverTypeOut::Recoverable(bool_type);
+                }
+
+                self.dignostics_errors.push(SemanticError::WrongType {
+                    expected: self.types.many_types_as_str(vec![int_type, float_type]),
+                    actual: self.types.as_string(lhs_type),
+                    span: lhs.span(),
+                });
+                self.dignostics_errors.push(SemanticError::WrongType {
+                    expected: self.types.many_types_as_str(vec![int_type, float_type]),
+                    actual: self.types.as_string(rhs_type),
+                    span: rhs.span(),
+                });
+
+                ResolverTypeOut::Recoverable(self.types.err())
+            }
+            EqEq | NotEqual => {
+                if lhs_type == rhs_type {
+                    ResolverTypeOut::Ok(bool_type)
+                } else {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(lhs_type),
+                        actual: self.types.as_string(rhs_type),
+                        span: lhs.span(),
+                    });
+                    ResolverTypeOut::Recoverable(bool_type)
+                }
+            }
+            Or | Xor | And => {
+                // Both integers or both booleans ONLY
+                if (lhs_type == int_type && rhs_type == int_type)
+                    || (lhs_type == bool_type && rhs_type == bool_type)
+                {
+                    return ResolverTypeOut::Ok(lhs_type);
+                }
+
+                // The left makes sense, but the right does not match / doesnt make sense.
+                if lhs_type == int_type || lhs_type == bool_type {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(lhs_type),
+                        actual: self.types.as_string(rhs_type),
+                        span: rhs.span(),
+                    });
+                    return ResolverTypeOut::Recoverable(lhs_type);
+                }
+
+                // The left didnt make sense, and the right does. Assume rhs type was intended
+                if rhs_type == int_type || rhs_type == bool_type {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(rhs_type),
+                        actual: self.types.as_string(lhs_type),
+                        span: lhs.span(),
+                    });
+                    return ResolverTypeOut::Recoverable(rhs_type);
+                }
+
+                // Neither of the types made sense.
+
+                self.dignostics_errors.push(SemanticError::WrongType {
+                    expected: self.types.many_types_as_str(vec![int_type, bool_type]),
+                    actual: self.types.as_string(lhs_type),
+                    span: lhs.span(),
+                });
+                self.dignostics_errors.push(SemanticError::WrongType {
+                    expected: self.types.many_types_as_str(vec![int_type, bool_type]),
+                    actual: self.types.as_string(rhs_type),
+                    span: rhs.span(),
+                });
+
+                ResolverTypeOut::Recoverable(self.types.err())
+            }
+            Concat => {
+                if lhs_type == string_type && rhs_type == string_type {
+                    return ResolverTypeOut::Ok(string_type);
+                }
+
+                if lhs_type != string_type {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(string_type),
+                        actual: self.types.as_string(lhs_type),
+                        span: lhs.span(),
+                    })
+                }
+
+                if rhs_type != string_type {
+                    self.dignostics_errors.push(SemanticError::WrongType {
+                        expected: self.types.as_string(string_type),
+                        actual: self.types.as_string(rhs_type),
+                        span: rhs.span(),
+                    })
+                }
+
+                // Concat always returns a string, so we know the output
+                ResolverTypeOut::Recoverable(string_type)
+            }
+        }
+    }
+
+    /// Given some expression, return the TypeId of the expressions return type
+    pub fn ast_expression_type(&mut self, node: &ast::ClExpression) -> ResolverTypeOut {
+        match node {
+            ast::ClExpression::Literal(cl_literal) => self.ast_literal_type(cl_literal),
+            ast::ClExpression::Identifier(ident) => self.ast_identifier_type(ident),
+            ast::ClExpression::UnaryOp(cl_unary_op) => self.ast_unary_type(cl_unary_op),
+            ast::ClExpression::BinaryOp(cl_binary_op) => self.ast_binary_op_type(cl_binary_op),
+            ast::ClExpression::IfStm(if_stm) => self.ast_if_stm_type(if_stm),
+            ast::ClExpression::FunctionCall(func_call) => {
+                self.ast_function_call_return_type(func_call)
+            }
+            ast::ClExpression::Block(ClCompoundExpression { final_expr, .. }) => match final_expr {
+                Some(exp) => self.ast_expression_type(exp),
+                None => ResolverTypeOut::Ok(self.types.intern(Type::Unit)),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
-mod test_resolver {
+mod test_helpers_resolver {
     use chumsky::{Parser, span::SimpleSpan};
 
-    use crate::{
-        parser::parse_cl_item,
-        sematic::Resolver,
-        syntax::{
-            ast::{self, ClBinding, ClLiteral, ClType, Ident},
-            token::Token,
-        },
+    use crate::syntax::ast::{
+        self, BinaryOperator, ClBinaryOp, ClBinding, ClExpression, ClLiteral, ClLiteralKind,
+        ClType, Ident,
     };
 
-    fn fake_span() -> SimpleSpan {
+    pub fn fake_span() -> SimpleSpan {
         SimpleSpan {
             start: 0,
             end: 0,
@@ -203,18 +532,62 @@ mod test_resolver {
         }
     }
 
-    fn cltype_int() -> ClType {
+    pub fn cltype_int() -> ClType {
         ClType::Path {
             segments: vec![Ident::new("Int".to_string(), fake_span())],
             span: fake_span(),
         }
     }
 
-    fn integer_literal() -> ClLiteral {
+    pub fn cltype_bool() -> ClType {
+        ClType::Path {
+            segments: vec![Ident::new("Bool".to_string(), fake_span())],
+            span: fake_span(),
+        }
+    }
+
+    pub fn cltype_float() -> ClType {
+        ClType::Path {
+            segments: vec![Ident::new("Float".to_string(), fake_span())],
+            span: fake_span(),
+        }
+    }
+
+    pub fn cltype_string() -> ClType {
+        ClType::Path {
+            segments: vec![Ident::new("String".to_string(), fake_span())],
+            span: fake_span(),
+        }
+    }
+
+    pub fn expr_int(n: i64) -> ClExpression {
+        ClExpression::Literal(ClLiteral::new(ClLiteralKind::Integer(n), fake_span()))
+    }
+
+    pub fn expr_real(f: f64) -> ClExpression {
+        ClExpression::Literal(ClLiteral::new(ClLiteralKind::Real(f), fake_span()))
+    }
+
+    pub fn expr_bool(b: bool) -> ClExpression {
+        ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(b), fake_span()))
+    }
+
+    pub fn expr_string(s: &str) -> ClExpression {
+        ClExpression::Literal(ClLiteral::new(
+            ClLiteralKind::String(s.to_string()),
+            fake_span(),
+        ))
+    }
+
+    pub fn bin(lhs: ClExpression, op: BinaryOperator, rhs: ClExpression) -> ClExpression {
+        ClExpression::BinaryOp(ClBinaryOp::new(op, lhs.into(), rhs.into(), fake_span()))
+    }
+
+    pub fn integer_literal() -> ClLiteral {
         ClLiteral::new(ast::ClLiteralKind::Integer(10), fake_span())
     }
 
-    fn make_ast_func(name: &str) -> ast::ClFuncDec {
+    pub fn make_ast_func(name: &str) -> ast::ClFuncDec {
         let fake = fake_span();
 
         ast::ClFuncDec::new(
@@ -227,7 +600,7 @@ mod test_resolver {
         )
     }
 
-    fn make_var(name: &str) -> ast::ClBinding {
+    pub fn make_var(name: &str) -> ast::ClBinding {
         ClBinding::new(
             Ident::new(name.to_string(), fake_span()),
             cltype_int().into(),
@@ -236,6 +609,12 @@ mod test_resolver {
             fake_span(),
         )
     }
+}
+
+#[cfg(test)]
+mod test_insert_node_to_resolver {
+    use super::test_helpers_resolver::*;
+    use crate::sematic::Resolver;
 
     #[test]
     fn happy_resolver() {
@@ -291,5 +670,238 @@ mod test_resolver {
             "function and var having the same name is a recovarble error"
         );
         assert_eq!(resolver.symbols.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod test_get_expr_type {
+    use super::test_helpers_resolver::*;
+    use crate::{
+        sematic::{Resolver, types},
+        syntax::ast::{
+            self, BinaryOperator, ClCompoundExpression, ClExpression, ClLiteral, ClLiteralKind,
+            ClType, FuncCall, Ident,
+        },
+    };
+
+    #[test]
+    fn expr_literal_int_has_int_type() {
+        let mut resolver = Resolver::default();
+
+        let expr = ClExpression::Literal(integer_literal());
+        let out = resolver.ast_expression_type(&expr);
+
+        assert!(out.is_ok(), "typing an int literal should succeed");
+
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect, "int literal should type to Int");
+    }
+
+    #[test]
+    // Get the return type of a function even if the input types are wrong.
+    fn get_function_return_type() {
+        let mut resolver = Resolver::default();
+        let f = make_ast_func("f");
+        resolver.push_ast_function(&f);
+
+        let fcall = FuncCall::new(
+            Ident::new("f".to_string(), fake_span()),
+            vec![],
+            fake_span(),
+        );
+        let out = resolver.ast_function_call_return_type(&fcall);
+        assert!(out.is_ok());
+        let exp = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        let acc = *out.inner();
+        assert_eq!(exp, acc);
+    }
+
+    #[test]
+    fn expr_identifier_uses_declared_binding_type() {
+        let mut resolver = Resolver::default();
+
+        // val x: Int = 10
+        let x = make_var("x");
+        assert!(resolver.push_ast_binding(&x).is_ok());
+
+        // use x
+        let expr = ClExpression::Identifier(Ident::new("x".into(), fake_span()));
+        let out = resolver.ast_expression_type(&expr);
+
+        assert!(out.is_ok(), "typing an existing identifier should succeed");
+
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect, "identifier x should have type Int");
+    }
+
+    #[test]
+    fn expr_block_without_final_expr_is_unit() {
+        let mut resolver = Resolver::default();
+
+        let block = ClExpression::Block(ClCompoundExpression::new(vec![], None, fake_span()));
+
+        let out = resolver.ast_expression_type(&block);
+        assert!(out.is_ok(), "empty block should type check");
+        let got = *out.inner();
+        let expect = resolver
+            .types
+            .intern_cltype(&ClType::Path {
+                segments: vec![Ident::new("()".into(), fake_span())],
+                span: fake_span(),
+            })
+            .unwrap();
+        assert_eq!(got, expect, "empty block should have type Unit");
+    }
+
+    #[test]
+    fn if_with_matching_branch_types_yields_that_type() {
+        let mut resolver = Resolver::default();
+
+        let cond = ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(true), fake_span()));
+        let then_e = ClExpression::Literal(integer_literal());
+        let else_e = ClExpression::Literal(integer_literal());
+        let if_e = ClExpression::IfStm(ast::IfStm::new(
+            cond.into(),
+            then_e.into(),
+            else_e.into(),
+            fake_span(),
+        ));
+
+        let out = resolver.ast_expression_type(&if_e);
+        assert!(out.is_ok(), "if with equal branch types should be ok");
+
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn if_with_mismatched_branch_types_is_recoverable_error() {
+        let mut resolver = Resolver::default();
+        let before = resolver.dignostics_errors.len();
+
+        let cond = ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(true), fake_span()));
+        let then_e = ClExpression::Literal(integer_literal());
+        let else_e =
+            ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(false), fake_span()));
+        let if_e = ClExpression::IfStm(ast::IfStm::new(
+            cond.into(),
+            then_e.into(),
+            else_e.into(),
+            fake_span(),
+        ));
+
+        let out = resolver.ast_expression_type(&if_e);
+        assert!(
+            out.is_recoverable(),
+            "Different branches have diff return types, so there should be an error type, but it is recoverable."
+        );
+
+        let got = *out.inner();
+        let expect_err = resolver.types.intern(types::Type::Error);
+        assert_eq!(got, expect_err);
+        assert!(resolver.dignostics_errors.len() > before,);
+    }
+
+    #[test]
+    fn add_int_int_ok() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Add, expr_int(2)));
+        assert!(out.is_ok());
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn add_float_float_ok() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_real(1.0), BinaryOperator::Add, expr_real(2.0)));
+        assert!(out.is_ok());
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_float()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn add_int_bool_recover_left_type() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Add, expr_bool(true)));
+        assert!(
+            out.is_recoverable(),
+            "int + bool should be a recoverable error"
+        );
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect, "recover with lhs numeric type");
+    }
+
+    #[test]
+    fn leq_int_bool_recover_bool() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Leq, expr_bool(true)));
+        assert!(
+            out.is_recoverable(),
+            "int <= bool should be recoverable with Bool result"
+        );
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_bool()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn eqeq_int_int_ok_bool() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::EqEq, expr_int(1)));
+        assert!(out.is_ok());
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_bool()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn eqeq_int_bool_recover_bool() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::EqEq, expr_bool(true)));
+        assert!(
+            out.is_recoverable(),
+            "int == bool should be recoverable with Bool result"
+        );
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_bool()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn or_ints_ok_int() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Or, expr_int(2)));
+        assert!(out.is_ok());
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn and_bools_ok_bool() {
+        let mut r = Resolver::default();
+        let out =
+            r.ast_expression_type(&bin(expr_bool(true), BinaryOperator::And, expr_bool(false)));
+        assert!(out.is_ok());
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_bool()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn or_int_bool_mismatch_recover_operand_type() {
+        let mut r = Resolver::default();
+        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Or, expr_bool(true)));
+        assert!(out.is_recoverable(), "int or bool should be recoverable");
+        let got = *out.inner();
+        let expect = r.types.intern_cltype(&cltype_int()).unwrap(); // recover with lhs type per your policy
+        assert_eq!(got, expect);
     }
 }

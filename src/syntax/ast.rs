@@ -84,6 +84,10 @@ impl ClLiteral {
         Self { kind, span }
     }
 
+    pub fn kind(&self) -> &ClLiteralKind {
+        &self.kind
+    }
+
     pub fn span(&self) -> Span {
         self.span
     }
@@ -195,6 +199,14 @@ impl ClUnaryOp {
         Self { operator, on, span }
     }
 
+    pub fn operator(&self) -> &UnaryOperator {
+        &self.operator
+    }
+
+    pub fn inner_exp(&self) -> &Box<ClExpression> {
+        &self.on
+    }
+
     pub fn span(&self) -> Span {
         self.span
     }
@@ -227,6 +239,18 @@ impl ClBinaryOp {
             right,
             span,
         }
+    }
+
+    pub fn operator(&self) -> &BinaryOperator {
+        &self.operator
+    }
+
+    pub fn lhs(&self) -> &Box<ClExpression> {
+        &self.left
+    }
+
+    pub fn rhs(&self) -> &Box<ClExpression> {
+        &self.right
     }
 
     pub fn span(&self) -> Span {
@@ -273,6 +297,14 @@ impl IfStm {
     pub fn else_span(&self) -> SimpleSpan {
         self.otherwise.span()
     }
+
+    pub fn then_expr(&self) -> &Box<ClExpression> {
+        &self.then
+    }
+
+    pub fn else_expr(&self) -> &Box<ClExpression> {
+        &self.otherwise
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -289,6 +321,14 @@ impl FuncCall {
             params,
             span,
         }
+    }
+
+    pub fn params(&self) -> &Vec<ClExpression> {
+        &self.params
+    }
+
+    pub fn name(&self) -> &str {
+        &self.func_name.ident
     }
 
     pub fn span(&self) -> Span {

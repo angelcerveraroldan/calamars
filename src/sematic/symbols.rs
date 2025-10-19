@@ -24,7 +24,7 @@ pub struct Symbol {
     /// Number of params this symbol accepts as its input
     pub arity: Option<u16>,
     /// Type of the symbol
-    pub ty: Option<TypeId>,
+    pub ty: TypeId,
     /// Span to the identifier for this symbol
     pub name_span: Span,
     /// Span of the entire declaration for this symbol
