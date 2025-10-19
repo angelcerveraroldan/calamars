@@ -232,11 +232,15 @@ impl Resolver {
         }
     }
 
-    fn ast_function_call_type(&mut self, func_call: &ast::FuncCall) -> ResolverTypeOut {
+    fn ast_function_call_return_type(&mut self, func_call: &ast::FuncCall) -> ResolverTypeOut {
         match self.resolve_ident(func_call.name(), func_call.span()) {
             Ok(func_id) => {
                 let symbol = self.symbols.get(&func_id).unwrap();
-                ResolverTypeOut::Ok(symbol.ty)
+                let out_ty = match self.types.get(symbol.ty).unwrap() {
+                    Type::Function { output, .. } => output,
+                    _ => unreachable!("Functions can only have function type"),
+                };
+                ResolverTypeOut::Ok(*out_ty)
             }
             Err(e) => {
                 self.dignostics_errors.push(e);
@@ -281,7 +285,9 @@ impl Resolver {
             ast::ClExpression::UnaryOp(cl_unary_op) => todo!(),
             ast::ClExpression::BinaryOp(cl_binary_op) => todo!(),
             ast::ClExpression::IfStm(if_stm) => self.ast_if_stm_type(if_stm),
-            ast::ClExpression::FunctionCall(func_call) => self.ast_function_call_type(func_call),
+            ast::ClExpression::FunctionCall(func_call) => {
+                self.ast_function_call_return_type(func_call)
+            }
             ast::ClExpression::Block(ClCompoundExpression { final_expr, .. }) => match final_expr {
                 Some(exp) => self.ast_expression_type(exp),
                 None => ResolverTypeOut::Ok(self.types.intern(Type::Unit)),
@@ -291,7 +297,7 @@ impl Resolver {
 }
 
 #[cfg(test)]
-mod test_resolver {
+mod test_helpers_resolver {
     use chumsky::{Parser, span::SimpleSpan};
 
     use crate::{
@@ -303,7 +309,7 @@ mod test_resolver {
         },
     };
 
-    fn fake_span() -> SimpleSpan {
+    pub fn fake_span() -> SimpleSpan {
         SimpleSpan {
             start: 0,
             end: 0,
@@ -311,18 +317,18 @@ mod test_resolver {
         }
     }
 
-    fn cltype_int() -> ClType {
+    pub fn cltype_int() -> ClType {
         ClType::Path {
             segments: vec![Ident::new("Int".to_string(), fake_span())],
             span: fake_span(),
         }
     }
 
-    fn integer_literal() -> ClLiteral {
+    pub fn integer_literal() -> ClLiteral {
         ClLiteral::new(ast::ClLiteralKind::Integer(10), fake_span())
     }
 
-    fn make_ast_func(name: &str) -> ast::ClFuncDec {
+    pub fn make_ast_func(name: &str) -> ast::ClFuncDec {
         let fake = fake_span();
 
         ast::ClFuncDec::new(
@@ -335,7 +341,7 @@ mod test_resolver {
         )
     }
 
-    fn make_var(name: &str) -> ast::ClBinding {
+    pub fn make_var(name: &str) -> ast::ClBinding {
         ClBinding::new(
             Ident::new(name.to_string(), fake_span()),
             cltype_int().into(),
@@ -344,6 +350,12 @@ mod test_resolver {
             fake_span(),
         )
     }
+}
+
+#[cfg(test)]
+mod test_insert_node_to_resolver {
+    use super::test_helpers_resolver::*;
+    use crate::sematic::Resolver;
 
     #[test]
     fn happy_resolver() {
@@ -399,5 +411,37 @@ mod test_resolver {
             "function and var having the same name is a recovarble error"
         );
         assert_eq!(resolver.symbols.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod test_get_expr_type {
+    use super::test_helpers_resolver::*;
+    use crate::{
+        sematic::Resolver,
+        syntax::ast::{FuncCall, Ident},
+    };
+
+    #[test]
+    fn get_function_return_type() {
+        let mut resolver = Resolver::default();
+        let f = make_ast_func("f");
+        resolver.push_ast_function(&f);
+
+        let fcall = FuncCall::new(
+            Ident::new("f".to_string(), fake_span()),
+            vec![],
+            fake_span(),
+        );
+        let out = resolver.ast_function_call_return_type(&fcall);
+        assert!(out.is_ok());
+        let exp = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        let acc = *out.inner();
+
+        let exp_type = resolver.types.get(exp);
+        let acc_type = resolver.types.get(acc);
+        println!("Acc: {:?} vs Exp: {:?}", acc_type, exp_type);
+
+        assert_eq!(exp, acc);
     }
 }
