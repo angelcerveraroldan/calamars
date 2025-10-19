@@ -418,11 +418,29 @@ mod test_insert_node_to_resolver {
 mod test_get_expr_type {
     use super::test_helpers_resolver::*;
     use crate::{
-        sematic::Resolver,
-        syntax::ast::{FuncCall, Ident},
+        sematic::{Resolver, types},
+        syntax::ast::{
+            self, ClCompoundExpression, ClExpression, ClLiteral, ClLiteralKind, ClType, FuncCall,
+            Ident,
+        },
     };
 
     #[test]
+    fn expr_literal_int_has_int_type() {
+        let mut resolver = Resolver::default();
+
+        let expr = ClExpression::Literal(integer_literal());
+        let out = resolver.ast_expression_type(&expr);
+
+        assert!(out.is_ok(), "typing an int literal should succeed");
+
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect, "int literal should type to Int");
+    }
+
+    #[test]
+    // Get the return type of a function even if the input types are wrong.
     fn get_function_return_type() {
         let mut resolver = Resolver::default();
         let f = make_ast_func("f");
@@ -437,11 +455,94 @@ mod test_get_expr_type {
         assert!(out.is_ok());
         let exp = resolver.types.intern_cltype(&cltype_int()).unwrap();
         let acc = *out.inner();
-
-        let exp_type = resolver.types.get(exp);
-        let acc_type = resolver.types.get(acc);
-        println!("Acc: {:?} vs Exp: {:?}", acc_type, exp_type);
-
         assert_eq!(exp, acc);
+    }
+
+    #[test]
+    fn expr_identifier_uses_declared_binding_type() {
+        let mut resolver = Resolver::default();
+
+        // val x: Int = 10
+        let x = make_var("x");
+        assert!(resolver.push_ast_binding(&x).is_ok());
+
+        // use x
+        let expr = ClExpression::Identifier(Ident::new("x".into(), fake_span()));
+        let out = resolver.ast_expression_type(&expr);
+
+        assert!(out.is_ok(), "typing an existing identifier should succeed");
+
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect, "identifier x should have type Int");
+    }
+
+    #[test]
+    fn expr_block_without_final_expr_is_unit() {
+        let mut resolver = Resolver::default();
+
+        let block = ClExpression::Block(ClCompoundExpression::new(vec![], None, fake_span()));
+
+        let out = resolver.ast_expression_type(&block);
+        assert!(out.is_ok(), "empty block should type check");
+        let got = *out.inner();
+        let expect = resolver
+            .types
+            .intern_cltype(&ClType::Path {
+                segments: vec![Ident::new("()".into(), fake_span())],
+                span: fake_span(),
+            })
+            .unwrap();
+        assert_eq!(got, expect, "empty block should have type Unit");
+    }
+
+    #[test]
+    fn if_with_matching_branch_types_yields_that_type() {
+        let mut resolver = Resolver::default();
+
+        let cond = ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(true), fake_span()));
+        let then_e = ClExpression::Literal(integer_literal());
+        let else_e = ClExpression::Literal(integer_literal());
+        let if_e = ClExpression::IfStm(ast::IfStm::new(
+            cond.into(),
+            then_e.into(),
+            else_e.into(),
+            fake_span(),
+        ));
+
+        let out = resolver.ast_expression_type(&if_e);
+        assert!(out.is_ok(), "if with equal branch types should be ok");
+
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn if_with_mismatched_branch_types_is_recoverable_error() {
+        let mut resolver = Resolver::default();
+        let before = resolver.dignostics_errors.len();
+
+        let cond = ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(true), fake_span()));
+        let then_e = ClExpression::Literal(integer_literal());
+        let else_e =
+            ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(false), fake_span()));
+        let if_e = ClExpression::IfStm(ast::IfStm::new(
+            cond.into(),
+            then_e.into(),
+            else_e.into(),
+            fake_span(),
+        ));
+
+        let out = resolver.ast_expression_type(&if_e);
+        assert!(
+            out.is_recoverable(),
+            "Different branches have diff return types, so there should be an error type, but it is recoverable."
+        );
+
+        let got = *out.inner();
+        let expect_err = resolver.types.intern(types::Type::Error);
+        assert_eq!(got, expect_err);
+        assert!(resolver.dignostics_errors.len() > before,);
     }
 }
