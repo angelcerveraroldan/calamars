@@ -32,6 +32,10 @@ pub enum SemanticError {
         else_span: Span,
     },
     WrongType {
+        /// Accepted type or types
+        expected: String,
+        /// Type that was found
+        actual: String,
         span: Span,
     },
     NotSupported {

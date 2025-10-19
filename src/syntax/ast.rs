@@ -199,6 +199,14 @@ impl ClUnaryOp {
         Self { operator, on, span }
     }
 
+    pub fn operator(&self) -> &UnaryOperator {
+        &self.operator
+    }
+
+    pub fn inner_exp(&self) -> &Box<ClExpression> {
+        &self.on
+    }
+
     pub fn span(&self) -> Span {
         self.span
     }
@@ -231,6 +239,18 @@ impl ClBinaryOp {
             right,
             span,
         }
+    }
+
+    pub fn operator(&self) -> &BinaryOperator {
+        &self.operator
+    }
+
+    pub fn lhs(&self) -> &Box<ClExpression> {
+        &self.left
+    }
+
+    pub fn rhs(&self) -> &Box<ClExpression> {
+        &self.right
     }
 
     pub fn span(&self) -> Span {

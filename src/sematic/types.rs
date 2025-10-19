@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    sematic::error::SemanticError,
+    sematic::{error::SemanticError, types},
     syntax::{
         ast::{self, Ident},
         span::Span,
@@ -91,6 +91,14 @@ impl TypeArena {
         }
     }
 
+    pub fn many_types_as_str(&self, type_ids: Vec<TypeId>) -> String {
+        type_ids
+            .into_iter()
+            .map(|ty| self.as_string(ty))
+            .collect::<Vec<String>>()
+            .join(" or ")
+    }
+
     /// If already in the type arena, then return the types id. If this type is new to the arena,
     /// then add it and return its id.
     pub fn intern(&mut self, ty: Type) -> TypeId {
@@ -152,6 +160,34 @@ impl TypeArena {
                 Ok(self.intern(func))
             }
         }
+    }
+
+    fn get_unchecked(&self, ty: Type) -> TypeId {
+        *self.index.get(&ty).unwrap()
+    }
+
+    pub fn err(&self) -> TypeId {
+        self.get_unchecked(Type::Error)
+    }
+
+    pub fn int(&self) -> TypeId {
+        self.get_unchecked(Type::Integer)
+    }
+
+    pub fn float(&self) -> TypeId {
+        self.get_unchecked(Type::Float)
+    }
+
+    pub fn bool(&self) -> TypeId {
+        self.get_unchecked(Type::Boolean)
+    }
+
+    pub fn char(&self) -> TypeId {
+        self.get_unchecked(Type::Char)
+    }
+
+    pub fn string(&self) -> TypeId {
+        self.get_unchecked(Type::String)
     }
 }
 
