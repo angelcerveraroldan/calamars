@@ -10,7 +10,7 @@ To play around with Calamars syntax, you can use the following code in you vim c
 This is just a temporary solution, since the language is changing very fast, and the syntax is
 not fully stable yet.
 
-```
+```vim
 " Keywords
 syntax keyword calamarsKeyword def val var mut struct enum match import module
 
