@@ -12,7 +12,7 @@ not fully stable yet.
 
 ```vim
 " Keywords
-syntax keyword calamarsKeyword def val var mut struct enum match import module
+syntax keyword calamarsKeyword def val var mut struct enum match import module or and xor
 
 " Types (after colon, like : String)
 syntax match calamarsType /\v:\s*\zs[A-Z][a-zA-Z0-9_]*/
