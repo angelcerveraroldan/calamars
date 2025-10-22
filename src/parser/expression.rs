@@ -116,7 +116,7 @@ where
         .separated_by(just(Token::Comma))
         .collect::<Vec<ClExpression>>()
         .delimited_by(just(Token::LParen), just(Token::RParen))
-        .labelled("function arguments");
+        .labelled("function argument");
 
     parse_identifier()
         .then(parse_args)
@@ -131,9 +131,9 @@ fn parse_compound_expression<'a, I>(
 where
     I: TokenInput<'a>,
 {
-    just(Token::LBrace)
-        .ignore_then(item.repeated().collect::<Vec<_>>())
-        .then_ignore(just(Token::RBrace))
+    item.repeated()
+        .collect::<Vec<_>>()
+        .delimited_by(just(Token::LBrace), just(Token::RBrace))
         .map_with(|mut items, extra| {
             let final_expr = items
                 .pop_if(|item| item.is_expression())
@@ -162,5 +162,6 @@ where
             parse_identifier().map(ClExpression::Identifier),
             bracketed_expr,
         ))
+        .labelled("expression")
     })
 }
