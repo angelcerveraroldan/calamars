@@ -42,4 +42,11 @@ pub enum SemanticError {
         msg: &'static str,
         span: Span,
     },
+    /// When looking up the SymbolId in the symbol arena, it was not found.
+    ///
+    /// This should be an internal error, as it will make no sense to the user, and so maybe it
+    /// should be handled differently...
+    SymbolIdNotFound {
+        id: super::symbols::SymbolId,
+    },
 }
