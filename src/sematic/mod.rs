@@ -129,7 +129,6 @@ impl Resolver {
             span: usage_loc,
         })
     }
-}
 
     pub fn get_symbol_type(&self, symbol_id: &SymbolId) -> Result<TypeId, SemanticError> {
         match self.symbols.get(symbol_id) {
@@ -714,7 +713,7 @@ mod test_helpers_resolver {
             fake_span(),
         )
     }
-  
+
     pub fn make_var(name: &str) -> ast::ClBinding {
         ClBinding::new(
             Ident::new(name.to_string(), fake_span()),
