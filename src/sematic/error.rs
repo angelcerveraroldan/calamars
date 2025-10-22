@@ -49,4 +49,9 @@ pub enum SemanticError {
     SymbolIdNotFound {
         id: super::symbols::SymbolId,
     },
+    ArityError {
+        expected: usize,
+        actual: usize,
+        span: Span,
+    },
 }
