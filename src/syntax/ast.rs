@@ -305,6 +305,10 @@ impl IfStm {
     pub fn else_expr(&self) -> &Box<ClExpression> {
         &self.otherwise
     }
+
+    pub fn pred(&self) -> &Box<ClExpression> {
+        &self.predicate
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
