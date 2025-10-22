@@ -594,6 +594,16 @@ impl Resolver {
             ast::ClDeclaration::Function(node) => self.type_check_function(node),
         }
     }
+
+    fn type_check_if_condition(&mut self, if_stm: &ast::IfStm) {
+        let cond = if_stm.pred();
+        let pred_type = self.ast_expression_type(cond);
+        if pred_type.is_err() {
+            return;
+        }
+        let pred_type = pred_type.inner();
+        self._check_type_eq_and_log_error(self.types.bool(), *pred_type, if_stm.pred_span());
+    }
 }
 
 #[cfg(test)]
@@ -1013,7 +1023,9 @@ mod test_get_expr_type {
 mod test_type_matching {
     use crate::{
         sematic::{Resolver, test_helpers_resolver::*},
-        syntax::ast::{BinaryOperator, FuncCall, Ident},
+        syntax::ast::{
+            self, BinaryOperator, ClExpression, ClLiteral, ClLiteralKind, FuncCall, Ident,
+        },
     };
 
     #[test]
@@ -1050,5 +1062,48 @@ mod test_type_matching {
         resolver.push_ast_binding(&v);
         resolver.type_check_binding(&v);
         assert!(resolver.dignostics_errors.len() == 1);
+    }
+
+    fn generate_if(cond: ast::ClExpression) -> ast::IfStm {
+        let then_e = ClExpression::Literal(integer_literal());
+        let else_e = ClExpression::Literal(integer_literal());
+        ast::IfStm::new(cond.into(), then_e.into(), else_e.into(), fake_span())
+    }
+
+    #[test]
+    fn test_if_with_bool() {
+        let mut resolver = Resolver::default();
+        let ifstm = generate_if(ClExpression::Literal(ClLiteral::new(
+            ClLiteralKind::Boolean(true),
+            fake_span(),
+        )));
+        resolver.type_check_if_condition(&ifstm);
+        assert!(resolver.dignostics_errors.is_empty());
+    }
+
+    #[test]
+    fn test_if_with_eq() {
+        let mut resolver = Resolver::default();
+        let cond = bin(expr_int(1), BinaryOperator::EqEq, expr_int(2));
+        let ifstm = generate_if(cond);
+        resolver.type_check_if_condition(&ifstm);
+        assert_eq!(resolver.dignostics_errors.len(), 0);
+    }
+
+    #[test]
+    fn test_if_with_add() {
+        let mut resolver = Resolver::default();
+        let cond = bin(expr_int(1), BinaryOperator::Add, expr_int(2));
+        let ifstm = generate_if(cond);
+        resolver.type_check_if_condition(&ifstm);
+        assert_eq!(resolver.dignostics_errors.len(), 1);
+    }
+
+    #[test]
+    fn test_if_with_integer() {
+        let mut resolver = Resolver::default();
+        let ifstm = generate_if(expr_int(2));
+        resolver.type_check_if_condition(&ifstm);
+        assert_eq!(resolver.dignostics_errors.len(), 1);
     }
 }
