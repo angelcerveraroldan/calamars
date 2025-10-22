@@ -604,6 +604,54 @@ impl Resolver {
         let pred_type = pred_type.inner();
         self._check_type_eq_and_log_error(self.types.bool(), *pred_type, if_stm.pred_span());
     }
+
+    fn type_check_func_call_input(&mut self, func_call: &ast::FuncCall) {
+        let f = self.resolve_ident(func_call.name(), func_call.span());
+        let id = match f
+            .map(|symbol_id| self.get_symbol_type(&symbol_id))
+            .flatten()
+        {
+            Ok(type_id) => type_id,
+            Err(e) => {
+                // We didnt find the function we are calling, so error
+                self.dignostics_errors.push(e);
+                return;
+            }
+        };
+
+        let (inpt, out) = match self.types.unchecked_get(id) {
+            // TODO: Dont clone so much
+            Type::Function { input, output } => (input.clone(), output.clone()),
+            // FIXME: Dont panic!
+            _ => unreachable!("Function should have function type"),
+        };
+
+        if func_call.params().len() != inpt.len() {
+            self.dignostics_errors.push(SemanticError::ArityError {
+                expected: inpt.len(),
+                actual: func_call.params().len(),
+                span: func_call.span(),
+            });
+            return;
+        }
+
+        // For each wrong type we will throw one error
+        for (expected, expression) in inpt.iter().zip(func_call.params()) {
+            let acc_type = self.ast_expression_type(&expression);
+            if acc_type.is_err() {
+                continue;
+            }
+
+            let acc_type = *acc_type.inner();
+            if acc_type != *expected {
+                self.dignostics_errors.push(SemanticError::WrongType {
+                    expected: self.types.as_string(*expected),
+                    actual: self.types.as_string(acc_type),
+                    span: expression.span(),
+                })
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1041,12 +1089,50 @@ mod test_type_matching {
     #[test]
     fn test_declaration_type_missmatch_err() {
         let mut resolver = Resolver::default();
-        let f = make_bad_ast_func("f"); // Type Int -> Int
+        let f = make_bad_ast_func("f"); // Type Int -> String (acc returns int)
         resolver.push_ast_function(&f);
         resolver.type_check_function(&f);
         assert!(resolver.dignostics_errors.len() == 1); // Just one error
     }
 
+    #[test]
+    fn test_function_call_wrong_arity() {
+        let mut resolver = Resolver::default();
+        let f = make_ast_func("f");
+        resolver.push_ast_function(&f);
+        let func_call =
+            &ast::FuncCall::new(Ident::new("f".into(), fake_span()), vec![], fake_span());
+        resolver.type_check_func_call_input(func_call);
+        assert_eq!(resolver.dignostics_errors.len(), 1);
+    }
+
+    #[test]
+    fn test_function_call_right_arity() {
+        let mut resolver = Resolver::default();
+        let f = make_ast_func("f");
+        resolver.push_ast_function(&f);
+        let func_call = &ast::FuncCall::new(
+            Ident::new("f".into(), fake_span()),
+            vec![expr_int(1)],
+            fake_span(),
+        );
+        resolver.type_check_func_call_input(func_call);
+        assert_eq!(resolver.dignostics_errors.len(), 0);
+    }
+
+    #[test]
+    fn test_function_call_right_arity_wrong_type() {
+        let mut resolver = Resolver::default();
+        let f = make_ast_func("f");
+        resolver.push_ast_function(&f);
+        let func_call = &ast::FuncCall::new(
+            Ident::new("f".into(), fake_span()),
+            vec![expr_string("aaa")],
+            fake_span(),
+        );
+        resolver.type_check_func_call_input(func_call);
+        assert_eq!(resolver.dignostics_errors.len(), 1);
+    }
     #[test]
     fn test_binding_type_matches_no_error() {
         let mut resolver = Resolver::default();
