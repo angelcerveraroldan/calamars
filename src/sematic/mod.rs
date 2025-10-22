@@ -9,7 +9,7 @@ use crate::{
         types::{Type, TypeArena, TypeId},
     },
     syntax::{
-        ast::{self, ClCompoundExpression, Ident},
+        ast::{self, ClCompoundExpression, ClExpression, Ident},
         span::Span,
     },
 };
@@ -128,6 +128,13 @@ impl Resolver {
             name: name.into(),
             span: usage_loc,
         })
+    }
+
+    pub fn get_symbol_type(&self, symbol_id: &SymbolId) -> Result<TypeId, SemanticError> {
+        match self.symbols.get(symbol_id) {
+            Some(sy) => Ok(sy.ty),
+            None => Err(SemanticError::SymbolIdNotFound { id: *symbol_id }),
+        }
     }
 }
 
@@ -513,6 +520,80 @@ impl Resolver {
             },
         }
     }
+
+    fn _check_type_eq_and_log_error(&mut self, exp: TypeId, acc: TypeId, span: Span) {
+        // If they are the same, the check passes
+        //
+        // If either of them had an error type, then we will ignore this check, as this means that
+        // the expression was malformatted, and that error is already logged.
+        if exp == acc || exp == self.types.err() || acc == self.types.err() {
+            return;
+        }
+
+        self.dignostics_errors.push(SemanticError::WrongType {
+            expected: self.types.as_string(exp),
+            actual: self.types.as_string(acc),
+            span,
+        });
+    }
+
+    fn type_check_binding(&mut self, binding: &ast::ClBinding) {
+        let acc_ty = self.ast_expression_type(&binding.assigned);
+        if acc_ty.is_err() {
+            return;
+        }
+        let acc_ty = *acc_ty.inner();
+        let sym_id = match self.resolve_ident(binding.vname.ident(), binding.name_span()) {
+            Ok(sym_id) => sym_id,
+            Err(e) => {
+                self.dignostics_errors.push(e);
+                return;
+            }
+        };
+
+        let sym_ty = self
+            .get_symbol_type(&sym_id)
+            .expect("SymbolId not in range...");
+
+        self._check_type_eq_and_log_error(sym_ty, acc_ty, binding.assigned.span());
+    }
+
+    fn type_check_function(&mut self, binding: &ast::ClFuncDec) {
+        let acc_ty = self.ast_expression_type(&binding.body());
+        if acc_ty.is_err() {
+            return;
+        }
+        let acc_ty = *acc_ty.inner();
+        let sym_id = match self.resolve_ident(binding.name(), binding.name_span()) {
+            Ok(sym_id) => sym_id,
+            Err(e) => {
+                self.dignostics_errors.push(e);
+                return;
+            }
+        };
+
+        let sym_ty = self
+            .get_symbol_type(&sym_id)
+            .expect("SymbolId not in range...");
+
+        let output_ty = self
+            .types
+            .get(sym_ty)
+            .map(|ty| match ty {
+                Type::Function { output, .. } => output,
+                _ => &sym_ty,
+            })
+            .unwrap();
+
+        self._check_type_eq_and_log_error(*output_ty, acc_ty, binding.body().span());
+    }
+
+    fn type_check_declaration(&mut self, node: &ast::ClDeclaration) {
+        match node {
+            ast::ClDeclaration::Binding(node) => self.type_check_binding(node),
+            ast::ClDeclaration::Function(node) => self.type_check_function(node),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -587,6 +668,19 @@ mod test_helpers_resolver {
         ClLiteral::new(ast::ClLiteralKind::Integer(10), fake_span())
     }
 
+    pub fn make_bad_ast_func(name: &str) -> ast::ClFuncDec {
+        let fake = fake_span();
+
+        ast::ClFuncDec::new(
+            Ident::new(name.to_string(), fake),
+            vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
+            cltype_string().into(),                        // Returns string
+            ast::ClExpression::Literal(integer_literal()), // Body actually returns integer
+            fake_span(),
+            None,
+        )
+    }
+
     pub fn make_ast_func(name: &str) -> ast::ClFuncDec {
         let fake = fake_span();
 
@@ -600,6 +694,15 @@ mod test_helpers_resolver {
         )
     }
 
+    pub fn make_bad_var(name: &str) -> ast::ClBinding {
+        ClBinding::new(
+            Ident::new(name.to_string(), fake_span()),
+            cltype_string().into(),
+            Box::new(ast::ClExpression::Literal(integer_literal())),
+            false,
+            fake_span(),
+        )
+    }
     pub fn make_var(name: &str) -> ast::ClBinding {
         ClBinding::new(
             Ident::new(name.to_string(), fake_span()),
@@ -903,5 +1006,49 @@ mod test_get_expr_type {
         let got = *out.inner();
         let expect = r.types.intern_cltype(&cltype_int()).unwrap(); // recover with lhs type per your policy
         assert_eq!(got, expect);
+    }
+}
+
+#[cfg(test)]
+mod test_type_matching {
+    use crate::{
+        sematic::{Resolver, test_helpers_resolver::*},
+        syntax::ast::{BinaryOperator, FuncCall, Ident},
+    };
+
+    #[test]
+    fn test_declaration_type_matches_no_error() {
+        let mut resolver = Resolver::default();
+        let f = make_ast_func("f"); // Type Int -> Int
+        resolver.push_ast_function(&f);
+        resolver.type_check_function(&f);
+        assert!(resolver.dignostics_errors.is_empty()); // No errors emitted
+    }
+
+    #[test]
+    fn test_declaration_type_missmatch_err() {
+        let mut resolver = Resolver::default();
+        let f = make_bad_ast_func("f"); // Type Int -> Int
+        resolver.push_ast_function(&f);
+        resolver.type_check_function(&f);
+        assert!(resolver.dignostics_errors.len() == 1); // Just one error
+    }
+
+    #[test]
+    fn test_binding_type_matches_no_error() {
+        let mut resolver = Resolver::default();
+        let v = make_var("v");
+        resolver.push_ast_binding(&v);
+        resolver.type_check_binding(&v);
+        assert!(resolver.dignostics_errors.is_empty()); // No errors emitted
+    }
+
+    #[test]
+    fn test_binding_type_missmatch_err() {
+        let mut resolver = Resolver::default();
+        let v = make_bad_var("v");
+        resolver.push_ast_binding(&v);
+        resolver.type_check_binding(&v);
+        assert!(resolver.dignostics_errors.len() == 1);
     }
 }
