@@ -496,4 +496,8 @@ impl ClFuncDec {
     pub fn name_span(&self) -> Span {
         self.fname.span()
     }
+
+    pub fn body(&self) -> &ClExpression {
+        &self.body
+    }
 }
