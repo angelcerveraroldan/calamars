@@ -305,6 +305,10 @@ impl IfStm {
     pub fn else_expr(&self) -> &Box<ClExpression> {
         &self.otherwise
     }
+
+    pub fn pred(&self) -> &Box<ClExpression> {
+        &self.predicate
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -495,5 +499,9 @@ impl ClFuncDec {
 
     pub fn name_span(&self) -> Span {
         self.fname.span()
+    }
+
+    pub fn body(&self) -> &ClExpression {
+        &self.body
     }
 }
