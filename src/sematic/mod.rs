@@ -173,14 +173,8 @@ impl Resolver {
     /// 2. Check that any sub-expressions are valid
     fn verify_declaration(&mut self, declaration: &ast::ClDeclaration) {
         match declaration {
-            ast::ClDeclaration::Binding(cl_binding) => {
-                self.type_check_binding(cl_binding);
-                self.verify_expression_validity_and_return_typeid(&cl_binding.assigned);
-            }
-            ast::ClDeclaration::Function(cl_func_dec) => {
-                self.type_check_function(cl_func_dec);
-                self.verify_expression_validity_and_return_typeid(cl_func_dec.body());
-            }
+            ast::ClDeclaration::Binding(cl_binding) => self.type_check_binding(cl_binding),
+            ast::ClDeclaration::Function(cl_func_dec) => self.type_check_function(cl_func_dec),
         }
     }
 
@@ -202,8 +196,7 @@ impl Resolver {
                 self.ast_if_stm_type(if_stm)
             }
             ClExpression::FunctionCall(func_call) => {
-                self.type_check_func_call_input(func_call);
-                self.ast_function_call_return_type(func_call)
+                self.type_check_func_call_and_get_return_type(func_call)
             }
             ClExpression::Block(cl_compound_expression) => {
                 self.verify_compound_expression(cl_compound_expression)
@@ -217,8 +210,7 @@ impl Resolver {
     /// Given some function declaration in the ast, add it to the symbol table in the current
     /// scope.
     fn push_ast_function(&mut self, node: &ast::ClFuncDec) -> ResolverSymbolOut {
-        let ty = node.fntype().clone();
-        let ty = match self.types.intern_cltype(&ty) {
+        let ty = match self.types.intern_cltype(&node.fntype()) {
             Ok(ty) => ty,
             Err(sem_err) => {
                 self.dignostics_errors.push(sem_err);
@@ -306,23 +298,6 @@ impl Resolver {
                 ResolverTypeOut::Ok(ty)
             }
             // The symbol was not found, nothing we can do
-            Err(e) => {
-                self.dignostics_errors.push(e);
-                ResolverTypeOut::Fatal
-            }
-        }
-    }
-
-    fn ast_function_call_return_type(&mut self, func_call: &ast::FuncCall) -> ResolverTypeOut {
-        match self.resolve_ident(func_call.name(), func_call.span()) {
-            Ok(func_id) => {
-                let symbol = self.symbols.get(&func_id).unwrap();
-                let out_ty = match self.types.get(symbol.ty).unwrap() {
-                    Type::Function { output, .. } => output,
-                    _ => unreachable!("Functions can only have function type"),
-                };
-                ResolverTypeOut::Ok(*out_ty)
-            }
             Err(e) => {
                 self.dignostics_errors.push(e);
                 ResolverTypeOut::Fatal
@@ -615,7 +590,33 @@ impl Resolver {
     }
 
     fn type_check_function(&mut self, binding: &ast::ClFuncDec) {
+        let fn_id = match self.resolve_ident(&binding.name(), binding.name_span()) {
+            Ok(fn_id) => fn_id,
+            Err(e) => {
+                self.dignostics_errors.push(e);
+                return;
+            }
+        };
+
+        let symbol_type = self.get_symbol_type(&fn_id).unwrap();
+        let input_typeids = self.types.fn_input_typeids(symbol_type).unwrap().clone();
+        let input_idents = binding.input_idents();
+
+        self.push_scope();
+        // Add input parameters to the scope
+        for (typeid, ident) in input_typeids.iter().zip(input_idents) {
+            self.declare(Symbol {
+                name: ident.ident().into(),
+                kind: DefKind::Val,
+                arity: None,
+                ty: *typeid,
+                name_span: ident.span(),
+                decl_span: ident.span(),
+            });
+        }
         let acc_ty = self.verify_expression_validity_and_return_typeid(&binding.body());
+        self.pop_scope();
+
         if acc_ty.is_fatal() {
             return;
         }
@@ -661,7 +662,10 @@ impl Resolver {
         self._check_type_eq_and_log_error(self.types.bool(), *pred_type, if_stm.pred_span());
     }
 
-    fn type_check_func_call_input(&mut self, func_call: &ast::FuncCall) {
+    fn type_check_func_call_and_get_return_type(
+        &mut self,
+        func_call: &ast::FuncCall,
+    ) -> ResolverTypeOut {
         let f = self.resolve_ident(func_call.name(), func_call.span());
         let id = match f
             .map(|symbol_id| self.get_symbol_type(&symbol_id))
@@ -671,15 +675,21 @@ impl Resolver {
             Err(e) => {
                 // We didnt find the function we are calling, so error
                 self.dignostics_errors.push(e);
-                return;
+                return ResolverTypeOut::Recoverable(self.types.err());
             }
         };
 
         let (inpt, out) = match self.types.unchecked_get(id) {
             // TODO: Dont clone so much
             Type::Function { input, output } => (input.clone(), output.clone()),
-            // FIXME: Dont panic!
-            _ => unreachable!("Function should have function type"),
+            _ => {
+                self.dignostics_errors.push(SemanticError::NonCallable {
+                    msg: "Cannot call a non-function",
+                    name: func_call.name().into(),
+                    span: func_call.name_span(),
+                });
+                return ResolverTypeOut::Recoverable(self.types.err());
+            }
         };
 
         if func_call.params().len() != inpt.len() {
@@ -688,7 +698,7 @@ impl Resolver {
                 actual: func_call.params().len(),
                 span: func_call.span(),
             });
-            return;
+            return ResolverTypeOut::Recoverable(out);
         }
 
         // For each wrong type we will throw one error
@@ -707,6 +717,8 @@ impl Resolver {
                 })
             }
         }
+
+        ResolverOutput::Ok(out)
     }
 }
 
@@ -803,6 +815,31 @@ mod test_helpers_resolver {
             vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
             cltype_int().into(),
             ast::ClExpression::Literal(integer_literal()),
+            fake_span(),
+            None,
+        )
+    }
+
+    pub fn make_bad_func_undefined_literal() -> ast::ClFuncDec {
+        let fake = fake_span();
+        ast::ClFuncDec::new(
+            Ident::new("id".to_string(), fake),
+            vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
+            cltype_int().into(),
+            // Not the correct return literal
+            ast::ClExpression::Identifier((Ident::new("y".to_string(), fake))),
+            fake_span(),
+            None,
+        )
+    }
+
+    pub fn make_ast_id_func() -> ast::ClFuncDec {
+        let fake = fake_span();
+        ast::ClFuncDec::new(
+            Ident::new("id".to_string(), fake),
+            vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
+            cltype_int().into(),
+            ast::ClExpression::Identifier((Ident::new("x".to_string(), fake))),
             fake_span(),
             None,
         )
@@ -1050,11 +1087,12 @@ mod test_get_expr_type {
             vec![],
             fake_span(),
         );
-        let out = resolver.ast_function_call_return_type(&fcall);
-        assert!(out.is_ok());
+        let out = resolver.type_check_func_call_and_get_return_type(&fcall);
+        assert!(out.is_recoverable());
         let exp = resolver.types.intern_cltype(&cltype_int()).unwrap();
         let acc = *out.inner();
         assert_eq!(exp, acc);
+        assert_eq!(resolver.dignostics_errors.len(), 1, "Missing input error");
     }
 
     #[test]
@@ -1315,7 +1353,7 @@ mod test_type_matching {
         resolver.push_ast_function(&f);
         let func_call =
             &ast::FuncCall::new(Ident::new("f".into(), fake_span()), vec![], fake_span());
-        resolver.type_check_func_call_input(func_call);
+        resolver.type_check_func_call_and_get_return_type(func_call);
         assert_eq!(resolver.dignostics_errors.len(), 1);
     }
 
@@ -1329,7 +1367,7 @@ mod test_type_matching {
             vec![expr_int(1)],
             fake_span(),
         );
-        resolver.type_check_func_call_input(func_call);
+        resolver.type_check_func_call_and_get_return_type(func_call);
         assert_eq!(resolver.dignostics_errors.len(), 0);
     }
 
@@ -1343,7 +1381,7 @@ mod test_type_matching {
             vec![expr_string("aaa")],
             fake_span(),
         );
-        resolver.type_check_func_call_input(func_call);
+        resolver.type_check_func_call_and_get_return_type(func_call);
         assert_eq!(resolver.dignostics_errors.len(), 1);
     }
     #[test]
@@ -1405,5 +1443,71 @@ mod test_type_matching {
         let ifstm = generate_if(expr_int(2));
         resolver.type_check_if_condition(&ifstm);
         assert_eq!(resolver.dignostics_errors.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod test_declarations {
+    use crate::sematic::{
+        Resolver,
+        test_helpers_resolver::{make_ast_id_func, make_bad_func_undefined_literal},
+    };
+
+    // Check that `def foo(x: Int): Int = x` does not give an error. `x` shuold be added to the scope.
+    #[test]
+    fn test_function_declaration_adds_inputs_to_scope() {
+        let mut resolver = Resolver::default();
+        let id = make_ast_id_func();
+        resolver.push_ast_function(&id);
+        resolver.verify_declaration(&crate::syntax::ast::ClDeclaration::Function(id));
+        assert!(resolver.dignostics_errors.is_empty());
+    }
+
+    // Check that `def foo(x: Int): Int = y` does give an error. `y` shuold be added to the scope.
+    #[test]
+    fn test_function_declaration_bad_ident() {
+        let mut resolver = Resolver::default();
+        let badfn = make_bad_func_undefined_literal();
+        resolver.push_ast_function(&badfn);
+        resolver.verify_declaration(&crate::syntax::ast::ClDeclaration::Function(badfn));
+        assert_eq!(
+            resolver.dignostics_errors.len(),
+            1,
+            "Bad literal when returning, but we should still have Recoverable Int type"
+        );
+    }
+}
+
+#[cfg(test)]
+mod test_exprs {
+    use crate::{
+        sematic::{
+            Resolver,
+            test_helpers_resolver::{fake_span, integer_literal, make_var},
+        },
+        syntax::ast::{ClExpression, FuncCall, Ident},
+    };
+
+    /// Calling a non function should log an error
+    ///
+    /// ```
+    /// var x: Int = 10;
+    /// x(5);               -- Error!
+    /// ```
+    #[test]
+    fn call_non_function() {
+        let mut resolver = Resolver::default();
+        let var = make_var("x"); // var x: Int = 10;
+        // x(5)
+        let call = ClExpression::FunctionCall(FuncCall::new(
+            Ident::new("x".into(), fake_span()),
+            vec![ClExpression::Literal(integer_literal())],
+            fake_span(),
+        ));
+        resolver.push_ast_binding(&var);
+        resolver.verify_expression_validity_and_return_typeid(&call);
+        for x in resolver.errors() {
+            println!("{:?}", x)
+        }
     }
 }

@@ -205,6 +205,15 @@ impl TypeArena {
             })
             .flatten()
     }
+
+    pub fn fn_input_typeids(&self, fn_id: TypeId) -> Option<&Vec<TypeId>> {
+        self.get(fn_id)
+            .map(|fn_ty| match fn_ty {
+                Type::Function { input, .. } => Some(input),
+                _ => None,
+            })
+            .flatten()
+    }
 }
 
 #[cfg(test)]

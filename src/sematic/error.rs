@@ -54,4 +54,9 @@ pub enum SemanticError {
         actual: usize,
         span: Span,
     },
+    NonCallable {
+        msg: &'static str,
+        name: String,
+        span: Span,
+    },
 }
