@@ -1506,8 +1506,6 @@ mod test_exprs {
         ));
         resolver.push_ast_binding(&var);
         resolver.verify_expression_validity_and_return_typeid(&call);
-        for x in resolver.errors() {
-            println!("{:?}", x)
-        }
+        assert_eq!(resolver.dignostics_errors.len(), 1)
     }
 }
