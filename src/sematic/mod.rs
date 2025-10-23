@@ -37,7 +37,7 @@ impl<T: Debug> ResolverOutput<T> {
         matches!(self, ResolverOutput::Recoverable(_))
     }
 
-    pub fn is_err(&self) -> bool {
+    pub fn is_fatal(&self) -> bool {
         matches!(self, ResolverOutput::Fatal)
     }
 
@@ -266,7 +266,7 @@ impl Resolver {
         let then_type = self.ast_expression_type(then_expr.as_ref());
         let else_type = self.ast_expression_type(else_expr.as_ref());
 
-        if (then_type.is_err() || else_type.is_err()) {
+        if (then_type.is_fatal() || else_type.is_fatal()) {
             return ResolverTypeOut::Recoverable(self.types.intern(Type::Error));
         }
 
@@ -293,7 +293,7 @@ impl Resolver {
             return ResolverTypeOut::Recoverable(self.types.err());
         }
         let inner_type = self.ast_expression_type(unary.inner_exp());
-        if inner_type.is_err() {
+        if inner_type.is_fatal() {
             return ResolverTypeOut::Fatal;
         }
         let inner_type = *inner_type.inner();
@@ -323,7 +323,7 @@ impl Resolver {
 
         let lhs_type = self.ast_expression_type(&lhs);
         let rhs_type = self.ast_expression_type(&rhs);
-        if lhs_type.is_err() || rhs_type.is_err() {
+        if lhs_type.is_fatal() || rhs_type.is_fatal() {
             return ResolverTypeOut::Fatal;
         }
 
@@ -539,7 +539,7 @@ impl Resolver {
 
     fn type_check_binding(&mut self, binding: &ast::ClBinding) {
         let acc_ty = self.ast_expression_type(&binding.assigned);
-        if acc_ty.is_err() {
+        if acc_ty.is_fatal() {
             return;
         }
         let acc_ty = *acc_ty.inner();
@@ -560,7 +560,7 @@ impl Resolver {
 
     fn type_check_function(&mut self, binding: &ast::ClFuncDec) {
         let acc_ty = self.ast_expression_type(&binding.body());
-        if acc_ty.is_err() {
+        if acc_ty.is_fatal() {
             return;
         }
         let acc_ty = *acc_ty.inner();
@@ -598,7 +598,7 @@ impl Resolver {
     fn type_check_if_condition(&mut self, if_stm: &ast::IfStm) {
         let cond = if_stm.pred();
         let pred_type = self.ast_expression_type(cond);
-        if pred_type.is_err() {
+        if pred_type.is_fatal() {
             return;
         }
         let pred_type = pred_type.inner();
@@ -638,7 +638,7 @@ impl Resolver {
         // For each wrong type we will throw one error
         for (expected, expression) in inpt.iter().zip(func_call.params()) {
             let acc_type = self.ast_expression_type(&expression);
-            if acc_type.is_err() {
+            if acc_type.is_fatal() {
                 continue;
             }
 
