@@ -1,6 +1,6 @@
 use crate::syntax::span::Span;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SemanticError {
     Redeclaration {
         original_span: Span,
