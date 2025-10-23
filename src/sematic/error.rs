@@ -1,6 +1,6 @@
 use crate::syntax::span::Span;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SemanticError {
     Redeclaration {
         original_span: Span,
@@ -52,6 +52,11 @@ pub enum SemanticError {
     ArityError {
         expected: usize,
         actual: usize,
+        span: Span,
+    },
+    NonCallable {
+        msg: &'static str,
+        name: String,
         span: Span,
     },
 }

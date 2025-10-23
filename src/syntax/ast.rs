@@ -508,4 +508,8 @@ impl ClFuncDec {
     pub fn body(&self) -> &ClExpression {
         &self.body
     }
+
+    pub fn input_idents(&self) -> &Vec<Ident> {
+        &self.input_idents
+    }
 }

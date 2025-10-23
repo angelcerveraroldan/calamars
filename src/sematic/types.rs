@@ -189,6 +189,31 @@ impl TypeArena {
     pub fn string(&self) -> TypeId {
         self.get_unchecked(Type::String)
     }
+
+    pub fn unit(&self) -> TypeId {
+        self.get_unchecked(Type::Unit)
+    }
+
+    /// Given a functions type id, return the type_id of its output
+    ///
+    /// Given a fn with signature Int -> Int, this function shuold return Some(typeid of Int)
+    pub fn fn_return_typeid(&self, fn_id: TypeId) -> Option<TypeId> {
+        self.get(fn_id)
+            .map(|fn_ty| match fn_ty {
+                Type::Function { output, .. } => Some(*output),
+                _ => None,
+            })
+            .flatten()
+    }
+
+    pub fn fn_input_typeids(&self, fn_id: TypeId) -> Option<&Vec<TypeId>> {
+        self.get(fn_id)
+            .map(|fn_ty| match fn_ty {
+                Type::Function { input, .. } => Some(input),
+                _ => None,
+            })
+            .flatten()
+    }
 }
 
 #[cfg(test)]
