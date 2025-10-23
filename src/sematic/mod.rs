@@ -3,6 +3,7 @@ use std::{any::Any, fmt::Debug, process::id, string};
 use chumsky::{container::Seq, span::SimpleSpan, text::ascii::ident};
 
 use crate::{
+    parser::declaration,
     sematic::{
         error::SemanticError,
         symbols::{DefKind, Symbol, SymbolArena, SymbolId, SymbolScope},
@@ -138,6 +139,79 @@ impl Resolver {
     }
 }
 
+// Verifiers
+impl Resolver {
+    fn verify_compound_expression(&mut self, expr: &ast::ClCompoundExpression) -> ResolverTypeOut {
+        self.push_scope();
+
+        // Insert all declarations in the table
+        for i in &expr.items {
+            match i {
+                ast::ClItem::Declaration(cl_declaration) => {
+                    self.push_ast_declaration(cl_declaration);
+                    self.verify_declaration(cl_declaration);
+                }
+                ast::ClItem::Expression(cl_expression) => {
+                    self.verify_expression_validity_and_return_typeid(cl_expression);
+                }
+                ast::ClItem::Import(cl_import) => {}
+            }
+        }
+
+        let ret = match &expr.final_expr {
+            Some(e) => self.verify_expression_validity_and_return_typeid(e),
+            None => ResolverTypeOut::Ok(self.types.unit()),
+        };
+
+        self.pop_scope();
+        ret
+    }
+
+    /// Verify that a declaration is semantically sound
+    ///
+    /// 1. Check that the declared return type and the actual return type match
+    /// 2. Check that any sub-expressions are valid
+    fn verify_declaration(&mut self, declaration: &ast::ClDeclaration) {
+        match declaration {
+            ast::ClDeclaration::Binding(cl_binding) => {
+                self.type_check_binding(cl_binding);
+                self.verify_expression_validity_and_return_typeid(&cl_binding.assigned);
+            }
+            ast::ClDeclaration::Function(cl_func_dec) => {
+                self.type_check_function(cl_func_dec);
+                self.verify_expression_validity_and_return_typeid(cl_func_dec.body());
+            }
+        }
+    }
+
+    /// Given some expression, we will verify that its body is semantically sound
+    ///
+    /// This will also return its return typeid
+    fn verify_expression_validity_and_return_typeid(
+        &mut self,
+        expr: &ast::ClExpression,
+    ) -> ResolverTypeOut {
+        // Here we will check that all sub-expressions make sense
+        match expr {
+            ClExpression::Identifier(cl_ident) => self.ast_identifier_type(cl_ident),
+            ClExpression::Literal(lit) => self.ast_literal_type(lit),
+            ClExpression::UnaryOp(cl_unary_op) => self.ast_unary_type(cl_unary_op),
+            ClExpression::BinaryOp(cl_binary_op) => self.ast_binary_op_type(cl_binary_op),
+            ClExpression::IfStm(if_stm) => {
+                self.type_check_if_condition(if_stm);
+                self.ast_if_stm_type(if_stm)
+            }
+            ClExpression::FunctionCall(func_call) => {
+                self.type_check_func_call_input(func_call);
+                self.ast_function_call_return_type(func_call)
+            }
+            ClExpression::Block(cl_compound_expression) => {
+                self.verify_compound_expression(cl_compound_expression)
+            }
+        }
+    }
+}
+
 // HANDLE AST DECLARATIONS
 impl Resolver {
     /// Given some function declaration in the ast, add it to the symbol table in the current
@@ -263,8 +337,8 @@ impl Resolver {
         let then_expr = if_stm.then_expr();
         let else_expr = if_stm.else_expr();
 
-        let then_type = self.ast_expression_type(then_expr.as_ref());
-        let else_type = self.ast_expression_type(else_expr.as_ref());
+        let then_type = self.verify_expression_validity_and_return_typeid(then_expr.as_ref());
+        let else_type = self.verify_expression_validity_and_return_typeid(else_expr.as_ref());
 
         if (then_type.is_fatal() || else_type.is_fatal()) {
             return ResolverTypeOut::Recoverable(self.types.intern(Type::Error));
@@ -292,7 +366,7 @@ impl Resolver {
             });
             return ResolverTypeOut::Recoverable(self.types.err());
         }
-        let inner_type = self.ast_expression_type(unary.inner_exp());
+        let inner_type = self.verify_expression_validity_and_return_typeid(unary.inner_exp());
         if inner_type.is_fatal() {
             return ResolverTypeOut::Fatal;
         }
@@ -321,8 +395,8 @@ impl Resolver {
 
         let (lhs, rhs) = (binary.lhs(), binary.rhs());
 
-        let lhs_type = self.ast_expression_type(&lhs);
-        let rhs_type = self.ast_expression_type(&rhs);
+        let lhs_type = self.verify_expression_validity_and_return_typeid(&lhs);
+        let rhs_type = self.verify_expression_validity_and_return_typeid(&rhs);
         if lhs_type.is_fatal() || rhs_type.is_fatal() {
             return ResolverTypeOut::Fatal;
         }
@@ -503,24 +577,6 @@ impl Resolver {
         }
     }
 
-    /// Given some expression, return the TypeId of the expressions return type
-    pub fn ast_expression_type(&mut self, node: &ast::ClExpression) -> ResolverTypeOut {
-        match node {
-            ast::ClExpression::Literal(cl_literal) => self.ast_literal_type(cl_literal),
-            ast::ClExpression::Identifier(ident) => self.ast_identifier_type(ident),
-            ast::ClExpression::UnaryOp(cl_unary_op) => self.ast_unary_type(cl_unary_op),
-            ast::ClExpression::BinaryOp(cl_binary_op) => self.ast_binary_op_type(cl_binary_op),
-            ast::ClExpression::IfStm(if_stm) => self.ast_if_stm_type(if_stm),
-            ast::ClExpression::FunctionCall(func_call) => {
-                self.ast_function_call_return_type(func_call)
-            }
-            ast::ClExpression::Block(ClCompoundExpression { final_expr, .. }) => match final_expr {
-                Some(exp) => self.ast_expression_type(exp),
-                None => ResolverTypeOut::Ok(self.types.intern(Type::Unit)),
-            },
-        }
-    }
-
     fn _check_type_eq_and_log_error(&mut self, exp: TypeId, acc: TypeId, span: Span) {
         // If they are the same, the check passes
         //
@@ -538,7 +594,7 @@ impl Resolver {
     }
 
     fn type_check_binding(&mut self, binding: &ast::ClBinding) {
-        let acc_ty = self.ast_expression_type(&binding.assigned);
+        let acc_ty = self.verify_expression_validity_and_return_typeid(&binding.assigned);
         if acc_ty.is_fatal() {
             return;
         }
@@ -559,7 +615,7 @@ impl Resolver {
     }
 
     fn type_check_function(&mut self, binding: &ast::ClFuncDec) {
-        let acc_ty = self.ast_expression_type(&binding.body());
+        let acc_ty = self.verify_expression_validity_and_return_typeid(&binding.body());
         if acc_ty.is_fatal() {
             return;
         }
@@ -597,7 +653,7 @@ impl Resolver {
 
     fn type_check_if_condition(&mut self, if_stm: &ast::IfStm) {
         let cond = if_stm.pred();
-        let pred_type = self.ast_expression_type(cond);
+        let pred_type = self.verify_expression_validity_and_return_typeid(cond);
         if pred_type.is_fatal() {
             return;
         }
@@ -637,7 +693,7 @@ impl Resolver {
 
         // For each wrong type we will throw one error
         for (expected, expression) in inpt.iter().zip(func_call.params()) {
-            let acc_type = self.ast_expression_type(&expression);
+            let acc_type = self.verify_expression_validity_and_return_typeid(&expression);
             if acc_type.is_fatal() {
                 continue;
             }
@@ -839,19 +895,141 @@ mod test_insert_node_to_resolver {
 mod test_get_expr_type {
     use super::test_helpers_resolver::*;
     use crate::{
-        sematic::{Resolver, types},
+        sematic::{Resolver, error::SemanticError, types},
         syntax::ast::{
-            self, BinaryOperator, ClCompoundExpression, ClExpression, ClLiteral, ClLiteralKind,
-            ClType, FuncCall, Ident,
+            self, BinaryOperator, ClCompoundExpression, ClExpression, ClItem, ClLiteral,
+            ClLiteralKind, ClType, FuncCall, Ident,
         },
     };
+
+    #[test]
+    fn bad_expression_with_return_logs_error() {
+        let mut resolver = Resolver::default();
+        let expr = ClExpression::Block(ClCompoundExpression::new(
+            vec![
+                // This is a bad expression, should log an error, but the final return type
+                // should still be returned
+                ClItem::Expression(bin(expr_int(1), BinaryOperator::Add, expr_bool(true))),
+            ],
+            Some(expr_int(2).into()),
+            fake_span(),
+        ));
+        let out = resolver.verify_expression_validity_and_return_typeid(&expr);
+        assert!(out.is_ok(), "typing an int literal should succeed");
+        assert_eq!(
+            resolver.dignostics_errors.len(),
+            1,
+            "Error should be logged because of an invalid expression"
+        );
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect, "int literal should type to Int");
+    }
+
+    #[test]
+    fn good_expression_no_error() {
+        let mut resolver = Resolver::default();
+        let expr = ClExpression::Block(ClCompoundExpression::new(
+            vec![
+                // This is a bad expression, should log an error, but the final return type
+                // should still be returned
+                ClItem::Expression(bin(expr_int(1), BinaryOperator::Add, expr_int(2))),
+            ],
+            Some(expr_int(2).into()),
+            fake_span(),
+        ));
+        let out = resolver.verify_expression_validity_and_return_typeid(&expr);
+        assert!(out.is_ok(), "typing an int literal should succeed");
+        assert!(resolver.dignostics_errors.is_empty());
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(got, expect, "int literal should type to Int");
+    }
+
+    // Check that a compound expression such as:
+    //
+    // ```
+    // {
+    //      var y: Int = 2;
+    //      y
+    // };
+    // ```
+    //
+    // Evaluates to the correct type
+    #[test]
+    fn compound_expression_logs_inners() {
+        let mut resolver = Resolver::default();
+        let expr = ClExpression::Block(ClCompoundExpression::new(
+            vec![
+                // Make y be an integer
+                ClItem::Declaration(ast::ClDeclaration::Binding(make_var("y"))),
+            ],
+            // Return y - We shuold know that y is an integer now
+            Some(ClExpression::Identifier(Ident::new("y".to_string(), fake_span())).into()),
+            fake_span(),
+        ));
+
+        let out = resolver.verify_expression_validity_and_return_typeid(&expr);
+        assert!(resolver.dignostics_errors.is_empty());
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
+        assert_eq!(
+            got, expect,
+            "y shuold have Int type, that should have been returned"
+        );
+    }
+    // Check that a compound expression such as:
+    //
+    // ```
+    // {
+    //      var y: String = 2;
+    //      y
+    // };
+    // ```
+    //
+    // Has return type String (recovered) but logs the type mismatch error.
+    #[test]
+    fn compound_bad_expression_error_recovery() {
+        let mut resolver = Resolver::default();
+        let expr = ClExpression::Block(ClCompoundExpression::new(
+            vec![
+                // Make y be an integer
+                ClItem::Declaration(ast::ClDeclaration::Binding(make_bad_var("y"))),
+            ],
+            // Return y - We shuold know that y is an integer now
+            Some(ClExpression::Identifier(Ident::new("y".to_string(), fake_span())).into()),
+            fake_span(),
+        ));
+
+        let out = resolver.verify_expression_validity_and_return_typeid(&expr);
+        assert_eq!(
+            resolver.dignostics_errors.len(),
+            1,
+            "Type mismatch error should have been logged"
+        );
+
+        let err = resolver.dignostics_errors[0].clone();
+        let exp_err = SemanticError::WrongType {
+            expected: "str".to_string(),
+            actual: "int".to_string(),
+            span: fake_span(),
+        };
+        assert_eq!(err, exp_err);
+
+        let got = *out.inner();
+        let expect = resolver.types.intern_cltype(&cltype_string()).unwrap();
+        assert_eq!(
+            got, expect,
+            "y shuold have String type, that should have been returned"
+        );
+    }
 
     #[test]
     fn expr_literal_int_has_int_type() {
         let mut resolver = Resolver::default();
 
         let expr = ClExpression::Literal(integer_literal());
-        let out = resolver.ast_expression_type(&expr);
+        let out = resolver.verify_expression_validity_and_return_typeid(&expr);
 
         assert!(out.is_ok(), "typing an int literal should succeed");
 
@@ -889,7 +1067,7 @@ mod test_get_expr_type {
 
         // use x
         let expr = ClExpression::Identifier(Ident::new("x".into(), fake_span()));
-        let out = resolver.ast_expression_type(&expr);
+        let out = resolver.verify_expression_validity_and_return_typeid(&expr);
 
         assert!(out.is_ok(), "typing an existing identifier should succeed");
 
@@ -904,7 +1082,7 @@ mod test_get_expr_type {
 
         let block = ClExpression::Block(ClCompoundExpression::new(vec![], None, fake_span()));
 
-        let out = resolver.ast_expression_type(&block);
+        let out = resolver.verify_expression_validity_and_return_typeid(&block);
         assert!(out.is_ok(), "empty block should type check");
         let got = *out.inner();
         let expect = resolver
@@ -931,7 +1109,7 @@ mod test_get_expr_type {
             fake_span(),
         ));
 
-        let out = resolver.ast_expression_type(&if_e);
+        let out = resolver.verify_expression_validity_and_return_typeid(&if_e);
         assert!(out.is_ok(), "if with equal branch types should be ok");
 
         let got = *out.inner();
@@ -955,7 +1133,7 @@ mod test_get_expr_type {
             fake_span(),
         ));
 
-        let out = resolver.ast_expression_type(&if_e);
+        let out = resolver.verify_expression_validity_and_return_typeid(&if_e);
         assert!(
             out.is_recoverable(),
             "Different branches have diff return types, so there should be an error type, but it is recoverable."
@@ -970,7 +1148,11 @@ mod test_get_expr_type {
     #[test]
     fn add_int_int_ok() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Add, expr_int(2)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_int(1),
+            BinaryOperator::Add,
+            expr_int(2),
+        ));
         assert!(out.is_ok());
         let got = *out.inner();
         let expect = r.types.intern_cltype(&cltype_int()).unwrap();
@@ -980,7 +1162,11 @@ mod test_get_expr_type {
     #[test]
     fn add_float_float_ok() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_real(1.0), BinaryOperator::Add, expr_real(2.0)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_real(1.0),
+            BinaryOperator::Add,
+            expr_real(2.0),
+        ));
         assert!(out.is_ok());
         let got = *out.inner();
         let expect = r.types.intern_cltype(&cltype_float()).unwrap();
@@ -990,7 +1176,11 @@ mod test_get_expr_type {
     #[test]
     fn add_int_bool_recover_left_type() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Add, expr_bool(true)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_int(1),
+            BinaryOperator::Add,
+            expr_bool(true),
+        ));
         assert!(
             out.is_recoverable(),
             "int + bool should be a recoverable error"
@@ -1003,7 +1193,11 @@ mod test_get_expr_type {
     #[test]
     fn leq_int_bool_recover_bool() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Leq, expr_bool(true)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_int(1),
+            BinaryOperator::Leq,
+            expr_bool(true),
+        ));
         assert!(
             out.is_recoverable(),
             "int <= bool should be recoverable with Bool result"
@@ -1016,7 +1210,11 @@ mod test_get_expr_type {
     #[test]
     fn eqeq_int_int_ok_bool() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::EqEq, expr_int(1)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_int(1),
+            BinaryOperator::EqEq,
+            expr_int(1),
+        ));
         assert!(out.is_ok());
         let got = *out.inner();
         let expect = r.types.intern_cltype(&cltype_bool()).unwrap();
@@ -1026,7 +1224,11 @@ mod test_get_expr_type {
     #[test]
     fn eqeq_int_bool_recover_bool() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::EqEq, expr_bool(true)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_int(1),
+            BinaryOperator::EqEq,
+            expr_bool(true),
+        ));
         assert!(
             out.is_recoverable(),
             "int == bool should be recoverable with Bool result"
@@ -1039,7 +1241,11 @@ mod test_get_expr_type {
     #[test]
     fn or_ints_ok_int() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Or, expr_int(2)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_int(1),
+            BinaryOperator::Or,
+            expr_int(2),
+        ));
         assert!(out.is_ok());
         let got = *out.inner();
         let expect = r.types.intern_cltype(&cltype_int()).unwrap();
@@ -1049,8 +1255,11 @@ mod test_get_expr_type {
     #[test]
     fn and_bools_ok_bool() {
         let mut r = Resolver::default();
-        let out =
-            r.ast_expression_type(&bin(expr_bool(true), BinaryOperator::And, expr_bool(false)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_bool(true),
+            BinaryOperator::And,
+            expr_bool(false),
+        ));
         assert!(out.is_ok());
         let got = *out.inner();
         let expect = r.types.intern_cltype(&cltype_bool()).unwrap();
@@ -1060,7 +1269,11 @@ mod test_get_expr_type {
     #[test]
     fn or_int_bool_mismatch_recover_operand_type() {
         let mut r = Resolver::default();
-        let out = r.ast_expression_type(&bin(expr_int(1), BinaryOperator::Or, expr_bool(true)));
+        let out = r.verify_expression_validity_and_return_typeid(&bin(
+            expr_int(1),
+            BinaryOperator::Or,
+            expr_bool(true),
+        ));
         assert!(out.is_recoverable(), "int or bool should be recoverable");
         let got = *out.inner();
         let expect = r.types.intern_cltype(&cltype_int()).unwrap(); // recover with lhs type per your policy
