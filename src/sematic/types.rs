@@ -190,6 +190,10 @@ impl TypeArena {
         self.get_unchecked(Type::String)
     }
 
+    pub fn unit(&self) -> TypeId {
+        self.get_unchecked(Type::Unit)
+    }
+
     /// Given a functions type id, return the type_id of its output
     ///
     /// Given a fn with signature Int -> Int, this function shuold return Some(typeid of Int)
