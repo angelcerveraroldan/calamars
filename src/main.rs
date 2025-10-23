@@ -45,15 +45,7 @@ fn main() {
     let mut module_resolver = Resolver::default();
 
     for item in out.items {
-        match item {
-            calamars::syntax::ast::ClItem::Declaration(cl_declaration) => {
-                let r = module_resolver.push_ast_declaration(&cl_declaration);
-            }
-            calamars::syntax::ast::ClItem::Expression(cl_expression) => {
-                println!("Expressions not yet handled")
-            }
-            calamars::syntax::ast::ClItem::Import => println!("Imports are not yet supported"),
-        }
+        let _r = module_resolver.push_ast_declaration(&item);
     }
 
     // Now we display the errors:

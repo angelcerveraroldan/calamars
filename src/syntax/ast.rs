@@ -38,8 +38,12 @@ impl Ident {
 /// A Calamars module / file
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
-    pub items: Vec<ClItem>,
+    pub imports: Vec<ClImport>,
+    pub items: Vec<ClDeclaration>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClImport {}
 
 /// Any one thing in the Cl language
 #[derive(Debug, Clone, PartialEq)]
@@ -48,7 +52,7 @@ pub enum ClItem {
     Expression(ClExpression),
 
     // TODO:
-    Import,
+    Import(ClImport),
 }
 
 impl ClItem {
@@ -56,7 +60,7 @@ impl ClItem {
         match self {
             ClItem::Declaration(cl_declaration) => cl_declaration.span(),
             ClItem::Expression(cl_expression) => cl_expression.span(),
-            ClItem::Import => todo!("import not yet handled"),
+            ClItem::Import(_) => todo!("import not yet handled"),
         }
     }
 }
