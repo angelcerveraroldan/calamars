@@ -17,10 +17,13 @@ pub fn parse_module<'a, I>() -> impl Parser<'a, I, Module, ParserErr<'a>> + Clon
 where
     I: TokenInput<'a>,
 {
-    parse_cl_item()
+    parse_cldeclaration(parse_cl_item())
         .repeated()
         .collect::<Vec<_>>()
-        .map(|items| Module { items })
+        .map(|items| Module {
+            items,
+            imports: vec![],
+        })
 }
 
 impl ClItem {

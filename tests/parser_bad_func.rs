@@ -24,7 +24,7 @@ fn parser_bad_fn() {
     let out = out.unwrap();
     assert!(out.items.len() == 1);
 
-    let finalf = match out.items[0].get_dec() {
+    let finalf = match &out.items[0] {
         ClDeclaration::Function(cl_func_dec) => cl_func_dec,
         _ => unreachable!(),
     };
