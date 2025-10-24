@@ -1073,10 +1073,12 @@ mod test_get_expr_type {
         );
 
         let err = resolver.diagnostics_errors[0].clone();
-        let exp_err = SemanticError::WrongType {
+        let exp_err = SemanticError::BindingWrongType {
             expected: "str".to_string(),
             actual: "int".to_string(),
-            span: fake_span(),
+            return_type_span: fake_span(),
+            return_span: fake_span().into(),
+            body_span: fake_span(),
         };
         assert_eq!(err, exp_err);
 
