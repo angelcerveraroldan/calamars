@@ -102,8 +102,11 @@ impl Resolver {
             redeclared = true;
         }
 
-        // Todo: Not sure if here we should insert (end of scope stack) or overwrite (replace the
-        // current duplicate in the scope)
+        // We will add the redeclaration to the end of the same scope.
+        //
+        // We will keep the old symbol in the table too, it should not be accessible by name, as we
+        // are overwitting it, but if we have the symbolid, and want to check something about it,
+        // we still can do so.
         let name = sym.name.clone();
         let id = self.symbols.insert(sym);
         curr_scope.map.insert(name, id);
@@ -149,7 +152,7 @@ impl Resolver {
             if symout.is_fatal() {
                 continue;
             }
-            self.verify_declaration(&dec);
+            self.verify_declaration(&dec, *symout.inner());
         }
     }
 
@@ -160,8 +163,11 @@ impl Resolver {
         for i in &expr.items {
             match i {
                 ast::ClItem::Declaration(cl_declaration) => {
-                    self.push_ast_declaration(cl_declaration);
-                    self.verify_declaration(cl_declaration);
+                    let symbol_id = self.push_ast_declaration(cl_declaration);
+                    if symbol_id.is_fatal() {
+                        return ResolverTypeOut::Fatal;
+                    }
+                    self.verify_declaration(cl_declaration, *symbol_id.inner());
                 }
                 ast::ClItem::Expression(cl_expression) => {
                     self.verify_expression_validity_and_return_typeid(cl_expression);
@@ -183,10 +189,14 @@ impl Resolver {
     ///
     /// 1. Check that the declared return type and the actual return type match
     /// 2. Check that any sub-expressions are valid
-    fn verify_declaration(&mut self, declaration: &ast::ClDeclaration) {
+    fn verify_declaration(&mut self, declaration: &ast::ClDeclaration, symbol_id: SymbolId) {
         match declaration {
-            ast::ClDeclaration::Binding(cl_binding) => self.type_check_binding(cl_binding),
-            ast::ClDeclaration::Function(cl_func_dec) => self.type_check_function(cl_func_dec),
+            ast::ClDeclaration::Binding(cl_binding) => {
+                self.type_check_binding(cl_binding, symbol_id)
+            }
+            ast::ClDeclaration::Function(cl_func_dec) => {
+                self.type_check_function(cl_func_dec, symbol_id)
+            }
         }
     }
 
@@ -580,43 +590,31 @@ impl Resolver {
         });
     }
 
-    fn type_check_binding(&mut self, binding: &ast::ClBinding) {
+    fn type_check_binding(&mut self, binding: &ast::ClBinding, symbol_id: SymbolId) {
         let acc_ty = self.verify_expression_validity_and_return_typeid(&binding.assigned);
         if acc_ty.is_fatal() {
             return;
         }
         let acc_ty = *acc_ty.inner();
-        let sym_id = match self.resolve_ident(binding.vname.ident(), binding.name_span()) {
-            Ok(sym_id) => sym_id,
-            Err(e) => {
-                self.dignostics_errors.push(e);
-                return;
-            }
-        };
-
         let sym_ty = self
-            .get_symbol_type(&sym_id)
+            .get_symbol_type(&symbol_id)
             .expect("SymbolId not in range...");
 
         self._check_type_eq_and_log_error(sym_ty, acc_ty, binding.assigned.span());
     }
 
-    fn type_check_function(&mut self, binding: &ast::ClFuncDec) {
-        let fn_id = match self.resolve_ident(&binding.name(), binding.name_span()) {
-            Ok(fn_id) => fn_id,
-            Err(e) => {
-                self.dignostics_errors.push(e);
+    fn type_check_function(&mut self, binding: &ast::ClFuncDec, symbol_id: SymbolId) {
+        let symbol_type = self.get_symbol_type(&symbol_id).unwrap();
+        let input_typeids = match self.types.fn_input_typeids(symbol_type) {
+            Some(v) => v.clone(),
+            None => {
+                self.dignostics_errors.push(SemanticError::InternalError {
+                    msg: "This should have a Function type, but didnt! Please report this error.",
+                    span: binding.name_span(),
+                });
                 return;
             }
         };
-
-        let symbol_type = self.get_symbol_type(&fn_id).unwrap();
-        let message = format!("{:?}", symbol_type);
-        let input_typeids = self
-            .types
-            .fn_input_typeids(symbol_type)
-            .expect(&message)
-            .clone();
         let input_idents = binding.input_idents();
 
         self.push_scope();
@@ -638,16 +636,8 @@ impl Resolver {
             return;
         }
         let acc_ty = *acc_ty.inner();
-        let sym_id = match self.resolve_ident(binding.name(), binding.name_span()) {
-            Ok(sym_id) => sym_id,
-            Err(e) => {
-                self.dignostics_errors.push(e);
-                return;
-            }
-        };
-
         let sym_ty = self
-            .get_symbol_type(&sym_id)
+            .get_symbol_type(&symbol_id)
             .expect("SymbolId not in range...");
 
         let output_ty = self
@@ -660,13 +650,6 @@ impl Resolver {
             .unwrap();
 
         self._check_type_eq_and_log_error(*output_ty, acc_ty, binding.body().span());
-    }
-
-    fn type_check_declaration(&mut self, node: &ast::ClDeclaration) {
-        match node {
-            ast::ClDeclaration::Binding(node) => self.type_check_binding(node),
-            ast::ClDeclaration::Function(node) => self.type_check_function(node),
-        }
     }
 
     fn type_check_if_condition(&mut self, if_stm: &ast::IfStm) {
@@ -1349,8 +1332,8 @@ mod test_type_matching {
     fn test_declaration_type_matches_no_error() {
         let mut resolver = Resolver::default();
         let f = make_ast_func("f"); // Type Int -> Int
-        resolver.push_ast_function(&f);
-        resolver.type_check_function(&f);
+        let out = resolver.push_ast_function(&f);
+        resolver.type_check_function(&f, *out.inner());
         assert!(resolver.dignostics_errors.is_empty()); // No errors emitted
     }
 
@@ -1358,8 +1341,8 @@ mod test_type_matching {
     fn test_declaration_type_missmatch_err() {
         let mut resolver = Resolver::default();
         let f = make_bad_ast_func("f"); // Type Int -> String (acc returns int)
-        resolver.push_ast_function(&f);
-        resolver.type_check_function(&f);
+        let out = resolver.push_ast_function(&f);
+        resolver.type_check_function(&f, *out.inner());
         assert!(resolver.dignostics_errors.len() == 1); // Just one error
     }
 
@@ -1405,8 +1388,8 @@ mod test_type_matching {
     fn test_binding_type_matches_no_error() {
         let mut resolver = Resolver::default();
         let v = make_var("v");
-        resolver.push_ast_binding(&v);
-        resolver.type_check_binding(&v);
+        let out = resolver.push_ast_binding(&v);
+        resolver.type_check_binding(&v, *out.inner());
         assert!(resolver.dignostics_errors.is_empty()); // No errors emitted
     }
 
@@ -1414,8 +1397,8 @@ mod test_type_matching {
     fn test_binding_type_missmatch_err() {
         let mut resolver = Resolver::default();
         let v = make_bad_var("v");
-        resolver.push_ast_binding(&v);
-        resolver.type_check_binding(&v);
+        let out = resolver.push_ast_binding(&v);
+        resolver.type_check_binding(&v, *out.inner());
         assert!(resolver.dignostics_errors.len() == 1);
     }
 
@@ -1475,8 +1458,11 @@ mod test_declarations {
     fn test_function_declaration_adds_inputs_to_scope() {
         let mut resolver = Resolver::default();
         let id = make_ast_id_func();
-        resolver.push_ast_function(&id);
-        resolver.verify_declaration(&crate::syntax::ast::ClDeclaration::Function(id));
+        let out = resolver.push_ast_function(&id);
+        resolver.verify_declaration(
+            &crate::syntax::ast::ClDeclaration::Function(id),
+            *out.inner(),
+        );
         assert!(resolver.dignostics_errors.is_empty());
     }
 
@@ -1485,8 +1471,11 @@ mod test_declarations {
     fn test_function_declaration_bad_ident() {
         let mut resolver = Resolver::default();
         let badfn = make_bad_func_undefined_literal();
-        resolver.push_ast_function(&badfn);
-        resolver.verify_declaration(&crate::syntax::ast::ClDeclaration::Function(badfn));
+        let out = resolver.push_ast_function(&badfn);
+        resolver.verify_declaration(
+            &crate::syntax::ast::ClDeclaration::Function(badfn),
+            *out.inner(),
+        );
         assert_eq!(
             resolver.dignostics_errors.len(),
             1,

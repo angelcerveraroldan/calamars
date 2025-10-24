@@ -59,4 +59,8 @@ pub enum SemanticError {
         name: String,
         span: Span,
     },
+    InternalError {
+        msg: &'static str,
+        span: Span,
+    },
 }
