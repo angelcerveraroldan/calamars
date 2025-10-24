@@ -99,7 +99,7 @@ impl Resolver {
                 original_span: original.name_span,
                 redec_span: sym.name_span,
             });
-            redeclared = true;
+            return ResolverSymbolOut::Fatal;
         }
 
         // Todo: Not sure if here we should insert (end of scope stack) or overwrite (replace the
@@ -107,12 +107,7 @@ impl Resolver {
         let name = sym.name.clone();
         let id = self.symbols.insert(sym);
         curr_scope.map.insert(name, id);
-
-        if redeclared {
-            ResolverOutput::Recoverable(id)
-        } else {
-            ResolverOutput::Ok(id)
-        }
+        ResolverSymbolOut::Ok(id)
     }
 
     /// Find the symbol id for a symbol with a given name. This will look though the current scope,
@@ -141,6 +136,20 @@ impl Resolver {
 
 // Verifiers
 impl Resolver {
+    pub fn verify_module(&mut self, module: &ast::Module) {
+        #[rustfmt::skip]
+        let symbol_ids = module.items.iter()
+            .map(|declaration| self.push_ast_declaration(declaration))
+            .collect::<Vec<_>>();
+
+        for (symout, dec) in symbol_ids.iter().zip(&module.items) {
+            if symout.is_fatal() {
+                continue;
+            }
+            self.verify_declaration(&dec);
+        }
+    }
+
     fn verify_compound_expression(&mut self, expr: &ast::ClCompoundExpression) -> ResolverTypeOut {
         self.push_scope();
 
@@ -599,7 +608,12 @@ impl Resolver {
         };
 
         let symbol_type = self.get_symbol_type(&fn_id).unwrap();
-        let input_typeids = self.types.fn_input_typeids(symbol_type).unwrap().clone();
+        let message = format!("{:?}", symbol_type);
+        let input_typeids = self
+            .types
+            .fn_input_typeids(symbol_type)
+            .expect(&message)
+            .clone();
         let input_idents = binding.input_idents();
 
         self.push_scope();
