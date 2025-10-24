@@ -1,3 +1,7 @@
+use std::ops::Range;
+
+use ariadne::{Color, Fmt, Label};
+
 use crate::syntax::span::Span;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -63,4 +67,153 @@ pub enum SemanticError {
         msg: &'static str,
         span: Span,
     },
+}
+
+impl SemanticError {
+    pub fn main_message(&self) -> &str {
+        match self {
+            SemanticError::Redeclaration { .. } => "Redeclaration is not allowed",
+            SemanticError::IdentNotFound { .. } => "Identifier not found",
+            SemanticError::WrongType { .. } => "Wrong type returned",
+            SemanticError::TypeNotFound { .. } => " Type not found",
+            SemanticError::TypeMissingCtx { .. } => "Missing type",
+            SemanticError::MismatchedIfBranches { .. } => {
+                "Both branches in if statement must return the same type"
+            }
+            SemanticError::TypeMissing => "Type declaratio missing",
+            SemanticError::QualifiedTypeNotSupported { .. } => {
+                "Qualified types are not yet supported"
+            }
+            SemanticError::NotSupported { .. } => "Use of unsupported feature",
+            SemanticError::SymbolIdNotFound { .. } => "Internal error",
+            SemanticError::ArityError { .. } => "Wrong number of inputs found",
+            SemanticError::NonCallable { .. } => "Calling non-callable",
+            SemanticError::InternalError { .. } => "Internal error",
+        }
+    }
+    /*
+    Label::new(("sample.tao", 11..48))
+                .with_message(format!(
+                    "The values are outputs of this {} expression",
+                    "match".fg(out),
+                ))
+                .with_color(out),
+    */
+
+    fn label_from(
+        file_name: &String,
+        span: Span,
+        message: impl Into<String>,
+        color: Option<Color>,
+    ) -> Label<(&String, Range<usize>)> {
+        let mut label = Label::new((file_name, span.into_range())).with_message(message.into());
+        if let Some(color) = color {
+            label = label.with_color(color);
+        }
+        label
+    }
+
+    pub fn ariadne_labels<'a>(
+        &'a self,
+        file_name: &'a String,
+    ) -> Vec<Label<(&'a String, Range<usize>)>> {
+        match self {
+            SemanticError::Redeclaration {
+                original_span,
+                redec_span,
+            } => {
+                vec![
+                    Self::label_from(
+                        file_name,
+                        *original_span,
+                        "First declared here",
+                        Some(Color::Green),
+                    ),
+                    Self::label_from(
+                        file_name,
+                        *redec_span,
+                        "Redeclared here",
+                        Some(Color::Magenta),
+                    ),
+                ]
+            }
+            SemanticError::IdentNotFound { name, span } => vec![Self::label_from(
+                file_name,
+                *span,
+                "Identifier not found",
+                Some(Color::Magenta),
+            )],
+            SemanticError::TypeNotFound { type_name, span } => {
+                vec![Self::label_from(file_name, *span, "Type not found", None)]
+            }
+            SemanticError::WrongType {
+                expected,
+                actual,
+                span,
+            } => vec![Self::label_from(
+                file_name,
+                *span,
+                format!(
+                    "Expected to find `{}` but found `{}`",
+                    expected.fg(Color::Green),
+                    actual.fg(Color::Red)
+                ),
+                Some(Color::Red),
+            )],
+            SemanticError::TypeMissingCtx { for_identifier } => vec![Self::label_from(
+                file_name,
+                *for_identifier,
+                "Type annotation is needed",
+                Some(Color::Magenta),
+            )],
+            SemanticError::MismatchedIfBranches {
+                then_span,
+                else_span,
+            } => vec![
+                Self::label_from(
+                    file_name,
+                    *then_span,
+                    "First return here",
+                    Some(Color::Blue),
+                ),
+                Self::label_from(
+                    file_name,
+                    *else_span,
+                    "Second return here",
+                    Some(Color::Cyan),
+                ),
+            ],
+            SemanticError::QualifiedTypeNotSupported { span } => todo!(),
+            SemanticError::NotSupported { msg, span } => {
+                vec![Self::label_from(file_name, *span, *msg, Some(Color::Red))]
+            }
+            SemanticError::SymbolIdNotFound { id } => todo!(),
+            SemanticError::ArityError {
+                expected,
+                actual,
+                span,
+            } => vec![Self::label_from(
+                file_name,
+                *span,
+                format!(
+                    "Expected {} parameters, but found {}",
+                    expected.fg(Color::Green),
+                    actual.fg(Color::Red)
+                ),
+                Some(Color::Magenta),
+            )],
+            SemanticError::NonCallable { msg, name, span } => {
+                vec![Self::label_from(
+                    file_name,
+                    *span,
+                    *msg,
+                    Some(Color::Magenta),
+                )]
+            }
+            SemanticError::InternalError { msg, span } => {
+                vec![Self::label_from(file_name, *span, *msg, None)]
+            }
+            _ => todo!(),
+        }
+    }
 }
