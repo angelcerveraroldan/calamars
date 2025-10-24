@@ -622,7 +622,7 @@ impl Resolver {
         for (typeid, ident) in input_typeids.iter().zip(input_idents) {
             self.declare(Symbol {
                 name: ident.ident().into(),
-                kind: DefKind::Val,
+                kind: DefKind::Param,
                 arity: None,
                 ty: *typeid,
                 name_span: ident.span(),
