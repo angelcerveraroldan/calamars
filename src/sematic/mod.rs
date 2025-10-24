@@ -574,20 +574,11 @@ impl Resolver {
         }
     }
 
-    fn _check_type_eq_and_log_error(&mut self, exp: TypeId, acc: TypeId, span: Span) {
-        // If they are the same, the check passes
-        //
-        // If either of them had an error type, then we will ignore this check, as this means that
-        // the expression was malformatted, and that error is already logged.
-        if exp == acc || exp == self.types.err() || acc == self.types.err() {
-            return;
-        }
-
-        self.diagnostics_errors.push(SemanticError::WrongType {
-            expected: self.types.as_string(exp),
-            actual: self.types.as_string(acc),
-            span,
-        });
+    /// Check if two types are equal to each other
+    ///
+    /// Errors will match with anything.
+    fn check_type_eq(&self, exp: TypeId, acc: TypeId) -> bool {
+        exp == acc || exp == self.types.err() || acc == self.types.err()
     }
 
     fn type_check_binding(&mut self, binding: &ast::ClBinding, symbol_id: SymbolId) {
@@ -596,11 +587,26 @@ impl Resolver {
             return;
         }
         let acc_ty = *acc_ty.inner();
-        let sym_ty = self
-            .get_symbol_type(&symbol_id)
-            .expect("SymbolId not in range...");
 
-        self._check_type_eq_and_log_error(sym_ty, acc_ty, binding.assigned.span());
+        let sym_ty = match self.get_symbol_type(&symbol_id) {
+            Ok(s) => s,
+            Err(e) => {
+                self.diagnostics_errors.push(e);
+                return;
+            }
+        };
+
+        if self.check_type_eq(sym_ty, acc_ty) {
+            return;
+        }
+
+        self.diagnostics_errors
+            .push(SemanticError::BindingWrongType {
+                expected: self.types.as_string(sym_ty),
+                actual: self.types.as_string(acc_ty),
+                return_type_span: binding.type_span().unwrap(),
+                return_span: binding.assigned.span(),
+            });
     }
 
     fn type_check_function(&mut self, binding: &ast::ClFuncDec, symbol_id: SymbolId) {
@@ -649,7 +655,18 @@ impl Resolver {
             })
             .unwrap();
 
-        self._check_type_eq_and_log_error(*output_ty, acc_ty, binding.body().span());
+        if self.check_type_eq(*output_ty, acc_ty) {
+            return;
+        }
+
+        self.diagnostics_errors
+            .push(SemanticError::FnWrongReturnType {
+                expected: self.types.as_string(*output_ty),
+                actual: self.types.as_string(acc_ty),
+                return_type_span: binding.output_span(),
+                fn_name_span: binding.name_span(),
+                return_span: binding.body().span(),
+            });
     }
 
     fn type_check_if_condition(&mut self, if_stm: &ast::IfStm) {
@@ -659,7 +676,15 @@ impl Resolver {
             return;
         }
         let pred_type = pred_type.inner();
-        self._check_type_eq_and_log_error(self.types.bool(), *pred_type, if_stm.pred_span());
+
+        // If the predicate was not a boolean, then throw an error
+        if !self.check_type_eq(self.types.bool(), *pred_type) {
+            self.diagnostics_errors.push(SemanticError::WrongType {
+                expected: self.types.as_string(self.types.bool()),
+                actual: self.types.as_string(*pred_type),
+                span: if_stm.pred_span(),
+            });
+        }
     }
 
     fn type_check_func_call_and_get_return_type(

@@ -512,4 +512,14 @@ impl ClFuncDec {
     pub fn input_idents(&self) -> &Vec<Ident> {
         &self.input_idents
     }
+
+    pub fn output_span(&self) -> Option<Span> {
+        match &self.functype {
+            ClType::Func { output, .. } => match output.as_ref() {
+                Some(a) => a.span(),
+                None => None,
+            },
+            _ => None,
+        }
+    }
 }

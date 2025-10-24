@@ -42,6 +42,19 @@ pub enum SemanticError {
         actual: String,
         span: Span,
     },
+    FnWrongReturnType {
+        expected: String,
+        return_type_span: Option<Span>, // When no span is found, we have inferred Unit
+        fn_name_span: Span,
+        actual: String,
+        return_span: Span,
+    },
+    BindingWrongType {
+        expected: String,
+        return_type_span: Span,
+        actual: String,
+        return_span: Span,
+    },
     NotSupported {
         msg: &'static str,
         span: Span,
@@ -74,13 +87,15 @@ impl SemanticError {
         match self {
             SemanticError::Redeclaration { .. } => "Redeclaration is not allowed",
             SemanticError::IdentNotFound { .. } => "Identifier not found",
-            SemanticError::WrongType { .. } => "Wrong type returned",
+            SemanticError::WrongType { .. } | SemanticError::BindingWrongType { .. } => {
+                "Wrong type returned"
+            }
             SemanticError::TypeNotFound { .. } => " Type not found",
             SemanticError::TypeMissingCtx { .. } => "Missing type",
             SemanticError::MismatchedIfBranches { .. } => {
                 "Both branches in if statement must return the same type"
             }
-            SemanticError::TypeMissing => "Type declaratio missing",
+            SemanticError::TypeMissing => "Type declaration missing",
             SemanticError::QualifiedTypeNotSupported { .. } => {
                 "Qualified types are not yet supported"
             }
@@ -89,6 +104,7 @@ impl SemanticError {
             SemanticError::ArityError { .. } => "Wrong number of inputs found",
             SemanticError::NonCallable { .. } => "Calling non-callable",
             SemanticError::InternalError { .. } => "Internal error",
+            SemanticError::FnWrongReturnType { .. } => "Wrong type returned by function",
         }
     }
     /*
@@ -160,6 +176,45 @@ impl SemanticError {
                 ),
                 Some(Color::Red),
             )],
+            SemanticError::BindingWrongType {
+                expected,
+                return_type_span,
+                actual,
+                return_span,
+            } => vec![
+                Self::label_from(
+                    file_name,
+                    *return_type_span,
+                    format!("Binding is of type `{}`", expected.fg(Color::Green)),
+                    Some(Color::Green),
+                ),
+                Self::label_from(
+                    file_name,
+                    *return_span,
+                    format!("But it was assigned `{}`", actual.fg(Color::Red)),
+                    Some(Color::Red),
+                ),
+            ],
+            SemanticError::FnWrongReturnType {
+                expected,
+                return_type_span,
+                actual,
+                return_span,
+                fn_name_span,
+            } => vec![
+                Self::label_from(
+                    file_name,
+                    return_type_span.unwrap_or(*fn_name_span),
+                    format!("Function expected to return `{}`", expected.fg(Color::Red)),
+                    Some(Color::Red),
+                ),
+                Self::label_from(
+                    file_name,
+                    *return_span,
+                    format!("But it returned `{}`", actual.fg(Color::Green)),
+                    Some(Color::Green),
+                ),
+            ],
             SemanticError::TypeMissingCtx { for_identifier } => vec![Self::label_from(
                 file_name,
                 *for_identifier,
@@ -214,6 +269,17 @@ impl SemanticError {
                 vec![Self::label_from(file_name, *span, *msg, None)]
             }
             _ => todo!(),
+        }
+    }
+
+    pub fn notes(&self) -> Option<String> {
+        match self {
+            SemanticError::FnWrongReturnType {
+                return_type_span, ..
+            } if return_type_span.is_none() => Some(
+                "Function has infered uint type (nothing should be returned), perhaps type declaration is missing".to_string(),
+            ),
+            _ => None,
         }
     }
 }
