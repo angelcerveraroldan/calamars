@@ -1,13 +1,16 @@
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufReader, Read},
 };
 
+use ariadne::{Label, Report, ReportKind, Source};
 use chumsky::{Parser, container::Seq, input::Input};
+use proptest::collection::HashMapStrategy;
 
 use crate::{
     parser::parse_module,
-    sematic::Resolver,
+    sematic::{Resolver, error::SemanticError},
     syntax::{
         ast::{self, TokenInput},
         token::Token,
@@ -37,6 +40,19 @@ impl TryFrom<std::path::PathBuf> for SourceFile {
 }
 
 impl SourceFile {
+    fn file_name(&self) -> String {
+        self.path
+            .file_name()
+            .map(|os_str| os_str.to_str())
+            .flatten()
+            .unwrap()
+            .to_string()
+    }
+
+    fn file_source(&self) -> &String {
+        &self.src
+    }
+
     /// Tokenize the file, and return the tokens as a TokenInput stream
     pub fn as_spanned_token_stream(&self) -> impl TokenInput<'_> {
         Token::tokens_spanned_stream(&self.src)
@@ -59,7 +75,23 @@ impl SourceFile {
 
     pub fn display_errors(&self, resolver: Resolver) {
         for err in resolver.errors() {
-            println!("{:?}", err);
+            self.log_error(err.clone());
         }
+    }
+
+    /// Given a semantic error, pretty print it with the source code
+    pub fn log_error(&self, error: SemanticError) -> Result<(), std::io::Error> {
+        let file_name = self.file_name();
+        let rep = Report::build(ReportKind::Error, (&file_name, 12..12))
+            .with_message(error.main_message().to_string());
+
+        let rep_labelled = error
+            .ariadne_labels(&file_name)
+            .into_iter()
+            .fold(rep, |rep, label| rep.with_label(label));
+
+        let fin = rep_labelled.finish();
+
+        fin.print((&file_name, Source::from(self.file_source())))
     }
 }

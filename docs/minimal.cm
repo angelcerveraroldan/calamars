@@ -3,6 +3,8 @@ Given two integers, just return 2.
 *--
 def foo(x: Int, y: Int): Int = 2
 
+def bar(x: String, y: Int): Int = y
+
 var x: Int = 2;
 val y: Int = 3;
 
@@ -10,4 +12,14 @@ var x2 = 2;
 
 var x: Int = 14;
 
+def something(): String = {
+	bar(a, 3)
+}
+
+var n: Int = something(2);
+
 var foo: Int = 2;
+
+var xxxx: String = if 22 then "2" else "hello";
+
+var number: Int = if true then "2" else "hello";
