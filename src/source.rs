@@ -85,13 +85,16 @@ impl SourceFile {
         let rep = Report::build(ReportKind::Error, (&file_name, 12..12))
             .with_message(error.main_message().to_string());
 
-        let rep_labelled = error
+        let mut rep_labelled = error
             .ariadne_labels(&file_name)
             .into_iter()
             .fold(rep, |rep, label| rep.with_label(label));
 
-        let fin = rep_labelled.finish();
+        if let Some(note) = error.notes() {
+            rep_labelled = rep_labelled.with_note(note);
+        };
 
+        let fin = rep_labelled.finish();
         fin.print((&file_name, Source::from(self.file_source())))
     }
 }

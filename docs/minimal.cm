@@ -16,6 +16,8 @@ def something(): String = {
 	bar(a, 3)
 }
 
+def nothing() = 2
+
 var n: Int = something(2);
 
 var foo: Int = 2;
