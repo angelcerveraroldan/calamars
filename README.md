@@ -1,8 +1,19 @@
-# 🐙 Calamars 🌕
+<h1>🐙 Calamars 🌕</h1>
 
-A fast, functional general purpose programming language with Typst documentation!
 
-<img src="./docs/calamars.png" alt="Calamars Mascot" height="160">
+Calamars is an experimental programming language that’s still very much in development, but with some clear goals:
+
+
+- **Typst-powered doc blocks**. Documentation and scientific writing should feel effortless. You can include Typst right inside your code for beautiful, math-friendly docs.
+- **Safe mutability**. Nothing changes unless you mean it. Every mutation is explicit and visible.
+- **Clean, functional-inspired syntax**. Simple constructs, first class functions, and a style that encourages composition and clarity.
+- **Compiled _and_ interpreted**. Calamars is meant to run both as a compiled language and inside things such as notebooks. This should allow for easy testing and exploring, and for fast binaries.
+
+# Pretty Error Reporting
+
+Currently supports pretty error reporting using [`ariadne`](https://github.com/zesterer/ariadne).
+
+<img src="./docs/error_reporting.png" alt="Error reporting example">
 
 # Syntax Highlighting
 
