@@ -60,7 +60,7 @@ pub struct Resolver {
     symbols: SymbolArena,
     scopes: Vec<SymbolScope>,
 
-    dignostics_errors: Vec<SemanticError>,
+    diagnostics_errors: Vec<SemanticError>,
 }
 
 impl Default for Resolver {
@@ -70,7 +70,7 @@ impl Default for Resolver {
             symbols: SymbolArena::default(),
             scopes: vec![SymbolScope::default()],
 
-            dignostics_errors: vec![],
+            diagnostics_errors: vec![],
         }
     }
 }
@@ -85,7 +85,7 @@ impl Resolver {
     }
 
     pub fn errors(&self) -> &Vec<SemanticError> {
-        &self.dignostics_errors
+        &self.diagnostics_errors
     }
 
     /// Insert symbol into the current scope. The symbols id will be returned if correctly
@@ -95,7 +95,7 @@ impl Resolver {
         let mut redeclared = false;
         if let Some(original) = curr_scope.map.get(&sym.name) {
             let original = self.symbols.get(original).unwrap();
-            self.dignostics_errors.push(SemanticError::Redeclaration {
+            self.diagnostics_errors.push(SemanticError::Redeclaration {
                 original_span: original.name_span,
                 redec_span: sym.name_span,
             });
@@ -235,7 +235,7 @@ impl Resolver {
         let ty = match self.types.intern_cltype(&node.fntype()) {
             Ok(ty) => ty,
             Err(sem_err) => {
-                self.dignostics_errors.push(sem_err);
+                self.diagnostics_errors.push(sem_err);
                 println!("There was an error getting the typeid");
                 self.types.intern(types::Type::Error)
             }
@@ -260,11 +260,11 @@ impl Resolver {
         // with the analysis, and push an error to the diagnostics.
         let ty = match &node.vtype {
             Some(ty) => self.types.intern_cltype(ty).unwrap_or_else(|e| {
-                self.dignostics_errors.push(e);
+                self.diagnostics_errors.push(e);
                 self.types.intern(types::Type::Error)
             }),
             None => {
-                self.dignostics_errors.push(SemanticError::TypeMissingCtx {
+                self.diagnostics_errors.push(SemanticError::TypeMissingCtx {
                     for_identifier: node.vname.span(),
                 });
                 self.types.intern(types::Type::Error)
@@ -300,7 +300,7 @@ impl Resolver {
             ast::ClLiteralKind::Boolean(_) => Type::Boolean,
             ast::ClLiteralKind::Char(_) => Type::Char,
             ast::ClLiteralKind::Array(_cl_literals) => {
-                self.dignostics_errors.push(SemanticError::NotSupported {
+                self.diagnostics_errors.push(SemanticError::NotSupported {
                     msg: "Arrays not yet supported",
                     span: lit.span(),
                 });
@@ -321,7 +321,7 @@ impl Resolver {
             }
             // The symbol was not found, nothing we can do
             Err(e) => {
-                self.dignostics_errors.push(e);
+                self.diagnostics_errors.push(e);
                 ResolverTypeOut::Fatal
             }
         }
@@ -346,7 +346,7 @@ impl Resolver {
         if (then_type == else_type) {
             ResolverTypeOut::Ok(*then_type)
         } else {
-            self.dignostics_errors
+            self.diagnostics_errors
                 .push(SemanticError::MismatchedIfBranches {
                     then_span: then_expr.span(),
                     else_span: else_expr.span(),
@@ -357,7 +357,7 @@ impl Resolver {
 
     fn ast_unary_type(&mut self, unary: &ast::ClUnaryOp) -> ResolverTypeOut {
         if *unary.operator() != ast::UnaryOperator::Neg {
-            self.dignostics_errors.push(SemanticError::NotSupported {
+            self.diagnostics_errors.push(SemanticError::NotSupported {
                 msg: "unary operator not supported yet",
                 span: unary.span(),
             });
@@ -376,7 +376,7 @@ impl Resolver {
         if inner_type == integer_type || inner_type == boolean_type {
             ResolverTypeOut::Ok(inner_type)
         } else {
-            self.dignostics_errors.push(SemanticError::WrongType {
+            self.diagnostics_errors.push(SemanticError::WrongType {
                 expected: self
                     .types
                     .many_types_as_str(vec![integer_type, boolean_type]),
@@ -419,7 +419,7 @@ impl Resolver {
 
                 // Handle case where the left and right are type mismatches, but numerical
                 if lhs_type == int_type || lhs_type == float_type {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(lhs_type),
                         actual: self.types.as_string(rhs_type),
                         span: rhs.span(),
@@ -428,7 +428,7 @@ impl Resolver {
                 }
 
                 if rhs_type == int_type || rhs_type == float_type {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(rhs_type),
                         actual: self.types.as_string(lhs_type),
                         span: lhs.span(),
@@ -436,12 +436,12 @@ impl Resolver {
                     return ResolverTypeOut::Recoverable(rhs_type);
                 }
 
-                self.dignostics_errors.push(SemanticError::WrongType {
+                self.diagnostics_errors.push(SemanticError::WrongType {
                     expected: self.types.many_types_as_str(vec![int_type, float_type]),
                     actual: self.types.as_string(lhs_type),
                     span: lhs.span(),
                 });
-                self.dignostics_errors.push(SemanticError::WrongType {
+                self.diagnostics_errors.push(SemanticError::WrongType {
                     expected: self.types.many_types_as_str(vec![int_type, float_type]),
                     actual: self.types.as_string(rhs_type),
                     span: rhs.span(),
@@ -462,7 +462,7 @@ impl Resolver {
                 }
 
                 if lint || lflt {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(lhs_type),
                         actual: self.types.as_string(rhs_type),
                         span: rhs.span(),
@@ -471,7 +471,7 @@ impl Resolver {
                 }
 
                 if rint || rflt {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(rhs_type),
                         actual: self.types.as_string(lhs_type),
                         span: lhs.span(),
@@ -479,12 +479,12 @@ impl Resolver {
                     return ResolverTypeOut::Recoverable(bool_type);
                 }
 
-                self.dignostics_errors.push(SemanticError::WrongType {
+                self.diagnostics_errors.push(SemanticError::WrongType {
                     expected: self.types.many_types_as_str(vec![int_type, float_type]),
                     actual: self.types.as_string(lhs_type),
                     span: lhs.span(),
                 });
-                self.dignostics_errors.push(SemanticError::WrongType {
+                self.diagnostics_errors.push(SemanticError::WrongType {
                     expected: self.types.many_types_as_str(vec![int_type, float_type]),
                     actual: self.types.as_string(rhs_type),
                     span: rhs.span(),
@@ -496,7 +496,7 @@ impl Resolver {
                 if lhs_type == rhs_type {
                     ResolverTypeOut::Ok(bool_type)
                 } else {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(lhs_type),
                         actual: self.types.as_string(rhs_type),
                         span: lhs.span(),
@@ -514,7 +514,7 @@ impl Resolver {
 
                 // The left makes sense, but the right does not match / doesnt make sense.
                 if lhs_type == int_type || lhs_type == bool_type {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(lhs_type),
                         actual: self.types.as_string(rhs_type),
                         span: rhs.span(),
@@ -524,7 +524,7 @@ impl Resolver {
 
                 // The left didnt make sense, and the right does. Assume rhs type was intended
                 if rhs_type == int_type || rhs_type == bool_type {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(rhs_type),
                         actual: self.types.as_string(lhs_type),
                         span: lhs.span(),
@@ -534,12 +534,12 @@ impl Resolver {
 
                 // Neither of the types made sense.
 
-                self.dignostics_errors.push(SemanticError::WrongType {
+                self.diagnostics_errors.push(SemanticError::WrongType {
                     expected: self.types.many_types_as_str(vec![int_type, bool_type]),
                     actual: self.types.as_string(lhs_type),
                     span: lhs.span(),
                 });
-                self.dignostics_errors.push(SemanticError::WrongType {
+                self.diagnostics_errors.push(SemanticError::WrongType {
                     expected: self.types.many_types_as_str(vec![int_type, bool_type]),
                     actual: self.types.as_string(rhs_type),
                     span: rhs.span(),
@@ -553,7 +553,7 @@ impl Resolver {
                 }
 
                 if lhs_type != string_type {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(string_type),
                         actual: self.types.as_string(lhs_type),
                         span: lhs.span(),
@@ -561,7 +561,7 @@ impl Resolver {
                 }
 
                 if rhs_type != string_type {
-                    self.dignostics_errors.push(SemanticError::WrongType {
+                    self.diagnostics_errors.push(SemanticError::WrongType {
                         expected: self.types.as_string(string_type),
                         actual: self.types.as_string(rhs_type),
                         span: rhs.span(),
@@ -583,7 +583,7 @@ impl Resolver {
             return;
         }
 
-        self.dignostics_errors.push(SemanticError::WrongType {
+        self.diagnostics_errors.push(SemanticError::WrongType {
             expected: self.types.as_string(exp),
             actual: self.types.as_string(acc),
             span,
@@ -608,7 +608,7 @@ impl Resolver {
         let input_typeids = match self.types.fn_input_typeids(symbol_type) {
             Some(v) => v.clone(),
             None => {
-                self.dignostics_errors.push(SemanticError::InternalError {
+                self.diagnostics_errors.push(SemanticError::InternalError {
                     msg: "This should have a Function type, but didnt! Please report this error.",
                     span: binding.name_span(),
                 });
@@ -674,7 +674,7 @@ impl Resolver {
             Ok(type_id) => type_id,
             Err(e) => {
                 // We didnt find the function we are calling, so error
-                self.dignostics_errors.push(e);
+                self.diagnostics_errors.push(e);
                 return ResolverTypeOut::Recoverable(self.types.err());
             }
         };
@@ -683,7 +683,7 @@ impl Resolver {
             // TODO: Dont clone so much
             Type::Function { input, output } => (input.clone(), output.clone()),
             _ => {
-                self.dignostics_errors.push(SemanticError::NonCallable {
+                self.diagnostics_errors.push(SemanticError::NonCallable {
                     msg: "Cannot call a non-function",
                     name: func_call.name().into(),
                     span: func_call.name_span(),
@@ -693,7 +693,7 @@ impl Resolver {
         };
 
         if func_call.params().len() != inpt.len() {
-            self.dignostics_errors.push(SemanticError::ArityError {
+            self.diagnostics_errors.push(SemanticError::ArityError {
                 expected: inpt.len(),
                 actual: func_call.params().len(),
                 span: func_call.span(),
@@ -710,7 +710,7 @@ impl Resolver {
 
             let acc_type = *acc_type.inner();
             if acc_type != *expected {
-                self.dignostics_errors.push(SemanticError::WrongType {
+                self.diagnostics_errors.push(SemanticError::WrongType {
                     expected: self.types.as_string(*expected),
                     actual: self.types.as_string(acc_type),
                     span: expression.span(),
@@ -954,7 +954,7 @@ mod test_get_expr_type {
         let out = resolver.verify_expression_validity_and_return_typeid(&expr);
         assert!(out.is_ok(), "typing an int literal should succeed");
         assert_eq!(
-            resolver.dignostics_errors.len(),
+            resolver.diagnostics_errors.len(),
             1,
             "Error should be logged because of an invalid expression"
         );
@@ -977,7 +977,7 @@ mod test_get_expr_type {
         ));
         let out = resolver.verify_expression_validity_and_return_typeid(&expr);
         assert!(out.is_ok(), "typing an int literal should succeed");
-        assert!(resolver.dignostics_errors.is_empty());
+        assert!(resolver.diagnostics_errors.is_empty());
         let got = *out.inner();
         let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
         assert_eq!(got, expect, "int literal should type to Int");
@@ -1007,7 +1007,7 @@ mod test_get_expr_type {
         ));
 
         let out = resolver.verify_expression_validity_and_return_typeid(&expr);
-        assert!(resolver.dignostics_errors.is_empty());
+        assert!(resolver.diagnostics_errors.is_empty());
         let got = *out.inner();
         let expect = resolver.types.intern_cltype(&cltype_int()).unwrap();
         assert_eq!(
@@ -1040,12 +1040,12 @@ mod test_get_expr_type {
 
         let out = resolver.verify_expression_validity_and_return_typeid(&expr);
         assert_eq!(
-            resolver.dignostics_errors.len(),
+            resolver.diagnostics_errors.len(),
             1,
             "Type mismatch error should have been logged"
         );
 
-        let err = resolver.dignostics_errors[0].clone();
+        let err = resolver.diagnostics_errors[0].clone();
         let exp_err = SemanticError::WrongType {
             expected: "str".to_string(),
             actual: "int".to_string(),
@@ -1092,7 +1092,7 @@ mod test_get_expr_type {
         let exp = resolver.types.intern_cltype(&cltype_int()).unwrap();
         let acc = *out.inner();
         assert_eq!(exp, acc);
-        assert_eq!(resolver.dignostics_errors.len(), 1, "Missing input error");
+        assert_eq!(resolver.diagnostics_errors.len(), 1, "Missing input error");
     }
 
     #[test]
@@ -1158,7 +1158,7 @@ mod test_get_expr_type {
     #[test]
     fn if_with_mismatched_branch_types_is_recoverable_error() {
         let mut resolver = Resolver::default();
-        let before = resolver.dignostics_errors.len();
+        let before = resolver.diagnostics_errors.len();
 
         let cond = ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(true), fake_span()));
         let then_e = ClExpression::Literal(integer_literal());
@@ -1180,7 +1180,7 @@ mod test_get_expr_type {
         let got = *out.inner();
         let expect_err = resolver.types.intern(types::Type::Error);
         assert_eq!(got, expect_err);
-        assert!(resolver.dignostics_errors.len() > before,);
+        assert!(resolver.diagnostics_errors.len() > before,);
     }
 
     #[test]
@@ -1334,7 +1334,7 @@ mod test_type_matching {
         let f = make_ast_func("f"); // Type Int -> Int
         let out = resolver.push_ast_function(&f);
         resolver.type_check_function(&f, *out.inner());
-        assert!(resolver.dignostics_errors.is_empty()); // No errors emitted
+        assert!(resolver.diagnostics_errors.is_empty()); // No errors emitted
     }
 
     #[test]
@@ -1343,7 +1343,7 @@ mod test_type_matching {
         let f = make_bad_ast_func("f"); // Type Int -> String (acc returns int)
         let out = resolver.push_ast_function(&f);
         resolver.type_check_function(&f, *out.inner());
-        assert!(resolver.dignostics_errors.len() == 1); // Just one error
+        assert!(resolver.diagnostics_errors.len() == 1); // Just one error
     }
 
     #[test]
@@ -1354,7 +1354,7 @@ mod test_type_matching {
         let func_call =
             &ast::FuncCall::new(Ident::new("f".into(), fake_span()), vec![], fake_span());
         resolver.type_check_func_call_and_get_return_type(func_call);
-        assert_eq!(resolver.dignostics_errors.len(), 1);
+        assert_eq!(resolver.diagnostics_errors.len(), 1);
     }
 
     #[test]
@@ -1368,7 +1368,7 @@ mod test_type_matching {
             fake_span(),
         );
         resolver.type_check_func_call_and_get_return_type(func_call);
-        assert_eq!(resolver.dignostics_errors.len(), 0);
+        assert_eq!(resolver.diagnostics_errors.len(), 0);
     }
 
     #[test]
@@ -1382,7 +1382,7 @@ mod test_type_matching {
             fake_span(),
         );
         resolver.type_check_func_call_and_get_return_type(func_call);
-        assert_eq!(resolver.dignostics_errors.len(), 1);
+        assert_eq!(resolver.diagnostics_errors.len(), 1);
     }
     #[test]
     fn test_binding_type_matches_no_error() {
@@ -1390,7 +1390,7 @@ mod test_type_matching {
         let v = make_var("v");
         let out = resolver.push_ast_binding(&v);
         resolver.type_check_binding(&v, *out.inner());
-        assert!(resolver.dignostics_errors.is_empty()); // No errors emitted
+        assert!(resolver.diagnostics_errors.is_empty()); // No errors emitted
     }
 
     #[test]
@@ -1399,7 +1399,7 @@ mod test_type_matching {
         let v = make_bad_var("v");
         let out = resolver.push_ast_binding(&v);
         resolver.type_check_binding(&v, *out.inner());
-        assert!(resolver.dignostics_errors.len() == 1);
+        assert!(resolver.diagnostics_errors.len() == 1);
     }
 
     fn generate_if(cond: ast::ClExpression) -> ast::IfStm {
@@ -1416,7 +1416,7 @@ mod test_type_matching {
             fake_span(),
         )));
         resolver.type_check_if_condition(&ifstm);
-        assert!(resolver.dignostics_errors.is_empty());
+        assert!(resolver.diagnostics_errors.is_empty());
     }
 
     #[test]
@@ -1425,7 +1425,7 @@ mod test_type_matching {
         let cond = bin(expr_int(1), BinaryOperator::EqEq, expr_int(2));
         let ifstm = generate_if(cond);
         resolver.type_check_if_condition(&ifstm);
-        assert_eq!(resolver.dignostics_errors.len(), 0);
+        assert_eq!(resolver.diagnostics_errors.len(), 0);
     }
 
     #[test]
@@ -1434,7 +1434,7 @@ mod test_type_matching {
         let cond = bin(expr_int(1), BinaryOperator::Add, expr_int(2));
         let ifstm = generate_if(cond);
         resolver.type_check_if_condition(&ifstm);
-        assert_eq!(resolver.dignostics_errors.len(), 1);
+        assert_eq!(resolver.diagnostics_errors.len(), 1);
     }
 
     #[test]
@@ -1442,7 +1442,7 @@ mod test_type_matching {
         let mut resolver = Resolver::default();
         let ifstm = generate_if(expr_int(2));
         resolver.type_check_if_condition(&ifstm);
-        assert_eq!(resolver.dignostics_errors.len(), 1);
+        assert_eq!(resolver.diagnostics_errors.len(), 1);
     }
 }
 
@@ -1463,7 +1463,7 @@ mod test_declarations {
             &crate::syntax::ast::ClDeclaration::Function(id),
             *out.inner(),
         );
-        assert!(resolver.dignostics_errors.is_empty());
+        assert!(resolver.diagnostics_errors.is_empty());
     }
 
     // Check that `def foo(x: Int): Int = y` does give an error. `y` shuold be added to the scope.
@@ -1477,7 +1477,7 @@ mod test_declarations {
             *out.inner(),
         );
         assert_eq!(
-            resolver.dignostics_errors.len(),
+            resolver.diagnostics_errors.len(),
             1,
             "Bad literal when returning, but we should still have Recoverable Int type"
         );
@@ -1512,6 +1512,6 @@ mod test_exprs {
         ));
         resolver.push_ast_binding(&var);
         resolver.verify_expression_validity_and_return_typeid(&call);
-        assert_eq!(resolver.dignostics_errors.len(), 1)
+        assert_eq!(resolver.diagnostics_errors.len(), 1)
     }
 }
