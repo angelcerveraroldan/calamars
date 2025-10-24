@@ -10,7 +10,7 @@ val y: Int = 3;
 
 var x2 = 2;
 
-var x: Int = 14;
+var x: Int = 14; -- This shuold give an error (x already declared)
 
 def something(): String = {
 	bar(a, 3)

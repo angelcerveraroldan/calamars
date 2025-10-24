@@ -149,7 +149,8 @@ impl Token {
             .map(|(token, span)| match token {
                 Ok(tok) => (tok, SimpleSpan::from(span)),
                 Err(()) => (Token::Error, SimpleSpan::from(span)),
-            });
+            })
+            .filter(|(token, _)| *token != Token::LineComment);
         Stream::from_iter(token_iter).map((0..source.len()).into(), identity)
     }
 }
