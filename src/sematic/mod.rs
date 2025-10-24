@@ -99,7 +99,7 @@ impl Resolver {
                 original_span: original.name_span,
                 redec_span: sym.name_span,
             });
-            return ResolverSymbolOut::Fatal;
+            redeclared = true;
         }
 
         // Todo: Not sure if here we should insert (end of scope stack) or overwrite (replace the
@@ -107,7 +107,10 @@ impl Resolver {
         let name = sym.name.clone();
         let id = self.symbols.insert(sym);
         curr_scope.map.insert(name, id);
-        ResolverSymbolOut::Ok(id)
+
+        redeclared
+            .then(|| ResolverSymbolOut::Recoverable(id))
+            .unwrap_or_else(|| ResolverSymbolOut::Ok(id))
     }
 
     /// Find the symbol id for a symbol with a given name. This will look though the current scope,

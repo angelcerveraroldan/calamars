@@ -210,7 +210,7 @@ impl TypeArena {
         self.get(fn_id)
             .map(|fn_ty| match fn_ty {
                 Type::Function { input, .. } => Some(input),
-                _ => panic!("Cannot get input type of non fn"),
+                _ => None,
             })
             .flatten()
     }
