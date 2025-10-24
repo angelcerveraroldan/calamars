@@ -47,13 +47,15 @@ pub enum SemanticError {
         return_type_span: Option<Span>, // When no span is found, we have inferred Unit
         fn_name_span: Span,
         actual: String,
-        return_span: Span,
+        return_span: Option<Span>, // If something is being returned
+        body_span: Span,
     },
     BindingWrongType {
         expected: String,
         return_type_span: Span,
         actual: String,
-        return_span: Span,
+        return_span: Option<Span>,
+        body_span: Span,
     },
     NotSupported {
         msg: &'static str,
@@ -181,40 +183,76 @@ impl SemanticError {
                 return_type_span,
                 actual,
                 return_span,
-            } => vec![
-                Self::label_from(
+                body_span,
+            } => {
+                let mut v = vec![Self::label_from(
                     file_name,
                     *return_type_span,
                     format!("Binding is of type `{}`", expected.fg(Color::Green)),
                     Some(Color::Green),
-                ),
-                Self::label_from(
-                    file_name,
-                    *return_span,
-                    format!("But it was assigned `{}`", actual.fg(Color::Red)),
-                    Some(Color::Red),
-                ),
-            ],
+                )];
+
+                let l = if let Some(rs) = return_span {
+                    Self::label_from(
+                        file_name,
+                        *rs,
+                        format!("But it was assigned `{}`", actual.fg(Color::Red)),
+                        Some(Color::Red),
+                    )
+                } else {
+                    Self::label_from(
+                        file_name,
+                        *body_span,
+                        format!(
+                            "But it was assigned `{}` as its body had not final expression",
+                            actual.fg(Color::Red)
+                        ),
+                        Some(Color::Red),
+                    )
+                };
+                v.push(l);
+                v
+            }
             SemanticError::FnWrongReturnType {
                 expected,
                 return_type_span,
                 actual,
                 return_span,
                 fn_name_span,
-            } => vec![
-                Self::label_from(
+                body_span,
+            } => {
+                let mut v = vec![Self::label_from(
                     file_name,
                     return_type_span.unwrap_or(*fn_name_span),
-                    format!("Function expected to return `{}`", expected.fg(Color::Red)),
-                    Some(Color::Red),
-                ),
-                Self::label_from(
-                    file_name,
-                    *return_span,
-                    format!("But it returned `{}`", actual.fg(Color::Green)),
+                    format!(
+                        "Function expected to return `{}`",
+                        expected.fg(Color::Green)
+                    ),
                     Some(Color::Green),
-                ),
-            ],
+                )];
+
+                let l = if let Some(rs) = return_span {
+                    Self::label_from(
+                        file_name,
+                        *rs,
+                        format!("But it returned `{}`", actual.fg(Color::Red)),
+                        Some(Color::Red),
+                    )
+                } else {
+                    Self::label_from(
+                        file_name,
+                        *body_span,
+                        format!(
+                            "But it returned `{}` as its body had not final expression",
+                            actual.fg(Color::Red)
+                        ),
+                        Some(Color::Red),
+                    )
+                };
+
+                v.push(l);
+                v
+            }
             SemanticError::TypeMissingCtx { for_identifier } => vec![Self::label_from(
                 file_name,
                 *for_identifier,
@@ -276,8 +314,8 @@ impl SemanticError {
         match self {
             SemanticError::FnWrongReturnType {
                 return_type_span, ..
-            } if return_type_span.is_none() => Some(
-                "Function has infered uint type (nothing should be returned), perhaps type declaration is missing".to_string(),
+            } => Some(
+                "No return type was given to this function, so it was inferred that the function should expect no return `()`".to_string(),
             ),
             _ => None,
         }

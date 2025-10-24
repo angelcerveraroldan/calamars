@@ -605,7 +605,8 @@ impl Resolver {
                 expected: self.types.as_string(sym_ty),
                 actual: self.types.as_string(acc_ty),
                 return_type_span: binding.type_span().unwrap(),
-                return_span: binding.assigned.span(),
+                return_span: binding.assigned.returning_span(),
+                body_span: binding.span(),
             });
     }
 
@@ -665,7 +666,8 @@ impl Resolver {
                 actual: self.types.as_string(acc_ty),
                 return_type_span: binding.output_span(),
                 fn_name_span: binding.name_span(),
-                return_span: binding.body().span(),
+                return_span: binding.body().returning_span(),
+                body_span: binding.span(),
             });
     }
 

@@ -157,7 +157,21 @@ impl ClExpression {
             ClExpression::BinaryOp(cl_binary_op) => cl_binary_op.span(),
             ClExpression::IfStm(if_stm) => if_stm.span(),
             ClExpression::FunctionCall(func_call) => func_call.span(),
-            ClExpression::Block(cl_compound_expression) => cl_compound_expression.span(),
+            ClExpression::Block(cl_compound_expression) => cl_compound_expression.total_span(),
+        }
+    }
+
+    /// If something is retuend, span to the expression being returned
+    ///
+    /// If the expression has Unit return type, then return nothing
+    ///
+    /// TODO: If statements are not handled well due to having two arms. This will get worse with
+    /// match statements that have `n` arms.
+    pub fn returning_span(&self) -> Option<Span> {
+        if let ClExpression::Block(cl_compound_expression) = self {
+            cl_compound_expression.return_span()
+        } else {
+            Some(self.span())
         }
     }
 }
@@ -371,8 +385,12 @@ impl ClCompoundExpression {
         }
     }
 
-    pub fn span(&self) -> SimpleSpan {
+    pub fn total_span(&self) -> SimpleSpan {
         self.span
+    }
+
+    pub fn return_span(&self) -> Option<SimpleSpan> {
+        self.final_expr.clone().map(|x| x.span())
     }
 }
 
