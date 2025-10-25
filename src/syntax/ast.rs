@@ -59,9 +59,6 @@ impl ClImport {
 pub enum ClItem {
     Declaration(ClDeclaration),
     Expression(ClExpression),
-
-    // TODO:
-    Import(ClImport),
 }
 
 impl ClItem {
@@ -69,7 +66,6 @@ impl ClItem {
         match self {
             ClItem::Declaration(cl_declaration) => cl_declaration.span(),
             ClItem::Expression(cl_expression) => cl_expression.span(),
-            ClItem::Import(_) => todo!("import not yet handled"),
         }
     }
 }

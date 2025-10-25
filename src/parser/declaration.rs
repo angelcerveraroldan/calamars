@@ -1,7 +1,7 @@
 use std::path::Iter;
 
 use crate::parser::expression::{parse_expression, parse_identifier};
-use crate::parser::parse_cltype_annotation;
+use crate::parser::{parse_cltype_annotation, parse_semicolon};
 
 use crate::syntax::ast::*;
 use crate::syntax::token::Token;
@@ -29,7 +29,7 @@ where
 
     just(Token::Import)
         .ignore_then(parse_idents)
-        .then_ignore(just(Token::Semicolon))
+        .then_ignore(parse_semicolon())
         .map_with(|idents, extra| ClImport::new(idents, extra.span()))
 }
 
@@ -46,7 +46,7 @@ where
         .then(parse_maybe_type())
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone()))
-        .then_ignore(just(Token::Semicolon))
+        .then_ignore(parse_semicolon())
         .map_with(|(((mutable, vname), vtype), assigned), extra| {
             ClBinding::new(vname, vtype, Box::new(assigned), mutable, extra.span())
         })
