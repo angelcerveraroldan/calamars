@@ -13,6 +13,13 @@ use crate::{
     syntax::{ast::*, span::Span, token::Token},
 };
 
+pub fn parse_semicolon<'a, I>() -> impl Parser<'a, I, (), ParserErr<'a>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    just(Token::Semicolon).ignored()
+}
+
 pub fn parse_module<'a, I>() -> impl Parser<'a, I, Module, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
