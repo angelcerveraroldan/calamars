@@ -158,8 +158,7 @@ impl SourceDB {
         }
 
         // Load config file
-        let config_file: SourceFile = config_path.try_into()?;
-        let mut builder = SourceDBBuilder::default().add_config(config_file);
+        let mut builder = SourceDBBuilder::default().add_config(config_path);
 
         // Walk ./src recursively, collecting *.cm files
         let src_dir = root.join("src");
@@ -221,9 +220,11 @@ impl TryFrom<SourceDBBuilder> for SourceDB {
             .map(TryFrom::try_from)
             .collect::<Result<Vec<SourceFile>, Self::Error>>()?;
 
+        let config = TryFrom::try_from(builder.config.expect("Config needed"))?;
+
         Ok(Self {
             files,
-            config_file: builder.config.unwrap(),
+            config_file: config,
         })
     }
 }
@@ -249,7 +250,7 @@ impl SourceDB {
 #[derive(Default, Debug)]
 pub struct SourceDBBuilder {
     file_paths: BTreeSet<PathBuf>,
-    config: Option<SourceFile>,
+    config: Option<PathBuf>,
 }
 
 impl SourceDBBuilder {
@@ -258,7 +259,7 @@ impl SourceDBBuilder {
         self
     }
 
-    pub fn add_config(mut self, config: SourceFile) -> Self {
+    pub fn add_config(mut self, config: PathBuf) -> Self {
         self.config = Some(config);
         self
     }
@@ -279,6 +280,7 @@ mod test_builder {
         let sourcedb = SourceDBBuilder::default()
             .add_path("./tests/test_files/sample_file.cm".into())
             .add_path("./tests/test_files/bad_function.cm".into())
+            .add_config("./tests/test_files/bad_function.cm".into())
             .finish();
 
         assert!(sourcedb.is_ok());
