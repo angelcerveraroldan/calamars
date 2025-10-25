@@ -1,4 +1,9 @@
-use std::{fs, path::PathBuf};
+use std::{
+    env,
+    fs::{self, File},
+    io::Write,
+    path::PathBuf,
+};
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use calamars::{
@@ -26,6 +31,11 @@ enum Commands {
     BuildProject {},
     /// Build and run the project
     RunProject {},
+    /// Create a new project
+    NewProject {
+        /// Name of the new project
+        name: String,
+    },
     /// Run a single file (interpreter)
     RunFile { path: PathBuf },
 }
@@ -46,6 +56,22 @@ fn main() {
             let file = SourceFile::try_from(path).unwrap();
             let resolver = file.anlayse_file();
             file.display_errors(resolver);
+        }
+        Commands::NewProject { name } => {
+            let defmain = "def main() = {}";
+            let defproj = "-- This is where your config goes!";
+
+            let current_path = env::current_dir().unwrap();
+            let project_path = current_path.join(&name);
+            fs::create_dir(&project_path);
+
+            let src_path = project_path.join("src");
+            fs::create_dir(&src_path);
+
+            let mut proj = File::create_new(project_path.join("project.cm")).unwrap();
+            let mut main = File::create_new(src_path.join("main.cm")).unwrap();
+            proj.write_all(defproj.as_bytes());
+            main.write_all(defmain.as_bytes());
         }
         _ => todo!("Not yet supported"),
     }

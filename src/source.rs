@@ -1,7 +1,8 @@
 use std::{
     collections::{BTreeSet, HashMap},
+    env,
     fmt::Debug,
-    fs::File,
+    fs::{self, File},
     io::{BufReader, Read},
     path::{Path, PathBuf},
 };
@@ -147,13 +148,11 @@ pub struct SourceDB {
 
 impl SourceDB {
     pub fn load_project() -> Result<Self, std::io::Error> {
-        use std::{env, fs, io, path::PathBuf};
-
         let root = env::current_dir()?;
         let config_path = root.join("project.cm");
         if !config_path.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
                 "No `project.cm` in the current directory. Run from the project root.",
             ));
         }
@@ -165,8 +164,8 @@ impl SourceDB {
         // Walk ./src recursively, collecting *.cm files
         let src_dir = root.join("src");
         if !src_dir.is_dir() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
                 "Expected `src/` directory in the project root.",
             ));
         }
