@@ -8,7 +8,7 @@ use std::{
 
 use ariadne::{Label, Report, ReportKind, Source};
 use chumsky::{Parser, container::Seq, input::Input};
-use clap::builder::PathBufValueParser;
+use clap::builder::{self, PathBufValueParser};
 use proptest::collection::HashMapStrategy;
 
 use crate::{
@@ -20,9 +20,11 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone)]
 pub struct FileId(pub usize);
 
 /// A Calamars source file
+#[derive(Debug)]
 pub struct SourceFile {
     pub id: FileId,
     pub path: PathBuf,
@@ -125,6 +127,73 @@ impl SourceFile {
 /// vector)
 pub struct SourceDB {
     files: Vec<SourceFile>,
+    config_file: SourceFile,
+}
+
+impl SourceDB {
+    pub fn load_project() -> Result<Self, std::io::Error> {
+        use std::{env, fs, io, path::PathBuf};
+
+        let root = env::current_dir()?;
+        let config_path = root.join("project.cm");
+        if !config_path.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "No `project.cm` in the current directory. Run from the project root.",
+            ));
+        }
+
+        // Load config file
+        let config_file: SourceFile = config_path.try_into()?;
+        let mut builder = SourceDBBuilder::default().add_config(config_file);
+
+        // Walk ./src recursively, collecting *.cm files
+        let src_dir = root.join("src");
+        if !src_dir.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Expected `src/` directory in the project root.",
+            ));
+        }
+
+        // Simple manual DFS to avoid extra deps
+        let mut stack = vec![src_dir];
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                let ftype = entry.file_type()?;
+
+                if ftype.is_dir() {
+                    // Skip hidden directories like .git
+                    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                        if name.starts_with('.') {
+                            continue;
+                        }
+                    }
+                    stack.push(path);
+                } else if ftype.is_file() {
+                    // Only *.cm files; skip any stray project.cm in src
+                    let is_cm = path.extension().and_then(|s| s.to_str()) == Some("cm");
+                    let is_project =
+                        path.file_name().and_then(|s| s.to_str()) == Some("project.cm");
+                    if is_cm && !is_project {
+                        let canon = path.canonicalize()?;
+                        builder = builder.add_path(canon);
+                    }
+                }
+            }
+        }
+
+        builder.finish()
+    }
+
+    pub fn analyse_all(&self) {
+        for file in &self.files {
+            let resolver = file.anlayse_file();
+            file.display_errors(resolver);
+        }
+    }
 }
 
 impl TryFrom<SourceDBBuilder> for SourceDB {
@@ -137,7 +206,11 @@ impl TryFrom<SourceDBBuilder> for SourceDB {
             .enumerate()
             .map(TryFrom::try_from)
             .collect::<Result<Vec<SourceFile>, Self::Error>>()?;
-        Ok(Self { files })
+
+        Ok(Self {
+            files,
+            config_file: builder.config.unwrap(),
+        })
     }
 }
 
@@ -162,11 +235,17 @@ impl SourceDB {
 #[derive(Default, Debug)]
 pub struct SourceDBBuilder {
     file_paths: BTreeSet<PathBuf>,
+    config: Option<SourceFile>,
 }
 
 impl SourceDBBuilder {
     pub fn add_path(mut self, new_path: PathBuf) -> Self {
         self.file_paths.insert(new_path);
+        self
+    }
+
+    pub fn add_config(mut self, config: SourceFile) -> Self {
+        self.config = Some(config);
         self
     }
 
