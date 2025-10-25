@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ariadne::{Label, Report, ReportKind, Source};
+use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{Parser, container::Seq, input::Input};
 use clap::builder::PathBufValueParser;
 use proptest::collection::HashMapStrategy;
@@ -85,9 +85,20 @@ impl SourceFile {
 
     pub fn anlayse_file(&self) -> Resolver {
         let (outs, errs) = self.parse_file();
-        for err in errs {
-            println!("{:?}", err);
-        }
+        errs.into_iter().for_each(|e| {
+            Report::build(ReportKind::Error, ((), e.span().into_range()))
+                .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                .with_message(e.to_string())
+                .with_label(
+                    Label::new(((), e.span().into_range()))
+                        .with_message(e.reason().to_string())
+                        .with_color(Color::Red),
+                )
+                .finish()
+                .print(Source::from(&self.src))
+                .unwrap()
+        });
+
         let mut resolver = Resolver::default();
         resolver.verify_module(&outs.expect("Make sure parsing works..."));
         resolver
