@@ -172,7 +172,6 @@ impl Resolver {
                 ast::ClItem::Expression(cl_expression) => {
                     self.verify_expression_validity_and_return_typeid(cl_expression);
                 }
-                ast::ClItem::Import(cl_import) => {}
             }
         }
 
