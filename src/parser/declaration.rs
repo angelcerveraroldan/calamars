@@ -1,3 +1,5 @@
+use std::path::Iter;
+
 use crate::parser::expression::{parse_expression, parse_identifier};
 use crate::parser::parse_cltype_annotation;
 
@@ -14,6 +16,21 @@ where
     I: TokenInput<'a>,
 {
     (just(Token::Colon).ignore_then(parse_cltype_annotation())).or_not()
+}
+
+pub fn parse_import<'a, I>() -> impl Parser<'a, I, ClImport, ParserErr<'a>> + Clone
+where
+    I: TokenInput<'a>,
+{
+    let parse_idents = parse_identifier()
+        .separated_by(just(Token::Dot))
+        .at_least(1)
+        .collect::<Vec<Ident>>();
+
+    just(Token::Import)
+        .ignore_then(parse_idents)
+        .then_ignore(just(Token::Semicolon))
+        .map_with(|idents, extra| ClImport::new(idents, extra.span()))
 }
 
 fn parse_binding<'a, I>(

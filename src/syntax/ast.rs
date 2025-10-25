@@ -43,7 +43,16 @@ pub struct Module {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ClImport {}
+pub struct ClImport {
+    idents: Vec<Ident>,
+    total_span: Span,
+}
+
+impl ClImport {
+    pub fn new(idents: Vec<Ident>, total_span: Span) -> Self {
+        Self { idents, total_span }
+    }
+}
 
 /// Any one thing in the Cl language
 #[derive(Debug, Clone, PartialEq)]
