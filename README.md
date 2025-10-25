@@ -15,6 +15,18 @@ Currently supports pretty error reporting using [`ariadne`](https://github.com/z
 
 <img src="./docs/error_reporting.png" alt="Error reporting example">
 
+# File structure
+
+A Calamars project has to have the following structure:
+
+```
+├── project.cm
+└── src
+    └── main.cm
+```
+
+Where `project.cm` is the config file for the project.
+
 # Syntax Highlighting
 
 To play around with Calamars syntax, you can use the following code in you vim config.
