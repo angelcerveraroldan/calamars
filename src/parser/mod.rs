@@ -7,7 +7,7 @@ use chumsky::{input::ValueInput, prelude::*};
 
 use crate::{
     parser::{
-        declaration::parse_cldeclaration,
+        declaration::{parse_cldeclaration, parse_import},
         expression::{parse_expression, parse_identifier},
     },
     syntax::{ast::*, span::Span, token::Token},
@@ -17,13 +17,29 @@ pub fn parse_module<'a, I>() -> impl Parser<'a, I, Module, ParserErr<'a>> + Clon
 where
     I: TokenInput<'a>,
 {
-    parse_cldeclaration(parse_cl_item())
+    enum Either<A, B> {
+        L(A),
+        R(B),
+    }
+
+    let parse_l = parse_cldeclaration(parse_cl_item()).map(|x| Either::<_, _>::L(x));
+    let parse_r = parse_import().map(|x| Either::<_, _>::R(x));
+
+    (parse_l.or(parse_r))
         .repeated()
         .collect::<Vec<_>>()
-        .map(|items| Module {
-            items,
-            imports: vec![],
+        .map(|items| {
+            items
+                .into_iter()
+                .fold((vec![], vec![]), |(mut a, mut b), item| {
+                    match item {
+                        Either::L(x) => a.push(x),
+                        Either::R(x) => b.push(x),
+                    };
+                    (a, b)
+                })
         })
+        .map(|(items, imports)| Module { items, imports })
 }
 
 impl ClItem {
@@ -53,16 +69,12 @@ pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, ClItem, ParserErr<'a>> + Clo
 where
     I: TokenInput<'a>,
 {
-    // TODO: Line comments should be removed when tokenizing, but it makes tests annoying. So until
-    // we get to a point where we have nice functinaliy to open files, tokenize, and pass to the
-    // parser, we will ignore line comments here. This does not fully work (comments only allowed
-    // before declarations, not in between)
-    (just(Token::LineComment).or_not()).ignore_then(recursive(|item| {
+    recursive(|item| {
         choice((
             parse_cldeclaration(item.clone()).map(ClItem::Declaration),
             parse_expression(item.clone()).map(ClItem::Expression),
         ))
-    }))
+    })
 }
 
 /// Parse any base value, including nested arrays
