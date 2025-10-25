@@ -99,8 +99,12 @@ impl SourceFile {
                 .unwrap()
         });
 
+        if outs.is_none() {
+            panic!("Error parsing file: {}", self.file_name());
+        }
+
         let mut resolver = Resolver::default();
-        resolver.verify_module(&outs.expect("Make sure parsing works..."));
+        resolver.verify_module(&outs.unwrap());
         resolver
     }
 
