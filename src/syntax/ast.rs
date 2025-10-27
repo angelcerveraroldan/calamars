@@ -359,6 +359,10 @@ impl FuncCall {
         }
     }
 
+    pub fn callable(&self) -> &Box<Expression> {
+        &self.func
+    }
+
     pub fn params(&self) -> &Vec<Expression> {
         &self.params
     }
@@ -367,7 +371,7 @@ impl FuncCall {
         self.span
     }
 
-    pub fn name_span(&self) -> Span {
+    pub fn callable_span(&self) -> Span {
         self.func.span()
     }
 }

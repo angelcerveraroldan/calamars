@@ -3,7 +3,6 @@ use std::{any::Any, fmt::Debug, process::id, string};
 use chumsky::{container::Seq, span::SimpleSpan, text::ascii::ident};
 
 use crate::{
-    parser::declaration,
     sematic::{
         error::SemanticError,
         symbols::{DefKind, Symbol, SymbolArena, SymbolId, SymbolScope},
@@ -220,6 +219,7 @@ impl Resolver {
             Expression::Block(cl_compound_expression) => {
                 self.verify_compound_expression(cl_compound_expression)
             }
+            _ => todo!("Fixme"),
         }
     }
 }
@@ -448,7 +448,7 @@ impl Resolver {
                 // for now.
                 ResolverTypeOut::Recoverable(self.types.err())
             }
-            Geq | Leq => {
+            Geq | Leq | Greater | Less => {
                 let lint = lhs_type == int_type;
                 let rint = rhs_type == int_type;
                 let lflt = lhs_type == float_type;
@@ -690,27 +690,19 @@ impl Resolver {
         &mut self,
         func_call: &ast::FuncCall,
     ) -> ResolverTypeOut {
-        let f = self.resolve_ident(func_call.name(), func_call.span());
-        let id = match f
-            .map(|symbol_id| self.get_symbol_type(&symbol_id))
-            .flatten()
-        {
-            Ok(type_id) => type_id,
-            Err(e) => {
-                // We didnt find the function we are calling, so error
-                self.diagnostics_errors.push(e);
-                return ResolverTypeOut::Recoverable(self.types.err());
-            }
-        };
-
+        // Get the type of the callable expression
+        let id = self.verify_expression_validity_and_return_typeid(&func_call.callable());
+        if id.is_fatal() {
+            return ResolverTypeOut::Fatal;
+        }
+        let id = *id.inner();
         let (inpt, out) = match self.types.unchecked_get(id) {
             // TODO: Dont clone so much
             Type::Function { input, output } => (input.clone(), output.clone()),
             _ => {
                 self.diagnostics_errors.push(SemanticError::NonCallable {
                     msg: "Cannot call a non-function",
-                    name: func_call.name().into(),
-                    span: func_call.name_span(),
+                    span: func_call.callable_span(),
                 });
                 return ResolverTypeOut::Recoverable(self.types.err());
             }
@@ -1108,7 +1100,7 @@ mod test_get_expr_type {
         resolver.push_ast_function(&f);
 
         let fcall = FuncCall::new(
-            Ident::new("f".to_string(), fake_span()),
+            Expression::Identifier(Ident::new("f".to_string(), fake_span())),
             vec![],
             fake_span(),
         );
@@ -1373,8 +1365,11 @@ mod test_type_matching {
         let mut resolver = Resolver::default();
         let f = make_ast_func("f");
         resolver.push_ast_function(&f);
-        let func_call =
-            &ast::FuncCall::new(Ident::new("f".into(), fake_span()), vec![], fake_span());
+        let func_call = &ast::FuncCall::new(
+            Expression::Identifier(Ident::new("f".into(), fake_span())),
+            vec![],
+            fake_span(),
+        );
         resolver.type_check_func_call_and_get_return_type(func_call);
         assert_eq!(resolver.diagnostics_errors.len(), 1);
     }
@@ -1385,7 +1380,7 @@ mod test_type_matching {
         let f = make_ast_func("f");
         resolver.push_ast_function(&f);
         let func_call = &ast::FuncCall::new(
-            Ident::new("f".into(), fake_span()),
+            Expression::Identifier(Ident::new("f".into(), fake_span())),
             vec![expr_int(1)],
             fake_span(),
         );
@@ -1399,7 +1394,7 @@ mod test_type_matching {
         let f = make_ast_func("f");
         resolver.push_ast_function(&f);
         let func_call = &ast::FuncCall::new(
-            Ident::new("f".into(), fake_span()),
+            Expression::Identifier(Ident::new("f".into(), fake_span())),
             vec![expr_string("aaa")],
             fake_span(),
         );
@@ -1525,7 +1520,7 @@ mod test_exprs {
         let var = make_var("x"); // var x: Int = 10;
         // x(5)
         let call = Expression::FunctionCall(FuncCall::new(
-            Ident::new("x".into(), fake_span()),
+            Expression::Identifier(Ident::new("x".into(), fake_span())),
             vec![Expression::Literal(integer_literal())],
             fake_span(),
         ));
