@@ -392,7 +392,7 @@ impl CalamarsParser {
 
     /// Parse bindings such as
     ///
-    /// ```
+    /// ```cm
     /// var x: Int = expression;
     /// val y: Int = expression;
     /// ```
@@ -545,8 +545,8 @@ mod tests {
             (Token::EOF, (3, 3)),
         ]);
         let (mut p, _e) = parse_expr_from_tokens(tokens);
-        // Force another parse to ensure recovery doesn't loop (optional)
         let _ = p.parse_expression();
+
         assert!(
             !p.diag.is_empty(),
             "should report an expected expression after `+`"
