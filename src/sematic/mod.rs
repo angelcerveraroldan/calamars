@@ -10,7 +10,7 @@ use crate::{
         types::{Type, TypeArena, TypeId},
     },
     syntax::{
-        ast::{self, ClCompoundExpression, ClExpression, Ident},
+        ast::{self, CompoundExpression, Expression, Ident},
         span::Span,
     },
 };
@@ -156,20 +156,20 @@ impl Resolver {
         }
     }
 
-    fn verify_compound_expression(&mut self, expr: &ast::ClCompoundExpression) -> ResolverTypeOut {
+    fn verify_compound_expression(&mut self, expr: &ast::CompoundExpression) -> ResolverTypeOut {
         self.push_scope();
 
         // Insert all declarations in the table
         for i in &expr.items {
             match i {
-                ast::ClItem::Declaration(cl_declaration) => {
+                ast::Item::Declaration(cl_declaration) => {
                     let symbol_id = self.push_ast_declaration(cl_declaration);
                     if symbol_id.is_fatal() {
                         return ResolverTypeOut::Fatal;
                     }
                     self.verify_declaration(cl_declaration, *symbol_id.inner());
                 }
-                ast::ClItem::Expression(cl_expression) => {
+                ast::Item::Expression(cl_expression) => {
                     self.verify_expression_validity_and_return_typeid(cl_expression);
                 }
             }
@@ -188,12 +188,10 @@ impl Resolver {
     ///
     /// 1. Check that the declared return type and the actual return type match
     /// 2. Check that any sub-expressions are valid
-    fn verify_declaration(&mut self, declaration: &ast::ClDeclaration, symbol_id: SymbolId) {
+    fn verify_declaration(&mut self, declaration: &ast::Declaration, symbol_id: SymbolId) {
         match declaration {
-            ast::ClDeclaration::Binding(cl_binding) => {
-                self.type_check_binding(cl_binding, symbol_id)
-            }
-            ast::ClDeclaration::Function(cl_func_dec) => {
+            ast::Declaration::Binding(cl_binding) => self.type_check_binding(cl_binding, symbol_id),
+            ast::Declaration::Function(cl_func_dec) => {
                 self.type_check_function(cl_func_dec, symbol_id)
             }
         }
@@ -204,22 +202,22 @@ impl Resolver {
     /// This will also return its return typeid
     fn verify_expression_validity_and_return_typeid(
         &mut self,
-        expr: &ast::ClExpression,
+        expr: &ast::Expression,
     ) -> ResolverTypeOut {
         // Here we will check that all sub-expressions make sense
         match expr {
-            ClExpression::Identifier(cl_ident) => self.ast_identifier_type(cl_ident),
-            ClExpression::Literal(lit) => self.ast_literal_type(lit),
-            ClExpression::UnaryOp(cl_unary_op) => self.ast_unary_type(cl_unary_op),
-            ClExpression::BinaryOp(cl_binary_op) => self.ast_binary_op_type(cl_binary_op),
-            ClExpression::IfStm(if_stm) => {
+            Expression::Identifier(cl_ident) => self.ast_identifier_type(cl_ident),
+            Expression::Literal(lit) => self.ast_literal_type(lit),
+            Expression::UnaryOp(cl_unary_op) => self.ast_unary_type(cl_unary_op),
+            Expression::BinaryOp(cl_binary_op) => self.ast_binary_op_type(cl_binary_op),
+            Expression::IfStm(if_stm) => {
                 self.type_check_if_condition(if_stm);
                 self.ast_if_stm_type(if_stm)
             }
-            ClExpression::FunctionCall(func_call) => {
+            Expression::FunctionCall(func_call) => {
                 self.type_check_func_call_and_get_return_type(func_call)
             }
-            ClExpression::Block(cl_compound_expression) => {
+            Expression::Block(cl_compound_expression) => {
                 self.verify_compound_expression(cl_compound_expression)
             }
         }
@@ -230,7 +228,7 @@ impl Resolver {
 impl Resolver {
     /// Given some function declaration in the ast, add it to the symbol table in the current
     /// scope.
-    fn push_ast_function(&mut self, node: &ast::ClFuncDec) -> ResolverSymbolOut {
+    fn push_ast_function(&mut self, node: &ast::FuncDec) -> ResolverSymbolOut {
         let ty = match self.types.intern_cltype(&node.fntype()) {
             Ok(ty) => ty,
             Err(sem_err) => {
@@ -251,7 +249,7 @@ impl Resolver {
     }
 
     /// Given some binding in the ast, add it to the symbol table in the current scope.
-    fn push_ast_binding(&mut self, node: &ast::ClBinding) -> ResolverSymbolOut {
+    fn push_ast_binding(&mut self, node: &ast::Binding) -> ResolverSymbolOut {
         #[rustfmt::skip]
         let kind = if node.mutable { DefKind::Var } else { DefKind::Val };
 
@@ -281,24 +279,24 @@ impl Resolver {
         self.declare(sym)
     }
 
-    pub fn push_ast_declaration(&mut self, node: &ast::ClDeclaration) -> ResolverSymbolOut {
+    pub fn push_ast_declaration(&mut self, node: &ast::Declaration) -> ResolverSymbolOut {
         match &node {
-            ast::ClDeclaration::Binding(node_bind) => self.push_ast_binding(node_bind),
-            ast::ClDeclaration::Function(node_fn) => self.push_ast_function(node_fn),
+            ast::Declaration::Binding(node_bind) => self.push_ast_binding(node_bind),
+            ast::Declaration::Function(node_fn) => self.push_ast_function(node_fn),
         }
     }
 }
 
 // HANDLE AST TYPE CHECKS
 impl Resolver {
-    fn ast_literal_type(&mut self, lit: &ast::ClLiteral) -> ResolverTypeOut {
+    fn ast_literal_type(&mut self, lit: &ast::Literal) -> ResolverTypeOut {
         let ty = match lit.kind() {
-            ast::ClLiteralKind::Integer(_) => Type::Integer,
-            ast::ClLiteralKind::Real(_) => Type::Float,
-            ast::ClLiteralKind::String(_) => Type::String,
-            ast::ClLiteralKind::Boolean(_) => Type::Boolean,
-            ast::ClLiteralKind::Char(_) => Type::Char,
-            ast::ClLiteralKind::Array(_cl_literals) => {
+            ast::LiteralKind::Integer(_) => Type::Integer,
+            ast::LiteralKind::Real(_) => Type::Float,
+            ast::LiteralKind::String(_) => Type::String,
+            ast::LiteralKind::Boolean(_) => Type::Boolean,
+            ast::LiteralKind::Char(_) => Type::Char,
+            ast::LiteralKind::Array(_cl_literals) => {
                 self.diagnostics_errors.push(SemanticError::NotSupported {
                     msg: "Arrays not yet supported",
                     span: lit.span(),
@@ -354,7 +352,7 @@ impl Resolver {
         }
     }
 
-    fn ast_unary_type(&mut self, unary: &ast::ClUnaryOp) -> ResolverTypeOut {
+    fn ast_unary_type(&mut self, unary: &ast::UnaryOp) -> ResolverTypeOut {
         if *unary.operator() != ast::UnaryOperator::Neg {
             self.diagnostics_errors.push(SemanticError::NotSupported {
                 msg: "unary operator not supported yet",
@@ -386,7 +384,7 @@ impl Resolver {
         }
     }
 
-    fn ast_binary_op_type(&mut self, binary: &ast::ClBinaryOp) -> ResolverTypeOut {
+    fn ast_binary_op_type(&mut self, binary: &ast::BinaryOp) -> ResolverTypeOut {
         use ast::BinaryOperator::*; // match later is mess, import in this scope
 
         let (lhs, rhs) = (binary.lhs(), binary.rhs());
@@ -580,7 +578,7 @@ impl Resolver {
         exp == acc || exp == self.types.err() || acc == self.types.err()
     }
 
-    fn type_check_binding(&mut self, binding: &ast::ClBinding, symbol_id: SymbolId) {
+    fn type_check_binding(&mut self, binding: &ast::Binding, symbol_id: SymbolId) {
         let acc_ty = self.verify_expression_validity_and_return_typeid(&binding.assigned);
         if acc_ty.is_fatal() {
             return;
@@ -609,7 +607,7 @@ impl Resolver {
             });
     }
 
-    fn type_check_function(&mut self, binding: &ast::ClFuncDec, symbol_id: SymbolId) {
+    fn type_check_function(&mut self, binding: &ast::FuncDec, symbol_id: SymbolId) {
         let symbol_type = self.get_symbol_type(&symbol_id).unwrap();
         let input_typeids = match self.types.fn_input_typeids(symbol_type) {
             Some(v) => v.clone(),
@@ -753,8 +751,7 @@ mod test_helpers_resolver {
     use chumsky::{Parser, span::SimpleSpan};
 
     use crate::syntax::ast::{
-        self, BinaryOperator, ClBinaryOp, ClBinding, ClExpression, ClLiteral, ClLiteralKind,
-        ClType, Ident,
+        self, BinaryOp, BinaryOperator, Binding, Expression, Ident, Literal, LiteralKind, Type,
     };
 
     pub fn fake_span() -> SimpleSpan {
@@ -765,127 +762,127 @@ mod test_helpers_resolver {
         }
     }
 
-    pub fn cltype_int() -> ClType {
-        ClType::Path {
+    pub fn cltype_int() -> Type {
+        Type::Path {
             segments: vec![Ident::new("Int".to_string(), fake_span())],
             span: fake_span(),
         }
     }
 
-    pub fn cltype_bool() -> ClType {
-        ClType::Path {
+    pub fn cltype_bool() -> Type {
+        Type::Path {
             segments: vec![Ident::new("Bool".to_string(), fake_span())],
             span: fake_span(),
         }
     }
 
-    pub fn cltype_float() -> ClType {
-        ClType::Path {
+    pub fn cltype_float() -> Type {
+        Type::Path {
             segments: vec![Ident::new("Float".to_string(), fake_span())],
             span: fake_span(),
         }
     }
 
-    pub fn cltype_string() -> ClType {
-        ClType::Path {
+    pub fn cltype_string() -> Type {
+        Type::Path {
             segments: vec![Ident::new("String".to_string(), fake_span())],
             span: fake_span(),
         }
     }
 
-    pub fn expr_int(n: i64) -> ClExpression {
-        ClExpression::Literal(ClLiteral::new(ClLiteralKind::Integer(n), fake_span()))
+    pub fn expr_int(n: i64) -> Expression {
+        Expression::Literal(Literal::new(LiteralKind::Integer(n), fake_span()))
     }
 
-    pub fn expr_real(f: f64) -> ClExpression {
-        ClExpression::Literal(ClLiteral::new(ClLiteralKind::Real(f), fake_span()))
+    pub fn expr_real(f: f64) -> Expression {
+        Expression::Literal(Literal::new(LiteralKind::Real(f), fake_span()))
     }
 
-    pub fn expr_bool(b: bool) -> ClExpression {
-        ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(b), fake_span()))
+    pub fn expr_bool(b: bool) -> Expression {
+        Expression::Literal(Literal::new(LiteralKind::Boolean(b), fake_span()))
     }
 
-    pub fn expr_string(s: &str) -> ClExpression {
-        ClExpression::Literal(ClLiteral::new(
-            ClLiteralKind::String(s.to_string()),
+    pub fn expr_string(s: &str) -> Expression {
+        Expression::Literal(Literal::new(
+            LiteralKind::String(s.to_string()),
             fake_span(),
         ))
     }
 
-    pub fn bin(lhs: ClExpression, op: BinaryOperator, rhs: ClExpression) -> ClExpression {
-        ClExpression::BinaryOp(ClBinaryOp::new(op, lhs.into(), rhs.into(), fake_span()))
+    pub fn bin(lhs: Expression, op: BinaryOperator, rhs: Expression) -> Expression {
+        Expression::BinaryOp(BinaryOp::new(op, lhs.into(), rhs.into(), fake_span()))
     }
 
-    pub fn integer_literal() -> ClLiteral {
-        ClLiteral::new(ast::ClLiteralKind::Integer(10), fake_span())
+    pub fn integer_literal() -> Literal {
+        Literal::new(ast::LiteralKind::Integer(10), fake_span())
     }
 
-    pub fn make_bad_ast_func(name: &str) -> ast::ClFuncDec {
+    pub fn make_bad_ast_func(name: &str) -> ast::FuncDec {
         let fake = fake_span();
 
-        ast::ClFuncDec::new(
+        ast::FuncDec::new(
             Ident::new(name.to_string(), fake),
             vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
-            cltype_string().into(),                        // Returns string
-            ast::ClExpression::Literal(integer_literal()), // Body actually returns integer
+            cltype_string().into(),                      // Returns string
+            ast::Expression::Literal(integer_literal()), // Body actually returns integer
             fake_span(),
             None,
         )
     }
 
-    pub fn make_ast_func(name: &str) -> ast::ClFuncDec {
+    pub fn make_ast_func(name: &str) -> ast::FuncDec {
         let fake = fake_span();
 
-        ast::ClFuncDec::new(
+        ast::FuncDec::new(
             Ident::new(name.to_string(), fake),
             vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
             cltype_int().into(),
-            ast::ClExpression::Literal(integer_literal()),
+            ast::Expression::Literal(integer_literal()),
             fake_span(),
             None,
         )
     }
 
-    pub fn make_bad_func_undefined_literal() -> ast::ClFuncDec {
+    pub fn make_bad_func_undefined_literal() -> ast::FuncDec {
         let fake = fake_span();
-        ast::ClFuncDec::new(
+        ast::FuncDec::new(
             Ident::new("id".to_string(), fake),
             vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
             cltype_int().into(),
             // Not the correct return literal
-            ast::ClExpression::Identifier((Ident::new("y".to_string(), fake))),
+            ast::Expression::Identifier((Ident::new("y".to_string(), fake))),
             fake_span(),
             None,
         )
     }
 
-    pub fn make_ast_id_func() -> ast::ClFuncDec {
+    pub fn make_ast_id_func() -> ast::FuncDec {
         let fake = fake_span();
-        ast::ClFuncDec::new(
+        ast::FuncDec::new(
             Ident::new("id".to_string(), fake),
             vec![(Ident::new("x".to_string(), fake), cltype_int().into())],
             cltype_int().into(),
-            ast::ClExpression::Identifier((Ident::new("x".to_string(), fake))),
+            ast::Expression::Identifier((Ident::new("x".to_string(), fake))),
             fake_span(),
             None,
         )
     }
 
-    pub fn make_bad_var(name: &str) -> ast::ClBinding {
-        ClBinding::new(
+    pub fn make_bad_var(name: &str) -> ast::Binding {
+        Binding::new(
             Ident::new(name.to_string(), fake_span()),
             cltype_string().into(),
-            Box::new(ast::ClExpression::Literal(integer_literal())),
+            Box::new(ast::Expression::Literal(integer_literal())),
             false,
             fake_span(),
         )
     }
 
-    pub fn make_var(name: &str) -> ast::ClBinding {
-        ClBinding::new(
+    pub fn make_var(name: &str) -> ast::Binding {
+        Binding::new(
             Ident::new(name.to_string(), fake_span()),
             cltype_int().into(),
-            Box::new(ast::ClExpression::Literal(integer_literal())),
+            Box::new(ast::Expression::Literal(integer_literal())),
             false,
             fake_span(),
         )
@@ -960,19 +957,19 @@ mod test_get_expr_type {
     use crate::{
         sematic::{Resolver, error::SemanticError, types},
         syntax::ast::{
-            self, BinaryOperator, ClCompoundExpression, ClExpression, ClItem, ClLiteral,
-            ClLiteralKind, ClType, FuncCall, Ident,
+            self, BinaryOperator, CompoundExpression, Expression, FuncCall, Ident, Item, Literal,
+            LiteralKind, Type,
         },
     };
 
     #[test]
     fn bad_expression_with_return_logs_error() {
         let mut resolver = Resolver::default();
-        let expr = ClExpression::Block(ClCompoundExpression::new(
+        let expr = Expression::Block(CompoundExpression::new(
             vec![
                 // This is a bad expression, should log an error, but the final return type
                 // should still be returned
-                ClItem::Expression(bin(expr_int(1), BinaryOperator::Add, expr_bool(true))),
+                Item::Expression(bin(expr_int(1), BinaryOperator::Add, expr_bool(true))),
             ],
             Some(expr_int(2).into()),
             fake_span(),
@@ -992,11 +989,11 @@ mod test_get_expr_type {
     #[test]
     fn good_expression_no_error() {
         let mut resolver = Resolver::default();
-        let expr = ClExpression::Block(ClCompoundExpression::new(
+        let expr = Expression::Block(CompoundExpression::new(
             vec![
                 // This is a bad expression, should log an error, but the final return type
                 // should still be returned
-                ClItem::Expression(bin(expr_int(1), BinaryOperator::Add, expr_int(2))),
+                Item::Expression(bin(expr_int(1), BinaryOperator::Add, expr_int(2))),
             ],
             Some(expr_int(2).into()),
             fake_span(),
@@ -1022,13 +1019,13 @@ mod test_get_expr_type {
     #[test]
     fn compound_expression_logs_inners() {
         let mut resolver = Resolver::default();
-        let expr = ClExpression::Block(ClCompoundExpression::new(
+        let expr = Expression::Block(CompoundExpression::new(
             vec![
                 // Make y be an integer
-                ClItem::Declaration(ast::ClDeclaration::Binding(make_var("y"))),
+                Item::Declaration(ast::Declaration::Binding(make_var("y"))),
             ],
             // Return y - We shuold know that y is an integer now
-            Some(ClExpression::Identifier(Ident::new("y".to_string(), fake_span())).into()),
+            Some(Expression::Identifier(Ident::new("y".to_string(), fake_span())).into()),
             fake_span(),
         ));
 
@@ -1054,13 +1051,13 @@ mod test_get_expr_type {
     #[test]
     fn compound_bad_expression_error_recovery() {
         let mut resolver = Resolver::default();
-        let expr = ClExpression::Block(ClCompoundExpression::new(
+        let expr = Expression::Block(CompoundExpression::new(
             vec![
                 // Make y be an integer
-                ClItem::Declaration(ast::ClDeclaration::Binding(make_bad_var("y"))),
+                Item::Declaration(ast::Declaration::Binding(make_bad_var("y"))),
             ],
             // Return y - We shuold know that y is an integer now
-            Some(ClExpression::Identifier(Ident::new("y".to_string(), fake_span())).into()),
+            Some(Expression::Identifier(Ident::new("y".to_string(), fake_span())).into()),
             fake_span(),
         ));
 
@@ -1093,7 +1090,7 @@ mod test_get_expr_type {
     fn expr_literal_int_has_int_type() {
         let mut resolver = Resolver::default();
 
-        let expr = ClExpression::Literal(integer_literal());
+        let expr = Expression::Literal(integer_literal());
         let out = resolver.verify_expression_validity_and_return_typeid(&expr);
 
         assert!(out.is_ok(), "typing an int literal should succeed");
@@ -1132,7 +1129,7 @@ mod test_get_expr_type {
         assert!(resolver.push_ast_binding(&x).is_ok());
 
         // use x
-        let expr = ClExpression::Identifier(Ident::new("x".into(), fake_span()));
+        let expr = Expression::Identifier(Ident::new("x".into(), fake_span()));
         let out = resolver.verify_expression_validity_and_return_typeid(&expr);
 
         assert!(out.is_ok(), "typing an existing identifier should succeed");
@@ -1146,14 +1143,14 @@ mod test_get_expr_type {
     fn expr_block_without_final_expr_is_unit() {
         let mut resolver = Resolver::default();
 
-        let block = ClExpression::Block(ClCompoundExpression::new(vec![], None, fake_span()));
+        let block = Expression::Block(CompoundExpression::new(vec![], None, fake_span()));
 
         let out = resolver.verify_expression_validity_and_return_typeid(&block);
         assert!(out.is_ok(), "empty block should type check");
         let got = *out.inner();
         let expect = resolver
             .types
-            .intern_cltype(&ClType::Path {
+            .intern_cltype(&Type::Path {
                 segments: vec![Ident::new("()".into(), fake_span())],
                 span: fake_span(),
             })
@@ -1165,10 +1162,10 @@ mod test_get_expr_type {
     fn if_with_matching_branch_types_yields_that_type() {
         let mut resolver = Resolver::default();
 
-        let cond = ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(true), fake_span()));
-        let then_e = ClExpression::Literal(integer_literal());
-        let else_e = ClExpression::Literal(integer_literal());
-        let if_e = ClExpression::IfStm(ast::IfStm::new(
+        let cond = Expression::Literal(Literal::new(LiteralKind::Boolean(true), fake_span()));
+        let then_e = Expression::Literal(integer_literal());
+        let else_e = Expression::Literal(integer_literal());
+        let if_e = Expression::IfStm(ast::IfStm::new(
             cond.into(),
             then_e.into(),
             else_e.into(),
@@ -1188,11 +1185,10 @@ mod test_get_expr_type {
         let mut resolver = Resolver::default();
         let before = resolver.diagnostics_errors.len();
 
-        let cond = ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(true), fake_span()));
-        let then_e = ClExpression::Literal(integer_literal());
-        let else_e =
-            ClExpression::Literal(ClLiteral::new(ClLiteralKind::Boolean(false), fake_span()));
-        let if_e = ClExpression::IfStm(ast::IfStm::new(
+        let cond = Expression::Literal(Literal::new(LiteralKind::Boolean(true), fake_span()));
+        let then_e = Expression::Literal(integer_literal());
+        let else_e = Expression::Literal(Literal::new(LiteralKind::Boolean(false), fake_span()));
+        let if_e = Expression::IfStm(ast::IfStm::new(
             cond.into(),
             then_e.into(),
             else_e.into(),
@@ -1351,9 +1347,7 @@ mod test_get_expr_type {
 mod test_type_matching {
     use crate::{
         sematic::{Resolver, test_helpers_resolver::*},
-        syntax::ast::{
-            self, BinaryOperator, ClExpression, ClLiteral, ClLiteralKind, FuncCall, Ident,
-        },
+        syntax::ast::{self, BinaryOperator, Expression, FuncCall, Ident, Literal, LiteralKind},
     };
 
     #[test]
@@ -1430,17 +1424,17 @@ mod test_type_matching {
         assert!(resolver.diagnostics_errors.len() == 1);
     }
 
-    fn generate_if(cond: ast::ClExpression) -> ast::IfStm {
-        let then_e = ClExpression::Literal(integer_literal());
-        let else_e = ClExpression::Literal(integer_literal());
+    fn generate_if(cond: ast::Expression) -> ast::IfStm {
+        let then_e = Expression::Literal(integer_literal());
+        let else_e = Expression::Literal(integer_literal());
         ast::IfStm::new(cond.into(), then_e.into(), else_e.into(), fake_span())
     }
 
     #[test]
     fn test_if_with_bool() {
         let mut resolver = Resolver::default();
-        let ifstm = generate_if(ClExpression::Literal(ClLiteral::new(
-            ClLiteralKind::Boolean(true),
+        let ifstm = generate_if(Expression::Literal(Literal::new(
+            LiteralKind::Boolean(true),
             fake_span(),
         )));
         resolver.type_check_if_condition(&ifstm);
@@ -1487,10 +1481,7 @@ mod test_declarations {
         let mut resolver = Resolver::default();
         let id = make_ast_id_func();
         let out = resolver.push_ast_function(&id);
-        resolver.verify_declaration(
-            &crate::syntax::ast::ClDeclaration::Function(id),
-            *out.inner(),
-        );
+        resolver.verify_declaration(&crate::syntax::ast::Declaration::Function(id), *out.inner());
         assert!(resolver.diagnostics_errors.is_empty());
     }
 
@@ -1501,7 +1492,7 @@ mod test_declarations {
         let badfn = make_bad_func_undefined_literal();
         let out = resolver.push_ast_function(&badfn);
         resolver.verify_declaration(
-            &crate::syntax::ast::ClDeclaration::Function(badfn),
+            &crate::syntax::ast::Declaration::Function(badfn),
             *out.inner(),
         );
         assert_eq!(
@@ -1519,7 +1510,7 @@ mod test_exprs {
             Resolver,
             test_helpers_resolver::{fake_span, integer_literal, make_var},
         },
-        syntax::ast::{ClExpression, FuncCall, Ident},
+        syntax::ast::{Expression, FuncCall, Ident},
     };
 
     /// Calling a non function should log an error
@@ -1533,9 +1524,9 @@ mod test_exprs {
         let mut resolver = Resolver::default();
         let var = make_var("x"); // var x: Int = 10;
         // x(5)
-        let call = ClExpression::FunctionCall(FuncCall::new(
+        let call = Expression::FunctionCall(FuncCall::new(
             Ident::new("x".into(), fake_span()),
-            vec![ClExpression::Literal(integer_literal())],
+            vec![Expression::Literal(integer_literal())],
             fake_span(),
         ));
         resolver.push_ast_binding(&var);

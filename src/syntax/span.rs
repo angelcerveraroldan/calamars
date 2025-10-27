@@ -9,7 +9,7 @@ mod test_span {
     use crate::{
         parser::{TokenInput, declaration::parse_cldeclaration, parse_cl_item},
         syntax::{
-            ast::{ClCompoundExpression, ClDeclaration, ClExpression, ClItem, IfStm},
+            ast::{CompoundExpression, Declaration, Expression, IfStm, Item},
             token::Token,
         },
     };
@@ -26,7 +26,7 @@ mod test_span {
 
         assert!(out.is_some());
         let dec = match out.unwrap() {
-            ClItem::Declaration(ClDeclaration::Binding(dec)) => dec,
+            Item::Declaration(Declaration::Binding(dec)) => dec,
             _ => panic!("This should be a declaration"),
         };
 
@@ -67,7 +67,7 @@ mod test_span {
 
         assert!(out.is_some());
         let ifstm = match out.unwrap() {
-            ClItem::Expression(ClExpression::IfStm(i)) => i,
+            Item::Expression(Expression::IfStm(i)) => i,
             _ => panic!("This shuold be an if statment"),
         };
 
@@ -126,13 +126,13 @@ mod test_span {
         );
 
         let block = match out.get_exp() {
-            ClExpression::Block(block) => block,
+            Expression::Block(block) => block,
             _ => panic!("This sould be a compound exp"),
         };
 
         let dec = match block.items[0].get_dec() {
-            ClDeclaration::Binding(cl_binding) => cl_binding,
-            ClDeclaration::Function(cl_func_dec) => panic!("This sould be a varible declaration"),
+            Declaration::Binding(cl_binding) => cl_binding,
+            Declaration::Function(cl_func_dec) => panic!("This sould be a varible declaration"),
         };
 
         assert_eq!(

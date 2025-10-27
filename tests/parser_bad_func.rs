@@ -1,7 +1,7 @@
 use calamars::{
     parser::parse_module,
     syntax::{
-        ast::{ClDeclaration, ClType},
+        ast::{Declaration, Type},
         token::Token,
     },
 };
@@ -25,12 +25,12 @@ fn parser_bad_fn() {
     assert!(out.items.len() == 1);
 
     let finalf = match &out.items[0] {
-        ClDeclaration::Function(cl_func_dec) => cl_func_dec,
+        Declaration::Function(cl_func_dec) => cl_func_dec,
         _ => unreachable!(),
     };
 
     assert_eq!(finalf.airity(), 2);
-    if let ClType::Func { inputs, output, .. } = finalf.fntype() {
+    if let Type::Func { inputs, output, .. } = finalf.fntype() {
         assert!(inputs[0].is_none());
         assert!(inputs[1].is_some());
         assert!(output.is_none());

@@ -54,56 +54,56 @@ where
         .map(|(items, imports)| Module { items, imports })
 }
 
-impl ClItem {
+impl Item {
     pub fn is_expression(&self) -> bool {
         match self {
-            ClItem::Expression(cl_expression) => true,
+            Item::Expression(cl_expression) => true,
             _ => false,
         }
     }
 
-    pub fn get_exp(&self) -> &ClExpression {
+    pub fn get_exp(&self) -> &Expression {
         match self {
-            ClItem::Expression(cl_expression) => cl_expression,
+            Item::Expression(cl_expression) => cl_expression,
             _ => panic!("Cannot get expression of non-expression type"),
         }
     }
 
-    pub fn get_dec(&self) -> &ClDeclaration {
+    pub fn get_dec(&self) -> &Declaration {
         match self {
-            ClItem::Declaration(cl_declaration) => cl_declaration,
+            Item::Declaration(cl_declaration) => cl_declaration,
             _ => panic!("Cannot get declaration of non-declaration type"),
         }
     }
 }
 
-pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, ClItem, ParserErr<'a>> + Clone
+pub fn parse_cl_item<'a, I>() -> impl Parser<'a, I, Item, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
     recursive(|item| {
         choice((
-            parse_cldeclaration(item.clone()).map(ClItem::Declaration),
-            parse_expression(item.clone()).map(ClItem::Expression),
+            parse_cldeclaration(item.clone()).map(Item::Declaration),
+            parse_expression(item.clone()).map(Item::Expression),
         ))
     })
 }
 
 /// Parse any base value, including nested arrays
-pub fn parse_literal<'a, I>() -> impl Parser<'a, I, ClLiteral, ParserErr<'a>> + Clone
+pub fn parse_literal<'a, I>() -> impl Parser<'a, I, Literal, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
     recursive(|value| {
         let atom = select! {
-            Token::True      => ClLiteralKind::Boolean(true),
-            Token::False     => ClLiteralKind::Boolean(false),
-            Token::Int(i)    => ClLiteralKind::Integer(i),
-            Token::Float(f)  => ClLiteralKind::Real(f),
-            Token::String(s) => ClLiteralKind::String(s),
-            Token::Char(c)   => ClLiteralKind::Char(c),
+            Token::True      => LiteralKind::Boolean(true),
+            Token::False     => LiteralKind::Boolean(false),
+            Token::Int(i)    => LiteralKind::Integer(i),
+            Token::Float(f)  => LiteralKind::Real(f),
+            Token::String(s) => LiteralKind::String(s),
+            Token::Char(c)   => LiteralKind::Char(c),
         }
-        .map_with(|kind, extra| ClLiteral::new(kind, extra.span()))
+        .map_with(|kind, extra| Literal::new(kind, extra.span()))
         .labelled("literal");
 
         let arr = value
@@ -112,8 +112,8 @@ where
             .collect::<Vec<_>>()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
             .map_with(|arr, extra| {
-                let cl_lkind = ClLiteralKind::Array(arr);
-                ClLiteral::new(cl_lkind, extra.span())
+                let cl_lkind = LiteralKind::Array(arr);
+                Literal::new(cl_lkind, extra.span())
             })
             .labelled("array");
 
@@ -121,7 +121,7 @@ where
     })
 }
 
-impl ClType {
+impl Type {
     pub fn new_func((from, to): (Vec<Option<Self>>, Option<Self>), span: Option<Span>) -> Self {
         Self::Func {
             inputs: from,
@@ -142,7 +142,7 @@ impl ClType {
     }
 }
 
-fn parse_cltype_path<'a, I>() -> impl Parser<'a, I, ClType, ParserErr<'a>> + Clone
+fn parse_cltype_path<'a, I>() -> impl Parser<'a, I, Type, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -156,7 +156,7 @@ where
             let mut tmp = Vec::with_capacity(tail.len() + 1);
             tmp.push(head);
             tmp.extend(tail);
-            ClType::Path {
+            Type::Path {
                 segments: tmp,
                 span: extra.span(),
             }
@@ -165,7 +165,7 @@ where
 
 // TODO: Maybe its better to have (x, y, z) be a Tuple type, then functions are always A->B, where
 // A and B are standard types ...
-fn parse_cltype_annotation<'a, I>() -> impl Parser<'a, I, ClType, ParserErr<'a>> + Clone
+fn parse_cltype_annotation<'a, I>() -> impl Parser<'a, I, Type, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -174,13 +174,13 @@ where
         let array_type = rec
             .clone()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
-            .map_with(|arr, extra| ClType::new_arr(arr, extra.span()));
+            .map_with(|arr, extra| Type::new_arr(arr, extra.span()));
 
         let params_many = rec
             .clone()
             .separated_by(just(Token::Comma))
             .allow_trailing()
-            .collect::<Vec<ClType>>()
+            .collect::<Vec<Type>>()
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
         let params_one = parse_cltype_path();
@@ -197,7 +197,7 @@ where
             .then_ignore(just(Token::Arrow))
             .then(params_one)
             .map_with(|(inp, out), extra| {
-                ClType::new_func(
+                Type::new_func(
                     (inp.into_iter().map(Option::from).collect(), Some(out)),
                     Some(extra.span()),
                 )
