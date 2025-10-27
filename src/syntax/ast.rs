@@ -145,6 +145,8 @@ impl Type {
 /// All types of possible expressions
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
+    Error(Span),
+
     Literal(Literal),
     Identifier(Ident),
 
@@ -167,6 +169,7 @@ impl Expression {
             Expression::IfStm(if_stm) => if_stm.span(),
             Expression::FunctionCall(func_call) => func_call.span(),
             Expression::Block(cl_compound_expression) => cl_compound_expression.total_span(),
+            _ => panic!(),
         }
     }
 
@@ -198,6 +201,8 @@ pub enum BinaryOperator {
     Pow,      // ^
     Div,      // /
     Concat,   // ++
+    Less,     // <
+    Greater,  // >
     Geq,      // >=
     Leq,      // <=
     EqEq,     // ==
@@ -340,15 +345,15 @@ impl IfStm {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncCall {
-    func_name: Ident,
+    func: Box<Expression>,
     params: Vec<Expression>,
     span: Span,
 }
 
 impl FuncCall {
-    pub fn new(func_name: Ident, params: Vec<Expression>, span: Span) -> Self {
+    pub fn new(func: Expression, params: Vec<Expression>, span: Span) -> Self {
         Self {
-            func_name,
+            func: func.into(),
             params,
             span,
         }
@@ -358,16 +363,12 @@ impl FuncCall {
         &self.params
     }
 
-    pub fn name(&self) -> &str {
-        &self.func_name.ident
-    }
-
     pub fn span(&self) -> Span {
         self.span
     }
 
     pub fn name_span(&self) -> Span {
-        self.func_name.span()
+        self.func.span()
     }
 }
 
