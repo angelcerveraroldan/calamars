@@ -1,7 +1,7 @@
 use calamars::{
     parser::parse_module,
     syntax::{
-        ast::{ClDeclaration, ClFuncDec},
+        ast::{Declaration, FuncDec},
         token::Token,
     },
 };
@@ -90,8 +90,8 @@ fn parse_file() {
     assert!(out.items.len() == 4);
 
     let finalf = match &out.items[2] {
-        ClDeclaration::Binding(cl_binding) => todo!(),
-        ClDeclaration::Function(cl_func_dec) => cl_func_dec,
+        Declaration::Binding(cl_binding) => todo!(),
+        Declaration::Function(cl_func_dec) => cl_func_dec,
     };
 
     /// Check that the parser is handling the doc comment properly

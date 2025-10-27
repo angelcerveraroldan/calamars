@@ -8,10 +8,13 @@ use std::{
     str::FromStr,
 };
 
+use crate::parser::TokenInput;
 use chumsky::{
     input::{Input, Stream, ValueInput},
     span::SimpleSpan,
 };
+use std::fmt;
+
 use logos::{Lexer, Logos};
 
 /// Helper function to parse numbers
@@ -154,10 +157,6 @@ impl Token {
         Stream::from_iter(token_iter).map((0..source.len()).into(), identity)
     }
 }
-
-use std::fmt;
-
-use crate::syntax::ast::TokenInput;
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

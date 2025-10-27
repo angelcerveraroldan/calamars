@@ -120,9 +120,9 @@ impl TypeArena {
     }
 
     /// Convert a type from the ast to a semantic type
-    pub fn intern_cltype(&mut self, ast_type: &ast::ClType) -> Result<TypeId, SemanticError> {
+    pub fn intern_cltype(&mut self, ast_type: &ast::Type) -> Result<TypeId, SemanticError> {
         match ast_type {
-            ast::ClType::Path { segments, span } => match &segments[..] {
+            ast::Type::Path { segments, span } => match &segments[..] {
                 [ident] => match ident.ident() {
                     "Int" => Ok(self.intern(Type::Integer)),
                     "Float" => Ok(self.intern(Type::Float)),
@@ -137,28 +137,23 @@ impl TypeArena {
                 },
                 _ => Err(SemanticError::QualifiedTypeNotSupported { span: *span }),
             },
-            ast::ClType::Array { elem_type, span } => {
+            ast::Type::Array { elem_type, span } => {
                 let inner_type = self.intern_cltype(&*elem_type)?;
                 Ok(self.intern(Type::Array(inner_type)))
             }
-            ast::ClType::Func { inputs, output, .. } => {
+            ast::Type::Func { inputs, output, .. } => {
                 let input = inputs
                     .iter()
-                    .map(|ty| match ty {
-                        Some(t) => self.intern_cltype(t),
-                        None => Ok(self.intern(Type::Error)),
-                    })
+                    .map(|ty| self.intern_cltype(ty))
                     .collect::<Result<Vec<_>, _>>()?;
 
                 // If no output is defined for the function, the default will be Unit
-                let output = match output.as_ref() {
-                    Some(out) => self.intern_cltype(&out)?,
-                    None => self.intern(Type::Unit),
-                };
-
+                let output = self.intern_cltype(output.as_ref())?;
                 let func = Type::Function { input, output };
                 Ok(self.intern(func))
             }
+            ast::Type::Error => Ok(self.intern(Type::Error)),
+            ast::Type::Unit => Ok(self.intern(Type::Unit)),
         }
     }
 
@@ -240,12 +235,10 @@ mod test_types_sem {
         let stream = Token::tokens_spanned_stream(&line);
         let out = parse_cl_item().parse(stream).unwrap();
         let binding = match out.get_dec() {
-            ast::ClDeclaration::Binding(cl_binding) => cl_binding,
-            ast::ClDeclaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
+            ast::Declaration::Binding(cl_binding) => cl_binding,
+            ast::Declaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
         };
-        let id = arena
-            .intern_cltype(binding.vtype.as_ref().unwrap())
-            .unwrap();
+        let id = arena.intern_cltype(&binding.vtype).unwrap();
         let ty = arena.get(id).unwrap();
         assert_eq!(*ty, Type::Integer);
     }
@@ -262,13 +255,11 @@ mod test_types_sem {
         let stream = Token::tokens_spanned_stream(&line);
         let out = parse_cl_item().parse(stream).unwrap();
         let binding = match out.get_dec() {
-            ast::ClDeclaration::Binding(cl_binding) => cl_binding,
-            ast::ClDeclaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
+            ast::Declaration::Binding(cl_binding) => cl_binding,
+            ast::Declaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
         };
 
-        let id = arena
-            .intern_cltype(binding.vtype.as_ref().unwrap())
-            .unwrap();
+        let id = arena.intern_cltype(&binding.vtype).unwrap();
         let ty = arena.get(id).unwrap();
 
         assert_eq!(
