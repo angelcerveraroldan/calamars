@@ -13,9 +13,8 @@ use clap::builder::{self, PathBufValueParser};
 use proptest::collection::HashMapStrategy;
 
 use crate::{
-    parser::{TokenInput, parse_module},
     sematic::{Resolver, error::SemanticError},
-    syntax::{ast, token::Token},
+    syntax::{ast, parser::CalamarsParser, span::Span, token::Token},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -74,37 +73,24 @@ impl SourceFile {
     }
 
     /// Tokenize the file, and return the tokens as a TokenInput stream
-    pub fn as_spanned_token_stream(&self) -> impl TokenInput<'_> {
+    pub fn as_spanned_token_stream(&self) -> Vec<(Token, logos::Span)> {
         Token::tokens_spanned_stream(&self.src)
     }
 
-    pub fn parse_file(&self) -> (Option<ast::Module>, Vec<chumsky::prelude::Rich<'_, Token>>) {
+    pub fn parse_file(&self) -> (ast::Module, CalamarsParser) {
         let tks = self.as_spanned_token_stream();
-        parse_module().parse(tks).into_output_errors()
+        let mut parser = CalamarsParser::new(FileId(0), tks);
+        (parser.parse_file(), parser)
     }
 
     pub fn anlayse_file(&self) -> Resolver {
-        let (outs, errs) = self.parse_file();
-        errs.into_iter().for_each(|e| {
-            Report::build(ReportKind::Error, ((), e.span().into_range()))
-                .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                .with_message(e.to_string())
-                .with_label(
-                    Label::new(((), e.span().into_range()))
-                        .with_message(e.reason().to_string())
-                        .with_color(Color::Red),
-                )
-                .finish()
-                .print(Source::from(&self.src))
-                .unwrap()
+        let (module, parser) = self.parse_file();
+        parser.diag().into_iter().for_each(|e| {
+            println!("{:?}", e);
         });
 
-        if outs.is_none() {
-            panic!("Error parsing file: {}", self.file_name());
-        }
-
         let mut resolver = Resolver::default();
-        resolver.verify_module(&outs.unwrap());
+        resolver.verify_module(&module);
         resolver
     }
 

@@ -400,8 +400,12 @@ impl CalamarsParser {
         todo!()
     }
 
-    fn parse_file(&mut self) -> ast::Module {
+    pub fn parse_file(&mut self) -> ast::Module {
         todo!()
+    }
+
+    pub fn diag(&self) -> &[ParsingError] {
+        &self.diag
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::syntax::span::Span;
 
+#[derive(Debug, Clone)]
 pub enum ParsingError {
     Expected {
         expected: String,
