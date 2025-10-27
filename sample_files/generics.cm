@@ -1,0 +1,74 @@
+trait Ordered[T] {
+  --*
+  given $a$ and $b$, return true iff $a > b$
+  *--
+  def greater(a: T, b: T): Boolean;
+
+  --*
+  given $a$ and $b$, return true iff $a = b$
+  *--
+  def eq(a: T, b: T): Boolean;
+}
+
+-- This functions can accept any input A that implements the above trait "Ordered".
+def min[A is Ordered](a: A, b: A): A = if greater(a, b) then b else a
+
+-- For more complex cases, you can define generic constraints unsing a "given" block.
+--
+-- This is not yet supported.
+def max[A](a: A, b: A): A
+  given A is Ordered
+= if greater(a, b) then a else b
+
+-- We can also make custom types that take in generics
+struct BTreeNode[A] {
+  value: A,
+
+  lchild: BTree,
+  rchild: BTree,
+  parent: Maybe[BTree],
+}
+
+enum BTree[A] {
+  Leaf,
+  Node(BTreeNode[A]),
+}
+
+--*
+Generate a new tree, identiacal to the input, but with an added value.
+*--
+def insert[A is Ordered](tree: BTree[A], value: A): BTree[A] =
+  match tree {
+    Leaf => BTreeNode(value, BTree.Leaf, BTree.Leaf, Just(tree)),
+    Node(tree) =>
+      if   greater(tree.value, value) 
+      then tree.copy_with(lchild = insert(tree.lchild, value))
+      else tree.copy_with(bchild = insert(tree.rchild, value))
+  }
+ 
+
+--*
+Insert a value to the binary tree via mutation.
+*--
+def inplace_insert[A is Ordered](mut tree: BTree[A], value: A) =
+  match tree {
+    -- Handle case where the tree is empty, this is the first insertion
+    Leaf => {
+      tree = BTreeNode(value, BTree.Leaf, BTree.Leaf, Nothing);
+    }
+    Node(node) => {
+       -- Note that we do not copy on assignemnt by default. You can clone and copy if you want
+       -- to make a new node that is mutable. This will essentially be a pointer to the node you
+       -- want to mutate in the tree.
+       var mut_node: BTree[A] = if greater(node.value, value) then node.lchild else node.rchild;
+
+       if is_leaf(mut_node)
+       then mut_node = Node(BTreeNode(value, Leaf, Leaf, Just(tree)))
+       else inplace_insert(mut mut_node, value) -- Give the function permission to mutate
+    }
+  }
+
+def contains[A is Ordered](tree: BTree[A], value: A): Boolean = 
+  if tree.value == value then True
+  else if greater(tree.value, value) then contains(tree.lchild, value)
+  else contains(tree.rchild, value)
