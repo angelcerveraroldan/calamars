@@ -1,7 +1,0 @@
-val x : int = 2;
-var y : int = 3;
-
---* Add two integers! *--
-def add(x : int, y: int): int = x + y
-
-var list : string = "hello";
