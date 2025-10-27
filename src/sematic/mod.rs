@@ -256,16 +256,16 @@ impl Resolver {
         // If the binding had no type, then we will keep the type error attached to it and proceed
         // with the analysis, and push an error to the diagnostics.
         let ty = match &node.vtype {
-            Some(ty) => self.types.intern_cltype(ty).unwrap_or_else(|e| {
-                self.diagnostics_errors.push(e);
-                self.types.intern(types::Type::Error)
-            }),
-            None => {
+            ast::Type::Error => {
                 self.diagnostics_errors.push(SemanticError::TypeMissingCtx {
                     for_identifier: node.vname.span(),
                 });
                 self.types.intern(types::Type::Error)
             }
+            ty => self.types.intern_cltype(ty).unwrap_or_else(|e| {
+                self.diagnostics_errors.push(e);
+                self.types.intern(types::Type::Error)
+            }),
         };
 
         let sym = Symbol {

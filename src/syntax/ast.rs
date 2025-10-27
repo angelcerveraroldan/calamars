@@ -100,15 +100,22 @@ impl From<Literal> for Expression {
 pub enum Type {
     /// The parser will generate this error when it cannot parse the type
     Error,
+    Unit,
     /// Basic / standard types such as Int, String, Char, Real, ...
     /// as well as types that require many segments, such as people.Person
-    Path { segments: Vec<Ident>, span: Span },
+    Path {
+        segments: Vec<Ident>,
+        span: Span,
+    },
     /// An array of some type such as [Int]
-    Array { elem_type: Box<Self>, span: Span },
+    Array {
+        elem_type: Box<Self>,
+        span: Span,
+    },
     /// A function (I1, I2, I3, ...) -> (O1, O2, O3, ...)
     Func {
-        inputs: Vec<Option<Self>>,
-        output: Box<Option<Self>>,
+        inputs: Vec<Self>,
+        output: Box<Self>,
         /// Lambdas have a very clear "full span", where as functions dont
         span: Option<Span>,
     },
@@ -124,6 +131,14 @@ impl Type {
             } => Some(*span),
             _ => None,
         }
+    }
+
+    pub fn is_err(&self) -> bool {
+        matches!(self, Type::Error)
+    }
+
+    pub fn is_ok(&self) -> bool {
+        !self.is_err()
     }
 }
 
@@ -416,7 +431,7 @@ impl Declaration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Binding {
     pub vname: Ident,
-    pub vtype: Option<Type>,
+    pub vtype: Type,
     pub assigned: Box<Expression>,
     pub mutable: bool,
 
@@ -426,7 +441,7 @@ pub struct Binding {
 impl Binding {
     pub fn new(
         vname: Ident,
-        vtype: Option<Type>,
+        vtype: Type,
         assigned: Box<Expression>,
         mutable: bool,
         span: Span,
@@ -449,7 +464,7 @@ impl Binding {
     }
 
     pub fn type_span(&self) -> Option<Span> {
-        self.vtype.clone().map(|ty| ty.span()).flatten()
+        self.vtype.clone().span()
     }
 }
 
@@ -467,8 +482,8 @@ pub struct FuncDec {
 impl FuncDec {
     pub fn new(
         fname: Ident,
-        inputs: Vec<(Ident, Option<Type>)>,
-        out_type: Option<Type>,
+        inputs: Vec<(Ident, Type)>,
+        out_type: Type,
         body: Expression,
         span: Span,
         doc_comment: Option<String>,
@@ -527,10 +542,7 @@ impl FuncDec {
 
     pub fn output_span(&self) -> Option<Span> {
         match &self.functype {
-            Type::Func { output, .. } => match output.as_ref() {
-                Some(a) => a.span(),
-                None => None,
-            },
+            Type::Func { output, .. } => output.as_ref().span(),
             _ => None,
         }
     }

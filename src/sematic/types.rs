@@ -144,22 +144,16 @@ impl TypeArena {
             ast::Type::Func { inputs, output, .. } => {
                 let input = inputs
                     .iter()
-                    .map(|ty| match ty {
-                        Some(t) => self.intern_cltype(t),
-                        None => Ok(self.intern(Type::Error)),
-                    })
+                    .map(|ty| self.intern_cltype(ty))
                     .collect::<Result<Vec<_>, _>>()?;
 
                 // If no output is defined for the function, the default will be Unit
-                let output = match output.as_ref() {
-                    Some(out) => self.intern_cltype(&out)?,
-                    None => self.intern(Type::Unit),
-                };
-
+                let output = self.intern_cltype(output.as_ref())?;
                 let func = Type::Function { input, output };
                 Ok(self.intern(func))
             }
-            ast::Type::Error => todo!("How to handle parser type error?"),
+            ast::Type::Error => Ok(self.intern(Type::Error)),
+            ast::Type::Unit => Ok(self.intern(Type::Unit)),
         }
     }
 
@@ -244,9 +238,7 @@ mod test_types_sem {
             ast::Declaration::Binding(cl_binding) => cl_binding,
             ast::Declaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
         };
-        let id = arena
-            .intern_cltype(binding.vtype.as_ref().unwrap())
-            .unwrap();
+        let id = arena.intern_cltype(&binding.vtype).unwrap();
         let ty = arena.get(id).unwrap();
         assert_eq!(*ty, Type::Integer);
     }
@@ -267,9 +259,7 @@ mod test_types_sem {
             ast::Declaration::Function(cl_func_dec) => panic!("this should not be a fn..."),
         };
 
-        let id = arena
-            .intern_cltype(binding.vtype.as_ref().unwrap())
-            .unwrap();
+        let id = arena.intern_cltype(&binding.vtype).unwrap();
         let ty = arena.get(id).unwrap();
 
         assert_eq!(

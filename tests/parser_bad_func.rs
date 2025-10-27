@@ -31,8 +31,9 @@ fn parser_bad_fn() {
 
     assert_eq!(finalf.airity(), 2);
     if let Type::Func { inputs, output, .. } = finalf.fntype() {
-        assert!(inputs[0].is_none());
-        assert!(inputs[1].is_some());
-        assert!(output.is_none());
+        println!("{:?}", inputs);
+        assert!(inputs[0].is_err());
+        assert!(inputs[1].is_ok());
+        assert!(output.is_ok()); // Automatically get unit type
     }
 }

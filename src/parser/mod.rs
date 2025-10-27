@@ -122,7 +122,7 @@ where
 }
 
 impl Type {
-    pub fn new_func((from, to): (Vec<Option<Self>>, Option<Self>), span: Option<Span>) -> Self {
+    pub fn new_func((from, to): (Vec<Self>, Self), span: Option<Span>) -> Self {
         Self::Func {
             inputs: from,
             output: Box::new(to),
@@ -197,10 +197,7 @@ where
             .then_ignore(just(Token::Arrow))
             .then(params_one)
             .map_with(|(inp, out), extra| {
-                Type::new_func(
-                    (inp.into_iter().map(Option::from).collect(), Some(out)),
-                    Some(extra.span()),
-                )
+                Type::new_func((inp.into_iter().collect(), out), Some(extra.span()))
             });
 
         function_type.or(parse_cltype_path()).or(array_type)

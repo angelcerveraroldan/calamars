@@ -10,11 +10,16 @@ use chumsky::{input::ValueInput, prelude::*};
 /// Try to parse `: <type>`. If the type was not defined (`var x = 2;`) then None will be returned.
 ///
 /// The None type should be handled by the semantics checks, not the parser.
-fn parse_maybe_type<'a, I>() -> impl Parser<'a, I, Option<Type>, ParserErr<'a>> + Clone
+fn parse_maybe_type<'a, I>() -> impl Parser<'a, I, Type, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
-    (just(Token::Colon).ignore_then(parse_cltype_annotation())).or_not()
+    (just(Token::Colon).ignore_then(parse_cltype_annotation()))
+        .or_not()
+        .map(|x| match x {
+            Some(ty) => ty,
+            None => Type::Error,
+        })
 }
 
 pub fn parse_import<'a, I>() -> impl Parser<'a, I, Import, ParserErr<'a>> + Clone
@@ -60,7 +65,7 @@ where
 /// a None type. This error should be handled in the semantic check.
 ///
 /// Doing this allows for better error recovety.
-fn parse_func_input<'a, I>() -> impl Parser<'a, I, Vec<(Ident, Option<Type>)>, ParserErr<'a>> + Clone
+fn parse_func_input<'a, I>() -> impl Parser<'a, I, Vec<(Ident, Type)>, ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,
 {
@@ -68,7 +73,7 @@ where
 
     name_type
         .separated_by(just(Token::Comma))
-        .collect::<Vec<(Ident, Option<Type>)>>()
+        .collect::<Vec<(Ident, Type)>>()
         .delimited_by(just(Token::LParen), just(Token::RParen))
         .labelled("Function input")
 }
@@ -84,7 +89,10 @@ where
     let funcp = just(Token::Def)
         .ignore_then(parse_identifier()) // Function name
         .then(parse_func_input()) // Input types, and names
-        .then(parse_maybe_type()) // Output type
+        .then(parse_maybe_type().map(|x| match x {
+            Type::Error => Type::Unit,
+            _ => x,
+        })) // Output type
         .then_ignore(just(Token::Equal))
         .then(parse_expression(item.clone())) // Body of the funcion
         .map_with(|(((fname, inputs), out_type), body), extra| {
