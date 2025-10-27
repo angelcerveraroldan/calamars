@@ -444,8 +444,35 @@ mod tests {
             (Token::Int(3), (8, 9)),
             (Token::EOF, (9, 9)),
         ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
+        let (p, e) = parse_expr_from_tokens(tokens);
+
+        // 2 * 3
+        let mult = ast::Expression::BinaryOp(ast::BinaryOp::new(
+            ast::BinaryOperator::Times,
+            Box::new(ast::Expression::Literal(ast::Literal::new(
+                ast::LiteralKind::Integer(2),
+                Span::from(4..5),
+            ))),
+            Box::new(ast::Expression::Literal(ast::Literal::new(
+                ast::LiteralKind::Integer(3),
+                Span::from(8..9),
+            ))),
+            Span::from(4..9),
+        ));
+
+        // 1 + mult
+        let expected = ast::Expression::BinaryOp(ast::BinaryOp::new(
+            ast::BinaryOperator::Add,
+            Box::new(ast::Expression::Literal(ast::Literal::new(
+                ast::LiteralKind::Integer(1),
+                Span::from(0..1),
+            ))),
+            Box::new(mult),
+            Span::from(0..9),
+        ));
+
         assert!(p.diag.is_empty(), "should parse without diagnostics");
+        assert!(e == expected);
     }
 
     #[test]
@@ -463,7 +490,9 @@ mod tests {
             (Token::RParen, (10, 11)),
             (Token::EOF, (11, 11)),
         ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
+        let (p, e) = parse_expr_from_tokens(tokens);
+
+        assert!(matches!(e, ast::Expression::FunctionCall(_)));
         assert!(p.diag.is_empty(), "call chaining should parse cleanly");
     }
 
@@ -480,7 +509,14 @@ mod tests {
             (Token::Ident("c".into()), (10, 11)),
             (Token::EOF, (11, 11)),
         ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
+        let (p, e) = parse_expr_from_tokens(tokens);
+        assert!(matches!(e, ast::Expression::BinaryOp(_)));
+        match e {
+            ast::Expression::BinaryOp(b) => {
+                assert!(matches!(b.rhs().as_ref(), ast::Expression::Identifier(_)));
+            }
+            _ => panic!(),
+        }
         assert!(
             p.diag.is_empty(),
             "grouping + precedence should parse without diagnostics"
