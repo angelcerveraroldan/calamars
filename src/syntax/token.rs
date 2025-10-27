@@ -8,7 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::parser::TokenInput;
+use crate::syntax::span::Span;
 use chumsky::{
     input::{Input, Stream, ValueInput},
     span::SimpleSpan,
@@ -146,15 +146,15 @@ impl Token {
         tokens
     }
 
-    pub fn tokens_spanned_stream<'a>(source: &'a str) -> impl TokenInput<'a> {
-        let token_iter = Token::lexer(source)
+    pub fn tokens_spanned_stream<'a>(source: &'a str) -> Vec<(Token, logos::Span)> {
+        Token::lexer(source)
             .spanned()
             .map(|(token, span)| match token {
-                Ok(tok) => (tok, SimpleSpan::from(span)),
-                Err(()) => (Token::Error, SimpleSpan::from(span)),
+                Ok(tok) => (tok, span),
+                Err(()) => (Token::Error, span),
             })
-            .filter(|(token, _)| *token != Token::LineComment);
-        Stream::from_iter(token_iter).map((0..source.len()).into(), identity)
+            .filter(|(token, _)| *token != Token::LineComment)
+            .collect()
     }
 }
 
