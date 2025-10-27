@@ -18,7 +18,7 @@ use crate::{
     syntax::{ast, token::Token},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FileId(pub usize);
 
 /// A Calamars source file
