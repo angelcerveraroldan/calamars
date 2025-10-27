@@ -169,7 +169,8 @@ impl Expression {
             Expression::IfStm(if_stm) => if_stm.span(),
             Expression::FunctionCall(func_call) => func_call.span(),
             Expression::Block(cl_compound_expression) => cl_compound_expression.total_span(),
-            _ => panic!(),
+            // I am not a big fan of this ...
+            Expression::Error(span) => *span,
         }
     }
 
