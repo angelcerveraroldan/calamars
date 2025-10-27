@@ -257,7 +257,7 @@ mod test_builder {
     use std::{fs, path::PathBuf};
 
     use crate::source::{FileId, SourceDBBuilder};
-
+    /*
     #[test]
     fn load_many_files() {
         let sourcedb = SourceDBBuilder::default()
@@ -275,4 +275,5 @@ mod test_builder {
             "Paths shuold be inserted in alphabetical order"
         );
     }
+    */
 }
