@@ -122,6 +122,10 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn new_path(segments: Vec<Ident>, span: Span) -> Self {
+        Self::Path { segments, span }
+    }
+
     pub fn span(&self) -> Option<Span> {
         match self {
             Type::Path { span, .. }

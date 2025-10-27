@@ -114,6 +114,10 @@ impl CalamarsParser {
         self.tokens[self.n_index().saturating_sub(1)].1
     }
 
+    fn next_span(&self) -> Span {
+        self.tokens[self.n_index()].1
+    }
+
     /// Get the index of the next non-consumed token
     ///
     /// We are guaranteed that this insdex will be in range for tokens indexing
@@ -380,6 +384,106 @@ impl CalamarsParser {
         self.parse_expression_with_binding_power(0)
     }
 
+    /// Identifiers with a dot separator, for example: `foo.Bar`
+    fn parse_path_type(&mut self) -> ast::Type {
+        let mut segments = vec![];
+        let init_span = self.next_span().start;
+        let mut end_span = self.next_span().end;
+
+        loop {
+            let ident = self.parse_identifier();
+            segments.push(ident.clone());
+            end_span = ident.span().end;
+            if ident.ident() == Self::ERR_IDENT {
+                self.skip_until((), |_, tk| *tk == Token::Equal);
+                break;
+            }
+
+            // Now find the dot
+            if self.next_matches(|tk| *tk == Token::Dot) {
+                self.advance_one();
+            } else {
+                break;
+            }
+        }
+
+        ast::Type::new_path(segments, Span::from(init_span..end_span))
+    }
+
+    fn parse_fn_type(&mut self) -> ast::Type {
+        let init_span = self.next_span();
+        // Start by consuming the first paren
+        if !self.next_matches(|tk| *tk == Token::LParen) {
+            self.expect_err("function type");
+            return ast::Type::Error;
+        } else {
+            self.advance_one();
+        }
+
+        let mut inputs = vec![];
+        loop {
+            if *self.next_token_ref() == Token::RParen {
+                self.advance_one();
+                break;
+            }
+
+            let ty = self.parse_type();
+            inputs.push(ty);
+
+            if *self.next_token_ref() == Token::Comma {
+                self.advance_one();
+            }
+        }
+
+        if !self.next_matches(|tk| *tk == Token::Arrow) {
+            self.expect_err("->");
+        } else {
+            self.advance_one();
+        }
+
+        let output = Box::new(self.parse_type());
+        let out_final = output.span().unwrap().end;
+        ast::Type::Func {
+            inputs,
+            output,
+            span: Some(Span::from(init_span.start..out_final)),
+        }
+    }
+
+    fn parse_arr_type(&mut self) -> ast::Type {
+        let l_sp = self.next_ref().1;
+        self.advance_one(); // '['
+
+        let elem = self.parse_type();
+
+        // expect ']'
+        let r_sp = if self.next_matches(|t| *t == Token::RBracket) {
+            let sp = self.next_ref().1;
+            self.advance_one();
+            sp
+        } else {
+            self.insert_err(ParsingError::DelimeterNotClosed {
+                opening_loc: l_sp,
+                expected: "]",
+                at: self.zero_width_here(),
+            });
+            // try to sync
+            self.skip_until((), |_, tk| matches!(tk, Token::RBracket | Token::EOF));
+            if self.next_matches(|t| *t == Token::RBracket) {
+                let sp = self.next_ref().1;
+                self.advance_one();
+                sp
+            } else {
+                elem.span().unwrap_or(l_sp)
+            }
+        };
+
+        ast::Type::Array {
+            elem_type: Box::new(elem),
+            span: Span::from(l_sp.start..r_sp.end),
+        }
+    }
+
     /// Parse types
     ///
     /// Possible types currently implemented are:
@@ -387,7 +491,15 @@ impl CalamarsParser {
     /// - Function (`Type -> Type`)
     /// - Array (`[ Type ]`)
     fn parse_type(&mut self) -> ast::Type {
-        todo!()
+        match self.next_token_ref() {
+            Token::Ident(_) => self.parse_path_type(),
+            Token::LParen => self.parse_fn_type(),
+            Token::LBracket => self.parse_arr_type(),
+            _ => {
+                self.expect_err("type");
+                ast::Type::Error
+            }
+        }
     }
 
     /// Parse bindings such as
@@ -431,6 +543,13 @@ mod tests {
         let mut p = CalamarsParser::new(file, tokens);
         let expr = p.parse_expression();
         (p, expr)
+    }
+
+    fn parse_ty(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Type) {
+        let file = FileId(0);
+        let mut p = CalamarsParser::new(file, tokens);
+        let ty = p.parse_type();
+        (p, ty)
     }
 
     #[test]
@@ -551,5 +670,70 @@ mod tests {
             !p.diag.is_empty(),
             "should report an expected expression after `+`"
         );
+    }
+
+    #[test]
+    fn type_array_parsers_no_error() {
+        let tokens = toks(&[
+            (Token::LBracket, (0, 1)),
+            (Token::Ident("int".into()), (2, 5)),
+            (Token::RBracket, (6, 7)),
+        ]);
+
+        let (mut p, ty) = parse_ty(tokens);
+        assert!(p.diag.is_empty());
+        assert!(matches!(ty, ast::Type::Array { .. }));
+    }
+
+    #[test]
+    fn type_path_simple() {
+        // String
+        let tokens = toks(&[
+            (Token::Ident("String".into()), (0, 6)),
+            (Token::EOF, (6, 6)),
+        ]);
+        let (p, ty) = parse_ty(tokens);
+        assert!(
+            p.diag.is_empty(),
+            "should parse simple path without diagnostics"
+        );
+    }
+
+    #[test]
+    fn type_fn_two_params() {
+        // (Int, Float) -> Bool
+        let tokens = toks(&[
+            (Token::LParen, (0, 1)),
+            (Token::Ident("Int".into()), (1, 4)),
+            (Token::Comma, (4, 5)),
+            (Token::Ident("Float".into()), (6, 11)),
+            (Token::RParen, (11, 12)),
+            (Token::Arrow, (13, 15)),
+            (Token::Ident("Bool".into()), (16, 20)),
+            (Token::EOF, (20, 20)),
+        ]);
+        let (p, ty) = parse_ty(tokens);
+        assert!(
+            p.diag.is_empty(),
+            "should parse (Int, Float) -> Bool without diagnostics"
+        );
+
+        assert!(matches!(ty, ast::Type::Func { .. }));
+        match ty {
+            ast::Type::Func {
+                inputs,
+                output,
+                span,
+            } => {
+                assert_eq!(
+                    *output.as_ref(),
+                    ast::Type::new_path(
+                        vec![ast::Ident::new("Bool".into(), Span::from(16..20))],
+                        Span::from(16..20)
+                    )
+                )
+            }
+            _ => unreachable!(),
+        }
     }
 }
