@@ -1,11 +1,5 @@
-use crate::syntax::{span::Span, token::Token};
-use chumsky::{
-    error::Rich,
-    extra::{self, Full},
-    input::{MapExtra, ValueInput},
-    span::SimpleSpan,
-};
-use proptest::option;
+use crate::syntax::span::Span;
+
 /// An identifier
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ident {
@@ -299,19 +293,19 @@ impl IfStm {
         }
     }
 
-    pub fn span(&self) -> SimpleSpan {
+    pub fn span(&self) -> Span {
         self.span
     }
 
-    pub fn pred_span(&self) -> SimpleSpan {
+    pub fn pred_span(&self) -> Span {
         self.predicate.span()
     }
 
-    pub fn then_span(&self) -> SimpleSpan {
+    pub fn then_span(&self) -> Span {
         self.then.span()
     }
 
-    pub fn else_span(&self) -> SimpleSpan {
+    pub fn else_span(&self) -> Span {
         self.otherwise.span()
     }
 
@@ -384,11 +378,11 @@ impl ClCompoundExpression {
         }
     }
 
-    pub fn total_span(&self) -> SimpleSpan {
+    pub fn total_span(&self) -> Span {
         self.span
     }
 
-    pub fn return_span(&self) -> Option<SimpleSpan> {
+    pub fn return_span(&self) -> Option<Span> {
         self.final_expr.clone().map(|x| x.span())
     }
 }
