@@ -399,6 +399,10 @@ impl CalamarsParser {
     fn parse_binding(&mut self) -> ast::Binding {
         todo!()
     }
+
+    fn parse_file(&mut self) -> ast::Module {
+        todo!()
+    }
 }
 
 #[cfg(test)]
