@@ -13,6 +13,11 @@ use crate::{
     syntax::{ast::*, span::Span, token::Token},
 };
 
+pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
+impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
+
+pub type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
+
 pub fn parse_semicolon<'a, I>() -> impl Parser<'a, I, (), ParserErr<'a>> + Clone
 where
     I: TokenInput<'a>,

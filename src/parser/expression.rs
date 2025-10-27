@@ -3,7 +3,10 @@ use chumsky::{
     prelude::*,
 };
 
-use crate::syntax::ast::*;
+use crate::{
+    parser::{ParserErr, TokenInput},
+    syntax::ast::*,
+};
 use crate::{
     parser::{parse_cl_item, parse_literal},
     syntax::token::Token,

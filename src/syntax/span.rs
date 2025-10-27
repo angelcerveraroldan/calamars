@@ -7,9 +7,9 @@ mod test_span {
     use chumsky::{Parser, span::SimpleSpan};
 
     use crate::{
-        parser::{declaration::parse_cldeclaration, parse_cl_item},
+        parser::{TokenInput, declaration::parse_cldeclaration, parse_cl_item},
         syntax::{
-            ast::{ClCompoundExpression, ClDeclaration, ClExpression, ClItem, IfStm, TokenInput},
+            ast::{ClCompoundExpression, ClDeclaration, ClExpression, ClItem, IfStm},
             token::Token,
         },
     };

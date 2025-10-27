@@ -13,12 +13,9 @@ use clap::builder::{self, PathBufValueParser};
 use proptest::collection::HashMapStrategy;
 
 use crate::{
-    parser::parse_module,
+    parser::{TokenInput, parse_module},
     sematic::{Resolver, error::SemanticError},
-    syntax::{
-        ast::{self, TokenInput},
-        token::Token,
-    },
+    syntax::{ast, token::Token},
 };
 
 #[derive(Debug, Clone)]

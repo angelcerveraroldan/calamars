@@ -6,12 +6,6 @@ use chumsky::{
     span::SimpleSpan,
 };
 use proptest::option;
-
-pub trait TokenInput<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
-impl<'a, I> TokenInput<'a> for I where I: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
-
-pub type ParserErr<'a> = extra::Err<Rich<'a, Token>>;
-
 /// An identifier
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ident {
