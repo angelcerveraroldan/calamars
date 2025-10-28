@@ -1,7 +1,11 @@
+//! A parser for Calamars files!
+
+use clap::command;
+
 use crate::{
     source::FileId,
     syntax::{
-        ast::{self, FuncCall},
+        ast::{self, Expression, FuncCall},
         errors::ParsingError,
         span::Span,
         token::Token,
@@ -526,7 +530,14 @@ impl CalamarsParser {
         }
     }
 
-    fn parse_var_val(&mut self) -> ast::Binding {
+    /// Parse bindings such as
+    ///
+    /// ```cm
+    /// var x: Int = expression;
+    /// val y: Int = expression;
+    /// ```
+    /// To call this function, you need to assure that the next token is either Var or Val
+    fn parse_binding(&mut self) -> ast::Binding {
         let start = self.begin_span();
 
         let mutable = if self.next_eq(Token::Var) {
@@ -559,14 +570,103 @@ impl CalamarsParser {
         ast::Binding::new(name, vtype, assigned, mutable, Span::from(start..end))
     }
 
-    /// Parse bindings such as
+    fn parse_comma_separated_idents(&mut self) -> Vec<(ast::Ident, ast::Type)> {
+        let mut v = vec![];
+        loop {
+            // We need to make sure that ther is a token before parsing ident
+            if !self.next_matches(|tk| matches!(tk, Token::Ident(_))) {
+                break;
+            }
+            let ident = self.parse_identifier();
+
+            if self.next_eq(Token::Colon) {
+                self.advance_one();
+            } else {
+                self.expect_err(":");
+            }
+
+            let ty = self.parse_type();
+            v.push((ident, ty));
+
+            if !self.next_eq(Token::Comma) {
+                break;
+            }
+            self.advance_one();
+        }
+        v
+    }
+
+    /// Parse a function declaration such as
     ///
     /// ```cm
-    /// var x: Int = expression;
-    /// val y: Int = expression;
+    /// def main() = {
+    ///   var x: Int = 2;
+    /// }
     /// ```
-    fn parse_binding(&mut self) -> ast::Binding {
-        todo!()
+    /// To call this function, you need to assure that the next token is Def
+    fn parse_function_declaration(&mut self) -> ast::FuncDec {
+        // There may be a doc-comment
+        let next_token = self.next_token_ref();
+        let doc_comment = if let Token::DocComment(comment) = next_token {
+            Some(comment.clone())
+        } else {
+            None
+        };
+
+        if doc_comment.is_some() {
+            self.advance_one();
+        }
+
+        let start = self.begin_span();
+        if !self.next_eq(Token::Def) {
+            panic!("First token must be Def");
+        }
+
+        self.advance_one();
+        let fname = self.parse_identifier();
+
+        if !self.next_eq(Token::LParen) {
+            self.expect_err("(");
+        } else {
+            self.advance_one();
+        }
+
+        let params = self.parse_comma_separated_idents();
+
+        if self.next_eq(Token::RParen) {
+            self.advance_one();
+        } else {
+            self.expect_err(")");
+
+            // Skip until we are out of the input brackets.
+            self.skip_until(1, |a, b| {
+                if matches!(b, Token::RParen) {
+                    *a -= 1;
+                }
+                if matches!(b, Token::LParen) {
+                    *a += 1;
+                }
+                *a == 0
+            });
+        }
+
+        let out_ty = if self.next_eq(Token::Colon) {
+            self.advance_one();
+            self.parse_type()
+        } else {
+            ast::Type::Unit
+        };
+
+        if self.next_eq(Token::Equal) {
+            self.advance_one();
+        } else {
+            self.expect_err("=");
+        }
+
+        let expr = self.parse_expression();
+        let end = self.end_span();
+        let total_span = Span::from(start..end);
+        ast::FuncDec::new(fname, params, out_ty, expr, total_span, doc_comment)
     }
 
     pub fn parse_file(&mut self) -> ast::Module {
@@ -580,6 +680,8 @@ impl CalamarsParser {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::btree_set::Range;
+
     use chumsky::container::Seq;
 
     use super::*;
@@ -614,8 +716,36 @@ mod tests {
     fn parse_varval(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Binding) {
         let file = FileId(0);
         let mut p = CalamarsParser::new(file, tokens);
-        let ty = p.parse_var_val();
+        let ty = p.parse_binding();
         (p, ty)
+    }
+
+    fn parse_fn(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::FuncDec) {
+        let file = FileId(0);
+        let mut p = CalamarsParser::new(file, tokens);
+        let ty = p.parse_function_declaration();
+        (p, ty)
+    }
+
+    fn bool(f: usize, t: usize) -> ast::Type {
+        ast::Type::Path {
+            segments: vec![ast::Ident::new("Bool".into(), Span::from(f..t))],
+            span: Span::from(f..t),
+        }
+    }
+
+    fn int(f: usize, t: usize) -> ast::Type {
+        ast::Type::Path {
+            segments: vec![ast::Ident::new("Int".into(), Span::from(f..t))],
+            span: Span::from(f..t),
+        }
+    }
+
+    fn float(f: usize, t: usize) -> ast::Type {
+        ast::Type::Path {
+            segments: vec![ast::Ident::new("Float".into(), Span::from(f..t))],
+            span: Span::from(f..t),
+        }
     }
 
     #[test]
@@ -852,18 +982,9 @@ mod tests {
         assert!(p.diag.is_empty(), "Parse binding without errors");
         assert!(matches!(var.vtype, ast::Type::Func { .. }));
 
-        let bool = ast::Type::Path {
-            segments: vec![ast::Ident::new("Bool".into(), Span::from(16..20))],
-            span: Span::from(16..20),
-        };
-        let int = ast::Type::Path {
-            segments: vec![ast::Ident::new("Int".into(), Span::from(1..4))],
-            span: Span::from(1..4),
-        };
-        let float = ast::Type::Path {
-            segments: vec![ast::Ident::new("Float".into(), Span::from(6..11))],
-            span: Span::from(6..11),
-        };
+        let bool = bool(16, 20);
+        let int = int(1, 4);
+        let float = float(6, 11);
 
         if let ast::Type::Func { inputs, output, .. } = var.vtype.clone() {
             assert_eq!(output.as_ref(), &bool, "var has type fn with bool output");
@@ -872,5 +993,110 @@ mod tests {
         }
         assert_eq!(var.vname.ident(), "x");
         assert_eq!(var.span(), Span::from(0..17));
+    }
+
+    #[test]
+    fn fn_simple_no_params_expr_body() {
+        // def cn(): Int = 42
+        let tokens = toks(&[
+            (Token::Def, (0, 3)),
+            (Token::Ident("cn".into()), (4, 6)),
+            (Token::LParen, (6, 7)),
+            (Token::RParen, (7, 8)),
+            (Token::Colon, (9, 10)),
+            (Token::Ident("Int".into()), (11, 14)),
+            (Token::Equal, (15, 16)),
+            (Token::Int(42), (17, 19)),
+            (Token::EOF, (19, 19)),
+        ]);
+        let (p, f) = parse_fn(tokens);
+        assert_eq!(f.airity(), 0);
+        assert!(
+            p.diag.is_empty(),
+            "should parse simple function without diagnostics"
+        );
+    }
+
+    #[test]
+    fn fn_two_params_with_types() {
+        // def sum(a: Int, b: Bool): Int = a
+        let tokens = toks(&[
+            (Token::Def, (0, 3)),
+            (Token::Ident("sum".into()), (4, 7)),
+            (Token::LParen, (7, 8)),
+            (Token::Ident("a".into()), (8, 9)),
+            (Token::Colon, (9, 10)),
+            (Token::Ident("Int".into()), (11, 14)),
+            (Token::Comma, (14, 15)),
+            (Token::Ident("b".into()), (16, 17)),
+            (Token::Colon, (17, 18)),
+            (Token::Ident("Bool".into()), (19, 22)),
+            (Token::RParen, (22, 23)),
+            (Token::Colon, (24, 25)),
+            (Token::Ident("Int".into()), (26, 29)),
+            (Token::Equal, (30, 31)),
+            (Token::Ident("a".into()), (32, 33)),
+            (Token::EOF, (33, 33)),
+        ]);
+        let (p, f) = parse_fn(tokens);
+        assert_eq!(f.airity(), 2);
+        let ty = f.fntype();
+        assert!(matches!(ty, ast::Type::Func { .. }));
+        if let ast::Type::Func { inputs, output, .. } = ty {
+            assert_eq!(output.as_ref().clone(), int(26, 29));
+            assert_eq!(inputs[0], int(11, 14));
+            assert_eq!(inputs[1], bool(19, 22));
+        }
+        assert!(
+            p.diag.is_empty(),
+            "params + return type should parse cleanly"
+        );
+    }
+
+    #[test]
+    fn fn_trailing_comma_in_params_is_ok() {
+        // def f(a: Int,): Int = a
+        let tokens = toks(&[
+            (Token::Def, (0, 3)),
+            (Token::Ident("f".into()), (4, 5)),
+            (Token::LParen, (5, 6)),
+            (Token::Ident("a".into()), (6, 7)),
+            (Token::Colon, (7, 8)),
+            (Token::Ident("Int".into()), (9, 12)),
+            (Token::Comma, (12, 13)),
+            (Token::RParen, (13, 14)),
+            (Token::Colon, (15, 16)),
+            (Token::Ident("Int".into()), (17, 20)),
+            (Token::Equal, (21, 22)),
+            (Token::Ident("a".into()), (23, 24)),
+            (Token::EOF, (24, 24)),
+        ]);
+        let (p, f) = parse_fn(tokens);
+        assert_eq!(f.airity(), 1);
+        assert!(
+            p.diag.is_empty(),
+            "trailing comma before `)` should be accepted"
+        );
+    }
+
+    #[test]
+    fn fn_missing_paren_emits_diag_but_parses() {
+        // def bad(a: Int: Int = a   -- missing ')'
+        let tokens = toks(&[
+            (Token::Def, (0, 3)),
+            (Token::Ident("bad".into()), (4, 7)),
+            (Token::LParen, (7, 8)),
+            (Token::Ident("a".into()), (8, 9)),
+            (Token::Colon, (9, 10)),
+            (Token::Ident("Int".into()), (11, 14)),
+            // missing RParen here
+            (Token::Colon, (15, 16)),
+            (Token::Ident("Int".into()), (17, 20)),
+            (Token::Equal, (21, 22)),
+            (Token::Ident("a".into()), (23, 24)),
+            (Token::EOF, (24, 24)),
+        ]);
+        let (p, _f) = parse_fn(tokens);
+        assert!(!p.diag.is_empty(), "should report missing `)` diagnostic");
     }
 }
