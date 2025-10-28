@@ -288,15 +288,26 @@ impl CalamarsParser {
                             let d = self.parse_declaration();
                             items.push(ast::Item::Declaration(d));
                         }
+                        Token::Semicolon => {
+                            // TODO: Warning, semicolon not necessary
+                            self.advance_one();
+                        }
                         tk if self.is_expr_init(tk) => {
                             let e = self.parse_expression();
                             // If this is the tail of the function, we will return it
                             if self.next_eq(Token::RBrace) {
                                 final_expr = Some(Box::new(e));
                                 break;
+                            } else {
+                                items.push(ast::Item::Expression(e));
+                                self.handle_semicolon();
                             }
                         }
-                        _ => break,
+                        Token::RBrace => break,
+                        _ => {
+                            // TODO:Skip until a good point here, recover
+                            break;
+                        }
                     }
                 }
 
@@ -1289,5 +1300,146 @@ mod tests {
             );
         }
         assert!(!p.diag.is_empty(), "Missing then keyword");
+    }
+
+    #[test]
+    fn block_empty_ok() {
+        // { }
+        let tokens = toks(&[
+            (Token::LBrace, (0, 1)),
+            (Token::RBrace, (1, 2)),
+            (Token::EOF, (2, 2)),
+        ]);
+        let (p, _e) = parse_expr_from_tokens(tokens);
+        assert!(
+            p.diag.is_empty(),
+            "empty block should parse without diagnostics"
+        );
+    }
+
+    #[test]
+    fn block_decl_then_final_expr() {
+        // { var x: Int = 1; x }
+        let tokens = toks(&[
+            (Token::LBrace, (0, 1)),
+            (Token::Var, (1, 4)),
+            (Token::Ident("x".into()), (5, 6)),
+            (Token::Colon, (6, 7)),
+            (Token::Ident("Int".into()), (8, 11)),
+            (Token::Equal, (12, 13)),
+            (Token::Int(1), (14, 15)),
+            (Token::Semicolon, (15, 16)),
+            (Token::Ident("x".into()), (17, 18)),
+            (Token::RBrace, (18, 19)),
+            (Token::EOF, (19, 19)),
+        ]);
+        let (p, _e) = parse_expr_from_tokens(tokens);
+        assert!(
+            p.diag.is_empty(),
+            "decl + final expression should parse cleanly"
+        );
+    }
+
+    #[test]
+    fn block_expr_statements_and_final_expr() {
+        // { a();; b(); c }
+        let tokens = toks(&[
+            (Token::LBrace, (0, 1)),
+            (Token::Ident("a".into()), (1, 2)),
+            (Token::LParen, (2, 3)),
+            (Token::RParen, (3, 4)),
+            (Token::Semicolon, (4, 5)),
+            (Token::Semicolon, (5, 6)),
+            (Token::Ident("b".into()), (6, 7)),
+            (Token::LParen, (7, 8)),
+            (Token::RParen, (8, 9)),
+            (Token::Semicolon, (9, 10)),
+            (Token::Ident("c".into()), (11, 12)),
+            (Token::RBrace, (12, 13)),
+            (Token::EOF, (13, 13)),
+        ]);
+        let (p, e) = parse_expr_from_tokens(tokens);
+        assert!(
+            matches!(e, ast::Expression::Block(_)),
+            "expr parses to a block expression"
+        );
+        if let ast::Expression::Block(b) = e {
+            assert_eq!(b.items.len(), 2);
+            assert!(
+                b.final_expr.is_some(),
+                "the last expression with no semicolon is returned"
+            );
+        }
+        assert!(p.diag.is_empty(), "No errors reported");
+    }
+
+    #[test]
+    fn block_expr_statements_no_return() {
+        // { a();; b(); c; }
+        let tokens = toks(&[
+            (Token::LBrace, (0, 1)),
+            (Token::Ident("a".into()), (1, 2)),
+            (Token::LParen, (2, 3)),
+            (Token::RParen, (3, 4)),
+            (Token::Semicolon, (4, 5)),
+            (Token::Semicolon, (5, 6)),
+            (Token::Ident("b".into()), (6, 7)),
+            (Token::LParen, (7, 8)),
+            (Token::RParen, (8, 9)),
+            (Token::Semicolon, (9, 10)),
+            (Token::Ident("c".into()), (11, 12)),
+            (Token::Semicolon, (13, 14)),
+            (Token::RBrace, (12, 13)),
+            (Token::EOF, (14, 14)),
+        ]);
+        let (p, e) = parse_expr_from_tokens(tokens);
+        assert!(
+            matches!(e, ast::Expression::Block(_)),
+            "expr parses to a block expression"
+        );
+        if let ast::Expression::Block(b) = e {
+            assert_eq!(b.items.len(), 3);
+            assert!(
+                b.final_expr.is_none(),
+                "Last expression is not returned due to semicolon"
+            );
+        }
+        assert!(p.diag.is_empty(), "No errors reported");
+    }
+    #[test]
+    fn block_missing_semicolon_between_exprs() {
+        // { a() b(); }
+        let tokens = toks(&[
+            (Token::LBrace, (0, 1)),
+            (Token::Ident("a".into()), (1, 2)),
+            (Token::LParen, (2, 3)),
+            (Token::RParen, (3, 4)),
+            (Token::Ident("b".into()), (5, 6)),
+            (Token::LParen, (6, 7)),
+            (Token::RParen, (7, 8)),
+            (Token::Semicolon, (8, 9)),
+            (Token::RBrace, (9, 10)),
+            (Token::EOF, (10, 10)),
+        ]);
+        let (p, _e) = parse_expr_from_tokens(tokens);
+        assert!(!p.diag.is_empty(), "missing ';' between expressions");
+    }
+
+    #[test]
+    fn block_missing_rbrace() {
+        // { a();
+        let tokens = toks(&[
+            (Token::LBrace, (0, 1)),
+            (Token::Ident("a".into()), (1, 2)),
+            (Token::LParen, (2, 3)),
+            (Token::RParen, (3, 4)),
+            (Token::Semicolon, (4, 5)),
+            (Token::EOF, (5, 5)),
+        ]);
+        let (p, _e) = parse_expr_from_tokens(tokens);
+        assert!(
+            !p.diag.is_empty(),
+            "missing '}}' should produce a diagnostic"
+        );
     }
 }
