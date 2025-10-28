@@ -219,7 +219,7 @@ impl Resolver {
             Expression::Block(cl_compound_expression) => {
                 self.verify_compound_expression(cl_compound_expression)
             }
-            _ => todo!("Fixme"),
+            Expression::Error(span) => ResolverTypeOut::Recoverable(self.types.err()),
         }
     }
 }
