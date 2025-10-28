@@ -75,7 +75,6 @@ pub enum SemanticError {
     },
     NonCallable {
         msg: &'static str,
-        name: String,
         span: Span,
     },
     InternalError {
@@ -295,7 +294,7 @@ impl SemanticError {
                 ),
                 Some(Color::Magenta),
             )],
-            SemanticError::NonCallable { msg, name, span } => {
+            SemanticError::NonCallable { msg, span } => {
                 vec![Self::label_from(
                     file_name,
                     *span,

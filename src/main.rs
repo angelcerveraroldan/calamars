@@ -7,7 +7,6 @@ use std::{
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use calamars::{
-    parser::parse_module,
     sematic::Resolver,
     source::{SourceDB, SourceFile},
     syntax::token::Token,

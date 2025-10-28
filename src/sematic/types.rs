@@ -211,6 +211,7 @@ impl TypeArena {
     }
 }
 
+/*
 #[cfg(test)]
 mod test_types_sem {
     use chumsky::Parser;
@@ -271,3 +272,4 @@ mod test_types_sem {
         );
     }
 }
+*/

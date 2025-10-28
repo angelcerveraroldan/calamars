@@ -122,6 +122,10 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn new_path(segments: Vec<Ident>, span: Span) -> Self {
+        Self::Path { segments, span }
+    }
+
     pub fn span(&self) -> Option<Span> {
         match self {
             Type::Path { span, .. }
@@ -145,6 +149,8 @@ impl Type {
 /// All types of possible expressions
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
+    Error(Span),
+
     Literal(Literal),
     Identifier(Ident),
 
@@ -167,6 +173,8 @@ impl Expression {
             Expression::IfStm(if_stm) => if_stm.span(),
             Expression::FunctionCall(func_call) => func_call.span(),
             Expression::Block(cl_compound_expression) => cl_compound_expression.total_span(),
+            // I am not a big fan of this ...
+            Expression::Error(span) => *span,
         }
     }
 
@@ -198,6 +206,8 @@ pub enum BinaryOperator {
     Pow,      // ^
     Div,      // /
     Concat,   // ++
+    Less,     // <
+    Greater,  // >
     Geq,      // >=
     Leq,      // <=
     EqEq,     // ==
@@ -340,34 +350,34 @@ impl IfStm {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncCall {
-    func_name: Ident,
+    func: Box<Expression>,
     params: Vec<Expression>,
     span: Span,
 }
 
 impl FuncCall {
-    pub fn new(func_name: Ident, params: Vec<Expression>, span: Span) -> Self {
+    pub fn new(func: Expression, params: Vec<Expression>, span: Span) -> Self {
         Self {
-            func_name,
+            func: func.into(),
             params,
             span,
         }
+    }
+
+    pub fn callable(&self) -> &Box<Expression> {
+        &self.func
     }
 
     pub fn params(&self) -> &Vec<Expression> {
         &self.params
     }
 
-    pub fn name(&self) -> &str {
-        &self.func_name.ident
-    }
-
     pub fn span(&self) -> Span {
         self.span
     }
 
-    pub fn name_span(&self) -> Span {
-        self.func_name.span()
+    pub fn callable_span(&self) -> Span {
+        self.func.span()
     }
 }
 
