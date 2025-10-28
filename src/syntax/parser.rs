@@ -753,7 +753,7 @@ impl CalamarsParser {
         )
     }
 
-    fn parse_item(&mut self) -> ast::Item {
+    pub fn parse_item(&mut self) -> ast::Item {
         match self.next_token_ref() {
             Token::Def | Token::Var | Token::Val => {
                 ast::Item::Declaration(self.parse_declaration())

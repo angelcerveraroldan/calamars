@@ -155,6 +155,21 @@ impl Resolver {
         }
     }
 
+    pub fn verify_item(&mut self, item: &ast::Item) {
+        match item {
+            ast::Item::Declaration(declaration) => {
+                let symbol_id = self.push_ast_declaration(declaration);
+                if symbol_id.is_fatal() {
+                    return;
+                }
+                self.verify_declaration(declaration, *symbol_id.inner());
+            }
+            ast::Item::Expression(expression) => {
+                self.verify_expression_validity_and_return_typeid(expression);
+            }
+        }
+    }
+
     fn verify_compound_expression(&mut self, expr: &ast::CompoundExpression) -> ResolverTypeOut {
         self.push_scope();
 

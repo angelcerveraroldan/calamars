@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use ariadne::{Color, Fmt, Label};
+use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 
 use crate::syntax::span::Span;
 
@@ -318,5 +318,22 @@ impl SemanticError {
             ),
             _ => None,
         }
+    }
+
+    /// Given a semantic error, pretty print it with the source code
+    pub fn log_error(&self, file_name: &String, source: &String) -> Result<(), std::io::Error> {
+        let rep = Report::build(ReportKind::Error, (file_name, 12..12))
+            .with_message(self.main_message().to_string());
+        let mut rep_labelled = self
+            .ariadne_labels(file_name)
+            .into_iter()
+            .fold(rep, |rep, label| rep.with_label(label));
+
+        if let Some(note) = self.notes() {
+            rep_labelled = rep_labelled.with_note(note);
+        };
+
+        let fin = rep_labelled.finish();
+        fin.print((file_name, Source::from(source)))
     }
 }
