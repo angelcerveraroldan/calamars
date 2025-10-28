@@ -697,8 +697,65 @@ impl CalamarsParser {
         ast::FuncDec::new(fname, params, out_ty, expr, total_span, doc_comment)
     }
 
+    fn parse_declaration(&mut self) -> ast::Declaration {
+        match self.next_token_ref() {
+            Token::Def => ast::Declaration::Function(self.parse_function_declaration()),
+            Token::Var | Token::Val => ast::Declaration::Binding(self.parse_binding()),
+            _ => panic!("not a declaration"),
+        }
+    }
+
+    fn is_expr_init(&self, token: &Token) -> bool {
+        matches!(
+            token,
+            Token::Ident(_)
+                | Token::Int(_)
+                | Token::Float(_)
+                | Token::True
+                | Token::False
+                | Token::String(_)
+                | Token::Char(_)
+                | Token::LBrace
+                | Token::LParen
+        )
+    }
+
+    fn parse_item(&mut self) -> ast::Item {
+        match self.next_token_ref() {
+            Token::Def | Token::Var | Token::Val => {
+                ast::Item::Declaration(self.parse_declaration())
+            }
+            tk if self.is_expr_init(tk) => ast::Item::Expression(self.parse_expression()),
+            _ => panic!("Only items can be parsed here;"),
+        }
+    }
+
     pub fn parse_file(&mut self) -> ast::Module {
-        todo!()
+        let mut decs = vec![];
+        loop {
+            // Skip until we find a def, var, or val (only declarations are supported on top level,
+            // later also imports)
+            self.skip_until((), |_, tk| {
+                matches!(tk, Token::Def | Token::Var | Token::Val)
+            });
+
+            // If we finished the file without finding the above tokens, we exit
+            if self.next_eq(Token::EOF) {
+                break;
+            }
+
+            let dec = self.parse_declaration();
+            decs.push(dec);
+        }
+
+        for d in decs.iter() {
+            println!("{:?}", d);
+        }
+
+        ast::Module {
+            imports: vec![],
+            items: decs,
+        }
     }
 
     pub fn diag(&self) -> &[ParsingError] {
