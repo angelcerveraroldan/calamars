@@ -105,6 +105,16 @@ impl CalamarsParser {
         self.n_index() == self.eof_index()
     }
 
+    /// Use before consuming the first token
+    fn begin_span(&self) -> usize {
+        self.next_span().start
+    }
+
+    /// Use after consuiming the last token
+    fn end_span(&self) -> usize {
+        self.last_consumed_span().end
+    }
+
     fn zero_width_here(&self) -> Span {
         let span = self.next_ref().1;
         Span::from(span.start..span.start)
@@ -153,6 +163,10 @@ impl CalamarsParser {
         f(next_token)
     }
 
+    fn next_eq(&self, tk: Token) -> bool {
+        tk == *self.next_token_ref()
+    }
+
     /// Get the next n tokens
     fn peek_n(&self, n: usize) -> Box<[&Token]> {
         let next = self.n_index();
@@ -183,6 +197,16 @@ impl CalamarsParser {
             }
 
             self.advance_one();
+        }
+    }
+
+    /// Parse a semicolon. If one was not found, we will log an error, and "pretend" as semicolon
+    /// was here as a form of recovery
+    fn handle_semicolon(&mut self) {
+        if self.next_eq(Token::Semicolon) {
+            self.advance_one();
+        } else {
+            self.expect_err("=");
         }
     }
 
@@ -502,6 +526,39 @@ impl CalamarsParser {
         }
     }
 
+    fn parse_var_val(&mut self) -> ast::Binding {
+        let start = self.begin_span();
+
+        let mutable = if self.next_eq(Token::Var) {
+            true
+        } else if self.next_eq(Token::Val) {
+            false
+        } else {
+            panic!("This function should only be executed if the first token is var or val");
+        };
+
+        self.advance_one();
+        let name = self.parse_identifier();
+        if self.next_eq(Token::Colon) {
+            self.advance_one();
+        } else {
+            self.expect_err(":");
+        }
+        let vtype = self.parse_type();
+
+        if self.next_eq(Token::Equal) {
+            self.advance_one();
+        } else {
+            self.expect_err("=");
+        }
+
+        let assigned = Box::new(self.parse_expression());
+        self.handle_semicolon();
+
+        let end = self.end_span();
+        ast::Binding::new(name, vtype, assigned, mutable, Span::from(start..end))
+    }
+
     /// Parse bindings such as
     ///
     /// ```cm
@@ -523,6 +580,8 @@ impl CalamarsParser {
 
 #[cfg(test)]
 mod tests {
+    use chumsky::container::Seq;
+
     use super::*;
 
     fn sp(start: usize, end: usize) -> logos::Span {
@@ -549,6 +608,13 @@ mod tests {
         let file = FileId(0);
         let mut p = CalamarsParser::new(file, tokens);
         let ty = p.parse_type();
+        (p, ty)
+    }
+
+    fn parse_varval(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Binding) {
+        let file = FileId(0);
+        let mut p = CalamarsParser::new(file, tokens);
+        let ty = p.parse_var_val();
         (p, ty)
     }
 
@@ -735,5 +801,76 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn parse_binding() {
+        let tokens = toks(&[
+            (Token::Var, (0, 1)),
+            (Token::Ident("x".into()), (1, 2)),
+            (Token::Colon, (4, 5)),
+            (Token::Ident("Float".into()), (6, 11)),
+            (Token::Equal, (12, 13)),
+            (Token::Int(12), (14, 15)),
+            (Token::Semicolon, (16, 17)),
+            (Token::EOF, (20, 20)),
+        ]);
+        let (p, var) = parse_varval(tokens);
+        println!("{:?}", p.diag);
+        assert!(p.diag.is_empty(), "Parse binding without errors");
+
+        assert!(matches!(var.vtype, ast::Type::Path { .. }));
+        if let ast::Type::Path { segments, span } = var.vtype.clone() {
+            assert_eq!(segments[0].ident(), "Float");
+        }
+        assert_eq!(var.vname.ident(), "x");
+        assert_eq!(var.span(), Span::from(0..17));
+    }
+
+    #[test]
+    fn lambda_fn() {
+        // val x: (Int, Float) -> Bool = 12;
+        //
+        // The spans make no sense for this test, but theyre not really beind read.
+        let tokens = toks(&[
+            (Token::Val, (0, 1)),
+            (Token::Ident("x".into()), (1, 2)),
+            (Token::Colon, (4, 5)),
+            (Token::LParen, (0, 1)),
+            (Token::Ident("Int".into()), (1, 4)),
+            (Token::Comma, (4, 5)),
+            (Token::Ident("Float".into()), (6, 11)),
+            (Token::RParen, (11, 12)),
+            (Token::Arrow, (13, 15)),
+            (Token::Ident("Bool".into()), (16, 20)),
+            (Token::Equal, (12, 13)),
+            (Token::Int(12), (14, 15)),
+            (Token::Semicolon, (16, 17)),
+            (Token::EOF, (20, 20)),
+        ]);
+        let (p, var) = parse_varval(tokens);
+        assert!(p.diag.is_empty(), "Parse binding without errors");
+        assert!(matches!(var.vtype, ast::Type::Func { .. }));
+
+        let bool = ast::Type::Path {
+            segments: vec![ast::Ident::new("Bool".into(), Span::from(16..20))],
+            span: Span::from(16..20),
+        };
+        let int = ast::Type::Path {
+            segments: vec![ast::Ident::new("Int".into(), Span::from(1..4))],
+            span: Span::from(1..4),
+        };
+        let float = ast::Type::Path {
+            segments: vec![ast::Ident::new("Float".into(), Span::from(6..11))],
+            span: Span::from(6..11),
+        };
+
+        if let ast::Type::Func { inputs, output, .. } = var.vtype.clone() {
+            assert_eq!(output.as_ref(), &bool, "var has type fn with bool output");
+            assert_eq!(inputs[0], int, "var has fn type with first input int");
+            assert_eq!(inputs[1], float, "var has fn type with second input float");
+        }
+        assert_eq!(var.vname.ident(), "x");
+        assert_eq!(var.span(), Span::from(0..17));
     }
 }
