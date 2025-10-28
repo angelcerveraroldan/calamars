@@ -2,7 +2,10 @@ use std::ops::Range;
 
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 
-use crate::syntax::span::Span;
+use crate::{
+    errors::{PrettyError, label_from},
+    syntax::span::Span,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SemanticError {
@@ -83,8 +86,8 @@ pub enum SemanticError {
     },
 }
 
-impl SemanticError {
-    pub fn main_message(&self) -> &str {
+impl PrettyError for SemanticError {
+    fn message(&self) -> &str {
         match self {
             SemanticError::Redeclaration { .. } => "Redeclaration is not allowed",
             SemanticError::IdentNotFound { .. } => "Identifier not found",
@@ -108,45 +111,21 @@ impl SemanticError {
             SemanticError::FnWrongReturnType { .. } => "Wrong type returned by function",
         }
     }
-    /*
-    Label::new(("sample.tao", 11..48))
-                .with_message(format!(
-                    "The values are outputs of this {} expression",
-                    "match".fg(out),
-                ))
-                .with_color(out),
-    */
 
-    fn label_from(
-        file_name: &String,
-        span: Span,
-        message: impl Into<String>,
-        color: Option<Color>,
-    ) -> Label<(&String, Range<usize>)> {
-        let mut label = Label::new((file_name, span.into_range())).with_message(message.into());
-        if let Some(color) = color {
-            label = label.with_color(color);
-        }
-        label
-    }
-
-    pub fn ariadne_labels<'a>(
-        &'a self,
-        file_name: &'a String,
-    ) -> Vec<Label<(&'a String, Range<usize>)>> {
+    fn labels<'a>(&'a self, file_name: &'a String) -> Vec<Label<(&'a String, Range<usize>)>> {
         match self {
             SemanticError::Redeclaration {
                 original_span,
                 redec_span,
             } => {
                 vec![
-                    Self::label_from(
+                    label_from(
                         file_name,
                         *original_span,
                         "First declared here",
                         Some(Color::Green),
                     ),
-                    Self::label_from(
+                    label_from(
                         file_name,
                         *redec_span,
                         "Redeclared here",
@@ -154,20 +133,20 @@ impl SemanticError {
                     ),
                 ]
             }
-            SemanticError::IdentNotFound { name, span } => vec![Self::label_from(
+            SemanticError::IdentNotFound { name, span } => vec![label_from(
                 file_name,
                 *span,
                 "Identifier not found",
                 Some(Color::Magenta),
             )],
             SemanticError::TypeNotFound { type_name, span } => {
-                vec![Self::label_from(file_name, *span, "Type not found", None)]
+                vec![label_from(file_name, *span, "Type not found", None)]
             }
             SemanticError::WrongType {
                 expected,
                 actual,
                 span,
-            } => vec![Self::label_from(
+            } => vec![label_from(
                 file_name,
                 *span,
                 format!(
@@ -184,7 +163,7 @@ impl SemanticError {
                 return_span,
                 body_span,
             } => {
-                let mut v = vec![Self::label_from(
+                let mut v = vec![label_from(
                     file_name,
                     *return_type_span,
                     format!("Binding is of type `{}`", expected.fg(Color::Green)),
@@ -192,14 +171,14 @@ impl SemanticError {
                 )];
 
                 let l = if let Some(rs) = return_span {
-                    Self::label_from(
+                    label_from(
                         file_name,
                         *rs,
                         format!("But it was assigned `{}`", actual.fg(Color::Red)),
                         Some(Color::Red),
                     )
                 } else {
-                    Self::label_from(
+                    label_from(
                         file_name,
                         *body_span,
                         format!(
@@ -220,7 +199,7 @@ impl SemanticError {
                 fn_name_span,
                 body_span,
             } => {
-                let mut v = vec![Self::label_from(
+                let mut v = vec![label_from(
                     file_name,
                     return_type_span.unwrap_or(*fn_name_span),
                     format!(
@@ -231,14 +210,14 @@ impl SemanticError {
                 )];
 
                 let l = if let Some(rs) = return_span {
-                    Self::label_from(
+                    label_from(
                         file_name,
                         *rs,
                         format!("But it returned `{}`", actual.fg(Color::Red)),
                         Some(Color::Red),
                     )
                 } else {
-                    Self::label_from(
+                    label_from(
                         file_name,
                         *body_span,
                         format!(
@@ -252,7 +231,7 @@ impl SemanticError {
                 v.push(l);
                 v
             }
-            SemanticError::TypeMissingCtx { for_identifier } => vec![Self::label_from(
+            SemanticError::TypeMissingCtx { for_identifier } => vec![label_from(
                 file_name,
                 *for_identifier,
                 "Type annotation is needed",
@@ -262,13 +241,13 @@ impl SemanticError {
                 then_span,
                 else_span,
             } => vec![
-                Self::label_from(
+                label_from(
                     file_name,
                     *then_span,
                     "First return here",
                     Some(Color::Blue),
                 ),
-                Self::label_from(
+                label_from(
                     file_name,
                     *else_span,
                     "Second return here",
@@ -277,14 +256,14 @@ impl SemanticError {
             ],
             SemanticError::QualifiedTypeNotSupported { span } => todo!(),
             SemanticError::NotSupported { msg, span } => {
-                vec![Self::label_from(file_name, *span, *msg, Some(Color::Red))]
+                vec![label_from(file_name, *span, *msg, Some(Color::Red))]
             }
             SemanticError::SymbolIdNotFound { id } => todo!(),
             SemanticError::ArityError {
                 expected,
                 actual,
                 span,
-            } => vec![Self::label_from(
+            } => vec![label_from(
                 file_name,
                 *span,
                 format!(
@@ -295,21 +274,16 @@ impl SemanticError {
                 Some(Color::Magenta),
             )],
             SemanticError::NonCallable { msg, span } => {
-                vec![Self::label_from(
-                    file_name,
-                    *span,
-                    *msg,
-                    Some(Color::Magenta),
-                )]
+                vec![label_from(file_name, *span, *msg, Some(Color::Magenta))]
             }
             SemanticError::InternalError { msg, span } => {
-                vec![Self::label_from(file_name, *span, *msg, None)]
+                vec![label_from(file_name, *span, *msg, None)]
             }
             _ => todo!(),
         }
     }
 
-    pub fn notes(&self) -> Option<String> {
+    fn notes(&self) -> Option<String> {
         match self {
             SemanticError::FnWrongReturnType {
                 return_type_span, ..
@@ -318,22 +292,5 @@ impl SemanticError {
             ),
             _ => None,
         }
-    }
-
-    /// Given a semantic error, pretty print it with the source code
-    pub fn log_error(&self, file_name: &String, source: &String) -> Result<(), std::io::Error> {
-        let rep = Report::build(ReportKind::Error, (file_name, 12..12))
-            .with_message(self.main_message().to_string());
-        let mut rep_labelled = self
-            .ariadne_labels(file_name)
-            .into_iter()
-            .fold(rep, |rep, label| rep.with_label(label));
-
-        if let Some(note) = self.notes() {
-            rep_labelled = rep_labelled.with_note(note);
-        };
-
-        let fin = rep_labelled.finish();
-        fin.print((file_name, Source::from(source)))
     }
 }

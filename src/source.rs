@@ -13,6 +13,7 @@ use clap::builder::{self, PathBufValueParser};
 use proptest::collection::HashMapStrategy;
 
 use crate::{
+    errors::PrettyError,
     sematic::{Resolver, error::SemanticError},
     syntax::{ast, parser::CalamarsParser, span::Span, token::Token},
 };

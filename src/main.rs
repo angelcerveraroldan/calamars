@@ -1,15 +1,15 @@
+use ariadne::{Color, Label, Report, ReportKind, Source};
+use calamars::errors::PrettyError;
+use calamars::{
+    sematic::Resolver,
+    source::{FileId, SourceDB, SourceFile},
+    syntax::{parser::CalamarsParser, token::Token},
+};
 use std::{
     env,
     fs::{self, File},
     io::Write,
     path::PathBuf,
-};
-
-use ariadne::{Color, Label, Report, ReportKind, Source};
-use calamars::{
-    sematic::Resolver,
-    source::{FileId, SourceDB, SourceFile},
-    syntax::{parser::CalamarsParser, token::Token},
 };
 
 use chumsky::Parser as chParser; // Chumsky Parser
@@ -55,8 +55,8 @@ fn run_repl() {
                 let mut parser = CalamarsParser::new(FileId(0), tokens);
                 let item = parser.parse_item();
                 resolver.verify_item(&item);
-                for err in &resolver.errors()[errc..] {
-                    err.log_error(&String::from("REPL"), &line);
+                for err in parser.diag() {
+                    err.log_error(&"REPL".into(), &line);
                 }
                 // Dont show old errors
                 errc = resolver.errors().len();
