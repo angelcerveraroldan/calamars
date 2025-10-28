@@ -58,9 +58,6 @@ fn run_repl() {
                 for err in parser.diag() {
                     err.log_error(&"REPL".into(), &line);
                 }
-                for err in &resolver.errors()[errc..] {
-                    err.log_error(&String::from("REPL"), &line);
-                }
                 // Dont show old errors
                 errc = resolver.errors().len();
             }
