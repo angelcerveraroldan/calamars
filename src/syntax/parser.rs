@@ -210,7 +210,7 @@ impl CalamarsParser {
         if self.next_eq(Token::Semicolon) {
             self.advance_one();
         } else {
-            self.expect_err("=");
+            self.expect_err(";");
         }
     }
 
