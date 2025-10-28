@@ -8,12 +8,13 @@ use std::{
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use calamars::{
     sematic::Resolver,
-    source::{SourceDB, SourceFile},
-    syntax::token::Token,
+    source::{FileId, SourceDB, SourceFile},
+    syntax::{parser::CalamarsParser, token::Token},
 };
 
 use chumsky::Parser as chParser; // Chumsky Parser
-use clap::{Parser as clParser, Subcommand}; // Clap Parser 
+use clap::{Parser as clParser, Subcommand};
+use rustyline::{DefaultEditor, error::ReadlineError}; // Clap Parser 
 
 /// Given some file, tokenize, then parser it, and lastly, run the semanics checks.
 ///
@@ -37,6 +38,43 @@ enum Commands {
     },
     /// Run a single file (interpreter)
     RunFile { path: PathBuf },
+    /// Run a calamars REPL. For now the repl can tokenize, parse, and run semantic analysis.
+    Repl {},
+}
+
+fn run_repl() {
+    let mut rl = DefaultEditor::new().unwrap();
+    let mut resolver = Resolver::default();
+    let mut errc = 0;
+    loop {
+        let readline = rl.readline(">> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(line.as_str());
+                let tokens = Token::tokens_spanned_stream(&line);
+                let mut parser = CalamarsParser::new(FileId(0), tokens);
+                let item = parser.parse_item();
+                resolver.verify_item(&item);
+                for err in &resolver.errors()[errc..] {
+                    err.log_error(&String::from("REPL"), &line);
+                }
+                // Dont show old errors
+                errc = resolver.errors().len();
+            }
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                break;
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            }
+        }
+    }
 }
 
 fn main() {
@@ -72,6 +110,7 @@ fn main() {
             proj.write_all(defproj.as_bytes());
             main.write_all(defmain.as_bytes());
         }
+        Commands::Repl {} => run_repl(),
         _ => todo!("Not yet supported"),
     }
 }

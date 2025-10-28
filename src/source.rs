@@ -55,6 +55,14 @@ impl TryFrom<(usize, PathBuf)> for SourceFile {
 }
 
 impl SourceFile {
+    pub fn repl(source: String) -> Self {
+        Self {
+            id: FileId(0),
+            path: PathBuf::from("repl.cm"),
+            src: source,
+        }
+    }
+
     fn file_name(&self) -> String {
         self.path
             .file_name()
@@ -96,27 +104,8 @@ impl SourceFile {
 
     pub fn display_errors(&self, resolver: Resolver) {
         for err in resolver.errors() {
-            self.log_error(err.clone());
+            err.log_error(&self.file_name(), self.file_source());
         }
-    }
-
-    /// Given a semantic error, pretty print it with the source code
-    pub fn log_error(&self, error: SemanticError) -> Result<(), std::io::Error> {
-        let file_name = self.file_name();
-        let rep = Report::build(ReportKind::Error, (&file_name, 12..12))
-            .with_message(error.main_message().to_string());
-
-        let mut rep_labelled = error
-            .ariadne_labels(&file_name)
-            .into_iter()
-            .fold(rep, |rep, label| rep.with_label(label));
-
-        if let Some(note) = error.notes() {
-            rep_labelled = rep_labelled.with_note(note);
-        };
-
-        let fin = rep_labelled.finish();
-        fin.print((&file_name, Source::from(self.file_source())))
     }
 }
 
