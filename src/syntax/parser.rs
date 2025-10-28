@@ -276,18 +276,40 @@ impl CalamarsParser {
 
                 expr
             }
-            // For no skip, not implemented
             Token::LBrace => {
-                self.skip_until(1, |a, b| {
-                    if matches!(b, Token::RBrace) {
-                        *a -= 1;
+                let start = self.begin_span();
+                self.advance_one();
+                let mut items = vec![];
+                let mut final_expr = None;
+
+                loop {
+                    match self.next_token_ref() {
+                        Token::Var | Token::Val | Token::Def => {
+                            let d = self.parse_declaration();
+                            items.push(ast::Item::Declaration(d));
+                        }
+                        tk if self.is_expr_init(tk) => {
+                            let e = self.parse_expression();
+                            // If this is the tail of the function, we will return it
+                            if self.next_eq(Token::RBrace) {
+                                final_expr = Some(Box::new(e));
+                                break;
+                            }
+                        }
+                        _ => break,
                     }
-                    if matches!(b, Token::LBrace) {
-                        *a += 1;
-                    }
-                    *a == 0
-                });
-                ast::Expression::Error(self.zero_width_here())
+                }
+
+                if self.next_eq(Token::RBrace) {
+                    self.advance_one();
+                } else {
+                    // We need wayy better errors, at least be consistent.
+                    self.expect_err("closing brace '}'");
+                }
+
+                let end = self.end_span();
+                let comp = ast::CompoundExpression::new(items, final_expr, Span::from(start..end));
+                ast::Expression::Block(comp)
             }
             Token::If => {
                 let start = self.begin_span();
@@ -726,6 +748,7 @@ impl CalamarsParser {
                 ast::Item::Declaration(self.parse_declaration())
             }
             tk if self.is_expr_init(tk) => ast::Item::Expression(self.parse_expression()),
+
             _ => panic!("Only items can be parsed here;"),
         }
     }
