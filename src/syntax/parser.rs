@@ -289,6 +289,34 @@ impl CalamarsParser {
                 });
                 ast::Expression::Error(self.zero_width_here())
             }
+            Token::If => {
+                let start = self.begin_span();
+                self.advance_one();
+                let pred = self.parse_expression();
+
+                if !self.next_eq(Token::Then) {
+                    self.expect_err("then");
+                } else {
+                    self.advance_one();
+                }
+                let then = self.parse_expression();
+
+                if !self.next_eq(Token::Else) {
+                    self.expect_err("else");
+                } else {
+                    self.advance_one();
+                }
+
+                let otherwise = self.parse_expression();
+                let end = self.end_span();
+                let ifs = ast::IfStm::new(
+                    pred.into(),
+                    then.into(),
+                    otherwise.into(),
+                    Span::from(start..end),
+                );
+                ast::Expression::IfStm(ifs)
+            }
             _ => {
                 let at = self.zero_width_here();
                 self.insert_err(ParsingError::Expected {
@@ -683,6 +711,8 @@ mod tests {
     use std::collections::btree_set::Range;
 
     use chumsky::container::Seq;
+
+    use crate::syntax::ast::IfStm;
 
     use super::*;
 
@@ -1098,5 +1128,86 @@ mod tests {
         ]);
         let (p, _f) = parse_fn(tokens);
         assert!(!p.diag.is_empty(), "should report missing `)` diagnostic");
+    }
+
+    #[test]
+    fn test_if_statement_basic() {
+        let tokens = toks(&[
+            (Token::If, (0, 2)),
+            (Token::Ident("a".into()), (3, 4)),
+            (Token::Then, (5, 9)),
+            (Token::Ident("xy".into()), (10, 12)),
+            (Token::Else, (13, 17)),
+            (Token::Ident("xy".into()), (18, 20)),
+        ]);
+        let (p, ifstm) = parse_expr_from_tokens(tokens);
+        assert!(
+            matches!(ifstm, ast::Expression::IfStm(_)),
+            "expression parsed is an if statement"
+        );
+        if let ast::Expression::IfStm(ifstm) = ifstm {
+            assert!(matches!(
+                ifstm.then_expr().as_ref(),
+                ast::Expression::Identifier(_)
+            ));
+        }
+        assert!(p.diag.is_empty(), "No errors should be found");
+    }
+
+    #[test]
+    fn test_if_statement_precedence() {
+        // if a then 2 else 2 + 3 should be if a then 2 else (2 + 3)
+        let tokens = toks(&[
+            (Token::If, (0, 2)),
+            (Token::Ident("a".into()), (3, 4)),
+            (Token::Then, (5, 9)),
+            (Token::Int(2), (10, 11)),
+            (Token::Plus, (11, 12)),
+            (Token::Int(3), (13, 14)),
+            (Token::Else, (15, 19)),
+            (Token::Ident("xy".into()), (20, 22)),
+            (Token::EOF, (23, 23)),
+        ]);
+        let (p, ifstm) = parse_expr_from_tokens(tokens);
+        assert!(
+            matches!(ifstm, ast::Expression::IfStm(_)),
+            "expression parsed is an if statement"
+        );
+        if let ast::Expression::IfStm(ifstm) = ifstm {
+            println!("{:?}", ifstm.then_expr());
+            assert!(
+                matches!(ifstm.then_expr().as_ref(), ast::Expression::BinaryOp(_)),
+                "Then expression should be 2+3, not just 2"
+            );
+        }
+        assert!(p.diag.is_empty(), "No errors should be found");
+    }
+
+    #[test]
+    fn test_if_stm_missing_then() {
+        // if a then 2 else 2 + 3 should be if a then 2 else (2 + 3)
+        let tokens = toks(&[
+            (Token::If, (0, 2)),
+            (Token::Ident("a".into()), (3, 4)),
+            (Token::Int(2), (10, 11)),
+            (Token::Plus, (11, 12)),
+            (Token::Int(3), (13, 14)),
+            (Token::Else, (15, 19)),
+            (Token::Ident("xy".into()), (20, 22)),
+            (Token::EOF, (23, 23)),
+        ]);
+        let (p, ifstm) = parse_expr_from_tokens(tokens);
+        assert!(
+            matches!(ifstm, ast::Expression::IfStm(_)),
+            "expression parsed is an if statement"
+        );
+        if let ast::Expression::IfStm(ifstm) = ifstm {
+            println!("{:?}", ifstm.then_expr());
+            assert!(
+                matches!(ifstm.then_expr().as_ref(), ast::Expression::BinaryOp(_)),
+                "Then expression should be 2+3, not just 2"
+            );
+        }
+        assert!(!p.diag.is_empty(), "Missing then keyword");
     }
 }
