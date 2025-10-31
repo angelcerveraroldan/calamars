@@ -1,3 +1,3 @@
 [workspace]
-members = ["front"]
+members = ["back_cranelift", "front", "mir"]
 resolver = "2"
