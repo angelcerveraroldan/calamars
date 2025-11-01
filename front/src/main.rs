@@ -1,6 +1,6 @@
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use calamars::errors::PrettyError;
-use calamars::{
+use front::errors::PrettyError;
+use front::{
     sematic::Resolver,
     source::{FileId, SourceDB, SourceFile},
     syntax::{parser::CalamarsParser, token::Token},
