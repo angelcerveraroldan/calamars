@@ -154,4 +154,8 @@ impl Symbol {
         };
         self.kind = sk;
     }
+
+    pub fn ident_id(&self) -> ids::IdentId {
+        self.name
+    }
 }
