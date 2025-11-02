@@ -185,18 +185,10 @@ impl HirBuilder {
 
     fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
-
-        let (mut input_idents, mut input_spans) = (vec![], vec![]);
-        for i in def.input_idents() {
-            let name = i.ident().to_string();
-            input_idents.push(self.identifiers.intern(&name));
-            input_spans.push(i.span());
-        }
-
         let ty = self.type_lower(def.fntype());
         let kind = hir::SymbolKind::FunctionUndeclared;
         let symbol = Symbol::new(kind, ty, name, def.name_span(), def.span());
-        self.symbols.push(symbol)
+        self.insert_symbol(symbol)
     }
 
     /// Insert a body into a declaration.
@@ -207,7 +199,37 @@ impl HirBuilder {
             ast::Declaration::Binding(binding) => binding.assigned.as_ref(),
             ast::Declaration::Function(func_dec) => func_dec.body(),
         };
+
+        if let ast::Declaration::Function(fd) = declaration {
+            self.push_scope();
+
+            let ast_ty = fd.fntype();
+            let ty_id = self.type_lower(ast_ty);
+            let ty = self.types.get_unchecked(ty_id);
+            let input_tys = ty.function_input();
+            let input_nms = fd.input_idents();
+
+            let symbols = input_tys.iter().zip(input_nms).map(|(ty, ident)| {
+                let id = self.identifiers.intern(&ident.ident().to_string());
+                Symbol::new(
+                    hir::SymbolKind::Parameter,
+                    *ty,
+                    id,
+                    ident.span(),
+                    ident.span(),
+                )
+            });
+
+            for symbol in symbols.collect::<Vec<_>>() {
+                self.insert_symbol(symbol);
+            }
+        }
+
         let expression_id = self.expression(body);
+        if matches!(declaration, ast::Declaration::Function(_)) {
+            self.pop_scope();
+        }
+
         // This line will need all used symbols to be in scope. This function should be executed
         // strictly after pass_a.
         let symbol = self.symbols.get_unchecked_mut(sid);
