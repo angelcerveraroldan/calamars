@@ -86,7 +86,35 @@ impl HirBuilder {
         self.types.intern(&ty)
     }
 
-    pub fn module(&mut self, module: &ast::Module) -> Box<[ids::SymbolId]> {
+    fn module(&mut self, module: &ast::Module) {
+        // Insert all of the symbols to the table
+        let pass_a: Box<[SymbolId]> = self.module_pass_a(module);
+
+        // Add bodies to the declarations
+        for (dec, id) in module.items.iter().zip(pass_a) {
+            self.attach_body_declaration(dec, id);
+        }
+    }
+
+    /// Pass A is responsible for adding all of the declaration names to the scope, it will ignore
+    /// the bodies of any function or constant for now.
+    ///
+    /// The following code shuold run, if we checked the body of foo before declaring X, we would
+    /// get an undeclared error.
+    ///
+    /// ```
+    /// def foo() = {
+    ///     print(bar(x))
+    /// }
+    ///
+    /// def bar(x: Int) = x
+    ///
+    /// val X: Int = 2;
+    /// ```
+    ///
+    /// Because of this, we handle all of the declarations first without
+    /// looking at the bodies.
+    fn module_pass_a(&mut self, module: &ast::Module) -> Box<[ids::SymbolId]> {
         for import in &module.imports {
             self.insert_error(SemanticError::NotSupported {
                 msg: "Imports are not yet supported, sorry :(",
