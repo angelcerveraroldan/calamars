@@ -782,10 +782,6 @@ impl CalamarsParser {
             decs.push(dec);
         }
 
-        for d in decs.iter() {
-            println!("{:?}", d);
-        }
-
         ast::Module {
             imports: vec![],
             items: decs,
