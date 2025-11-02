@@ -40,6 +40,10 @@ impl Import {
     pub fn new(idents: Vec<Ident>, total_span: Span) -> Self {
         Self { idents, total_span }
     }
+
+    pub fn span(&self) -> Span {
+        self.total_span
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

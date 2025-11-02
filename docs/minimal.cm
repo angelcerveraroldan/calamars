@@ -5,25 +5,24 @@ Given two integers, just return 2.
 *--
 def foo(x: Int, y: Int): Int = 2
 
-def bar(x: String, y: Int): Int = y
+def bar(x: String, y: Int): Int = x
 
 var x: Int = 2;
 val y: Int = 3;
 
 var x2 = 2;
 
-var x: Int = 14; -- This shuold give an error (x already declared)
+-- (1) Error! Re-declaration
+var x: Int = 14;
 
-def something(): String = {
-	bar(a, 3)
-}
+-- (2) Error! Wrong return type
+def something(a: String): String = bar(a, 3)
 
+-- (3) Error! Wrong retun type
 def nothing() = 2
 
-var n: Int = something(2);
+-- (4) Error! Wrong number of inputs
+var n: Int = something(2, 3);
 
+-- (5) Error! Re-declaration
 var foo: Int = 2;
-
-var xxxx: String = if 22 then "2" else "hello";
-
-var number: Int = if true then "2" else "hello";
