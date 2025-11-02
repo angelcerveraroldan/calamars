@@ -10,7 +10,7 @@ use crate::{
     syntax::{ast, span::Span},
 };
 
-pub struct LowererContext {
+pub struct HirBuilder {
     types: hir::TypeArena,
     const_str: hir::ConstantStringArena,
     identifiers: hir::IdentArena,
@@ -25,7 +25,7 @@ pub struct LowererContext {
     diag_war: Vec<()>,
 }
 
-impl LowererContext {
+impl HirBuilder {
     fn insert_error(&mut self, err: SemanticError) {
         self.diag_err.push(err);
     }
