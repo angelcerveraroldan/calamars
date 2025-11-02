@@ -21,7 +21,7 @@ pub struct LowererContext {
 
     /// Errors, if any are present, we cannot proceed with compilation
     diag_err: Vec<SemanticError>,
-    /// Warnings, if any apre presenet, we can still proceed with compilation
+    /// Warnings, if any are presenet, we can still proceed with compilation
     diag_war: Vec<()>,
 }
 
