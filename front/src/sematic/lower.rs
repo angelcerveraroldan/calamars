@@ -44,6 +44,24 @@ impl HirBuilder {
         self.scopes.push(hashbrown::HashMap::default());
     }
 
+    /// Delete the current scope, unless this is the last scope, in which case nothing will
+    /// happen
+    fn pop_scope(&mut self) {
+        if self.scopes.len() <= 1 {
+            return;
+        }
+        self.scopes.pop();
+    }
+
+    /// Add a new symbol to the symbol arena, and to the current scope
+    fn insert_symbol(&mut self, symbol: Symbol) -> ids::SymbolId {
+        let symbol_ident_id = symbol.ident_id();
+        let sid = self.symbols.push(symbol);
+        let scope = self.scopes.last_mut().expect("Scopes can never be empty!");
+        scope.insert(symbol_ident_id, sid);
+        sid
+    }
+
     fn resolve(&self, s: ids::IdentId, usage: Span) -> Result<SymbolId, SemanticError> {
         for scope in self.scopes.iter().rev() {
             if let Some(id) = scope.get(&s) {
@@ -182,7 +200,7 @@ impl HirBuilder {
             mutable: bind.mutable,
         };
         let symbol = Symbol::new(kind, ty, name, bind.name_span(), bind.span());
-        self.symbols.push(symbol)
+        self.insert_symbol(symbol)
     }
 
     /// Responsible for adding "headers". This will generate the symbols, but will not look at
