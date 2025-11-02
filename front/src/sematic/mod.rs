@@ -16,7 +16,7 @@ use crate::{
 
 pub mod error;
 pub mod hir;
-mod lower;
+pub mod lower;
 pub mod symbols;
 pub mod types;
 
