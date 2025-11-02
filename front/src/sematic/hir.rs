@@ -141,4 +141,17 @@ impl Symbol {
             decl_span,
         }
     }
+
+    pub fn update_body(&mut self, body: ids::ExpressionId) {
+        let sk = match self.kind {
+            SymbolKind::Parameter | SymbolKind::Extern => return (),
+            SymbolKind::FunctionUndeclared | SymbolKind::Function { .. } => {
+                SymbolKind::Function { body }
+            }
+            SymbolKind::VariableUndeclared { mutable } | SymbolKind::Variable { mutable, .. } => {
+                SymbolKind::Variable { mutable, body }
+            }
+        };
+        self.kind = sk;
+    }
 }
