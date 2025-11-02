@@ -28,7 +28,14 @@ pub struct HirBuilder {
 impl Default for HirBuilder {
     fn default() -> Self {
         let mut d = Self {
-            ..Default::default()
+            types: hir::TypeArena::new_checked(),
+            const_str: hir::ConstantStringArena::new_unchecked(),
+            identifiers: hir::IdentArena::new_unchecked(),
+            expressions: hir::ExpressionArena::new_checked(),
+            symbols: hir::SymbolArena::new_unchecked(),
+            scopes: vec![],
+            diag_err: vec![],
+            diag_war: vec![],
         };
         d.push_scope();
         d
