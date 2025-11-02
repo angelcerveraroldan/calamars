@@ -43,6 +43,10 @@ impl Default for HirBuilder {
 }
 
 impl HirBuilder {
+    pub fn errors(&self) -> &Vec<SemanticError> {
+        &self.diag_err
+    }
+
     fn insert_error(&mut self, err: SemanticError) {
         self.diag_err.push(err);
     }
@@ -140,7 +144,7 @@ impl HirBuilder {
         self.types.intern(&ty)
     }
 
-    fn module(&mut self, module: &ast::Module) {
+    pub fn module(&mut self, module: &ast::Module) {
         // Insert all of the symbols to the table
         let pass_a: Box<[SymbolId]> = self.module_pass_a(module);
 
@@ -156,7 +160,7 @@ impl HirBuilder {
     /// The following code shuold run, if we checked the body of foo before declaring X, we would
     /// get an undeclared error.
     ///
-    /// ```
+    /// ```cm
     /// def foo() = {
     ///     print(bar(x))
     /// }
