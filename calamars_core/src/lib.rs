@@ -57,8 +57,17 @@ pub type UncheckedArena<Ty, Id> = PolicyArena<Ty, Id, NoFilter>;
 /// An arena that will push anything except errors
 pub type Arena<Ty, Id> = PolicyArena<Ty, Id, RejectErr>;
 
+impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
+    pub fn new_unchecked() -> Self {
+        Self {
+            data: vec![],
+            _pd: PhantomData,
+        }
+    }
+}
+
 impl<Ty: MaybeErr, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
-    fn new() -> Self {
+    pub fn new_checked() -> Self {
         Self {
             data: vec![Ty::ERR],
             _pd: PhantomData,
@@ -70,8 +79,17 @@ impl<Ty: MaybeErr, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
     }
 }
 
+impl<Ty: Clone + Hash + Eq, Id: Identifier> InternArena<Ty, Id> {
+    pub fn new_unchecked() -> Self {
+        Self {
+            data: vec![],
+            map: hashbrown::HashMap::new(),
+        }
+    }
+}
+
 impl<Ty: MaybeErr + Clone + Hash + Eq, Id: Identifier> InternArena<Ty, Id> {
-    fn new() -> Self {
+    pub fn new_checked() -> Self {
         let mut s = Self {
             data: vec![Ty::ERR],
             map: hashbrown::HashMap::new(),
