@@ -86,7 +86,20 @@ impl LowererContext {
         self.types.intern(&ty)
     }
 
-    pub fn module(&mut self, module: &ast::Module) {}
+    pub fn module(&mut self, module: &ast::Module) -> Box<[ids::SymbolId]> {
+        for import in &module.imports {
+            self.insert_error(SemanticError::NotSupported {
+                msg: "Imports are not yet supported, sorry :(",
+                span: import.span(),
+            });
+        }
+
+        module
+            .items
+            .iter()
+            .map(|dec| self.declaration(dec))
+            .collect()
+    }
 
     fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
