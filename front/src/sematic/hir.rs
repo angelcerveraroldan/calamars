@@ -1,9 +1,13 @@
 use calamars_core::{
     MaybeErr,
-    ids::{self, ExpressionId, IdentId},
+    ids::{self, ExpressionId, IdentId, SymbolId},
 };
 
-use crate::{sematic::types::TypeId, syntax::span::Span};
+use crate::{
+    sematic::{error::SemanticError, types::TypeId},
+    source::FileId,
+    syntax::span::Span,
+};
 
 pub type TypeArena = calamars_core::InternArena<Type, ids::TypeId>;
 
@@ -158,4 +162,28 @@ impl Symbol {
     pub fn ident_id(&self) -> ids::IdentId {
         self.name
     }
+}
+
+/// All of the HIR information for a module.
+///
+/// To have full infromation about the module, you need access to the global context, containing:
+/// - TypeArena
+/// - ConstantStringArena
+/// - IdentArena,
+/// - SymbolArena
+struct Module {
+    /// For now, ModuleId is the same as FileId, as each file is exactly a module.
+    pub id: FileId,
+    pub name: ids::IdentId,
+
+    /// All of the symbols in this module.
+    symbols: Box<[ids::SymbolId]>,
+    /// All of the expressions in this module.
+    expressions: Box<[ids::ExpressionId]>,
+
+    /// Top-level public declarations.
+    ///
+    /// This can be used by other modules when importing this one.
+    export: hashbrown::HashMap<ids::IdentId, ids::SymbolId>,
+    diag: Vec<SemanticError>,
 }
