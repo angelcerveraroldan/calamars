@@ -45,6 +45,15 @@ pub enum Type {
     },
 }
 
+impl Type {
+    pub fn function_input(&self) -> &Box<[ids::TypeId]> {
+        if let Type::Function { input, .. } = self {
+            return input;
+        }
+        unreachable!("Make sure to only call this on functions!")
+    }
+}
+
 impl MaybeErr for Type {
     const ERR: Self = Type::Error;
 }
@@ -161,6 +170,10 @@ impl Symbol {
 
     pub fn ident_id(&self) -> ids::IdentId {
         self.name
+    }
+
+    pub fn name_span(&self) -> Span {
+        self.name_span
     }
 }
 
