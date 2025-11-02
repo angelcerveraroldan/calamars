@@ -95,12 +95,16 @@ impl MaybeErr for Expr {
 
 #[derive(Debug)]
 pub enum SymbolKind {
+    /// A function parameter, this will have no body, as it will be used when type cecking a
+    /// function, not during the call
     Parameter,
     Extern,
+    /// A function that has yet to have a body attached to it
     FunctionUndeclared,
     Function {
         body: ids::ExpressionId,
     },
+    /// A variable that has yet to have a body attached to it
     VariableUndeclared {
         mutable: bool,
     },
