@@ -25,9 +25,23 @@ pub struct HirBuilder {
     diag_war: Vec<()>,
 }
 
+impl Default for HirBuilder {
+    fn default() -> Self {
+        let mut d = Self {
+            ..Default::default()
+        };
+        d.push_scope();
+        d
+    }
+}
+
 impl HirBuilder {
     fn insert_error(&mut self, err: SemanticError) {
         self.diag_err.push(err);
+    }
+
+    fn push_scope(&mut self) {
+        self.scopes.push(hashbrown::HashMap::default());
     }
 
     fn resolve(&self, s: ids::IdentId, usage: Span) -> Result<SymbolId, SemanticError> {
