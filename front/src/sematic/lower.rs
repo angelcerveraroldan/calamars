@@ -159,7 +159,22 @@ impl HirBuilder {
         self.symbols.push(symbol)
     }
 
-    fn bind_declaration(&mut self, bind: &ast::Binding) -> SymbolId {
+    /// Insert a body into a declaration.
+    ///
+    /// To call this function, you must ensure that the symbol id is valid.
+    fn attach_body_declaration(&mut self, declaration: &ast::Declaration, sid: ids::SymbolId) {
+        let body = match declaration {
+            ast::Declaration::Binding(binding) => binding.assigned.as_ref(),
+            ast::Declaration::Function(func_dec) => func_dec.body(),
+        };
+        let expression_id = self.expression(body);
+        // This line will need all used symbols to be in scope. This function should be executed
+        // strictly after pass_a.
+        let symbol = self.symbols.get_unchecked_mut(sid);
+        symbol.update_body(expression_id);
+    }
+
+    fn bind_declaration(&mut self, bind: &ast::Binding) -> ids::SymbolId {
         let str_name = bind.vname.ident().to_string();
         let name = self.identifiers.intern(&str_name);
         let ty = self.type_lower(&bind.vtype);
