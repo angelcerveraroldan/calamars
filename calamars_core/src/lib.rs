@@ -116,6 +116,10 @@ impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
     pub fn get_unchecked(&self, id: Id) -> &Ty {
         &self.data[id.inner_id()]
     }
+
+    pub fn get_unchecked_mut(&mut self, id: Id) -> &mut Ty {
+        &mut self.data[id.inner_id()]
+    }
 }
 
 impl<Ty, Id: Identifier> InternArena<Ty, Id> {
