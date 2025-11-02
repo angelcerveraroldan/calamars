@@ -61,11 +61,26 @@ impl HirBuilder {
     }
 
     /// Add a new symbol to the symbol arena, and to the current scope
+    ///
+    /// This will check for re-declarations. If there is a re-declaration, then ont
     fn insert_symbol(&mut self, symbol: Symbol) -> ids::SymbolId {
         let symbol_ident_id = symbol.ident_id();
+        let symbol_span = symbol.name_span();
         let sid = self.symbols.push(symbol);
         let scope = self.scopes.last_mut().expect("Scopes can never be empty!");
-        scope.insert(symbol_ident_id, sid);
+
+        // Here we will overwirte the map, from now on, when someone references this symbol, they
+        // will be referring to this new one. If you have the old SymbolId, you can still access
+        // the old symbol, as it is NOT delted from the arena.
+        let old = scope.insert(symbol_ident_id, sid);
+
+        if let Some(original) = old {
+            let osymbol = self.symbols.get_unchecked(original);
+            self.insert_error(SemanticError::Redeclaration {
+                original_span: osymbol.name_span(),
+                redec_span: symbol_span,
+            })
+        }
         sid
     }
 
