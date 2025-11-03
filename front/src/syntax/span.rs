@@ -1,12 +1,35 @@
-use chumsky::{error::Simple, span::SimpleSpan};
+use std::ops::Range;
 
 use crate::source::FileId;
 
-pub struct FileSpan {
-    start: usize,
-    end: usize,
-    file: FileId,
+#[derive(Debug, Clone, PartialEq)]
+pub struct CtxSpan<Ctx> {
+    pub start: usize,
+    pub end: usize,
+    pub ctx: Ctx,
 }
+
+impl<Ctx> CtxSpan<Ctx> {
+    pub fn into_range(&self) -> Range<usize> {
+        self.start..self.end
+    }
+}
+
+impl<Ctx: Copy> Copy for CtxSpan<Ctx> {}
+
+pub type Span = CtxSpan<()>;
+
+impl From<Range<usize>> for Span {
+    fn from(value: Range<usize>) -> Self {
+        Self {
+            start: value.start,
+            end: value.end,
+            ctx: (),
+        }
+    }
+}
+
+pub type FileSpan = CtxSpan<FileId>;
 
 impl FileSpan {
     pub fn start(&self) -> usize {
@@ -18,7 +41,7 @@ impl FileSpan {
     }
 
     pub fn file(&self) -> &FileId {
-        &self.file
+        &self.ctx
     }
 }
 
@@ -27,30 +50,7 @@ impl From<(logos::Span, FileId)> for FileSpan {
         Self {
             start: s.start,
             end: s.end,
-            file: f,
+            ctx: f,
         }
     }
 }
-
-impl From<SimpleSpan<usize, FileId>> for FileSpan {
-    fn from(value: SimpleSpan<usize, FileId>) -> Self {
-        FileSpan {
-            start: value.start,
-            end: value.end,
-            file: value.context,
-        }
-    }
-}
-
-// For interpreting single files - May delete later
-impl From<SimpleSpan> for FileSpan {
-    fn from(value: SimpleSpan) -> Self {
-        FileSpan {
-            start: value.start,
-            end: value.end,
-            file: FileId(0),
-        }
-    }
-}
-
-pub type Span = SimpleSpan;
