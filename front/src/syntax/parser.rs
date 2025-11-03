@@ -1,7 +1,5 @@
 //! A parser for Calamars files!
 
-use clap::command;
-
 use crate::{
     source::FileId,
     syntax::{
@@ -795,11 +793,8 @@ impl CalamarsParser {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::btree_set::Range;
-
-    use chumsky::container::Seq;
-
     use crate::syntax::ast::IfStm;
+    use std::collections::btree_set::Range;
 
     use super::*;
 
