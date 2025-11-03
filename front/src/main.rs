@@ -12,7 +12,6 @@ use std::{
     path::PathBuf,
 };
 
-use chumsky::Parser as chParser; // Chumsky Parser
 use clap::{Parser as clParser, Subcommand};
 use rustyline::{DefaultEditor, error::ReadlineError}; // Clap Parser 
 
