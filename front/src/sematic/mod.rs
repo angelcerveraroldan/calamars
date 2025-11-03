@@ -1,7 +1,5 @@
 use std::{any::Any, fmt::Debug, process::id, string};
 
-use chumsky::{container::Seq, span::SimpleSpan, text::ascii::ident};
-
 use crate::{
     sematic::{
         error::SemanticError,
@@ -757,18 +755,16 @@ impl Resolver {
 
 #[cfg(test)]
 mod test_helpers_resolver {
-    use chumsky::{Parser, span::SimpleSpan};
 
-    use crate::syntax::ast::{
-        self, BinaryOp, BinaryOperator, Binding, Expression, Ident, Literal, LiteralKind, Type,
+    use crate::syntax::{
+        ast::{
+            self, BinaryOp, BinaryOperator, Binding, Expression, Ident, Literal, LiteralKind, Type,
+        },
+        span::Span,
     };
 
-    pub fn fake_span() -> SimpleSpan {
-        SimpleSpan {
-            start: 0,
-            end: 0,
-            context: (),
-        }
+    pub fn fake_span() -> Span {
+        Span::from(0..0)
     }
 
     pub fn cltype_int() -> Type {

@@ -9,10 +9,6 @@ use std::{
 };
 
 use crate::syntax::span::Span;
-use chumsky::{
-    input::{Input, Stream, ValueInput},
-    span::SimpleSpan,
-};
 use std::fmt;
 
 use logos::{Lexer, Logos};
