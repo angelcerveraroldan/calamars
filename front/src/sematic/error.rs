@@ -69,7 +69,7 @@ pub enum SemanticError {
     /// This should be an internal error, as it will make no sense to the user, and so maybe it
     /// should be handled differently...
     SymbolIdNotFound {
-        id: super::symbols::SymbolId,
+        id: calamars_core::ids::SymbolId,
     },
     ArityError {
         expected: usize,
