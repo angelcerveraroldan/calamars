@@ -13,7 +13,7 @@ use proptest::collection::HashMapStrategy;
 
 use crate::{
     errors::PrettyError,
-    sematic::{Resolver, error::SemanticError},
+    sematic::error::SemanticError,
     syntax::{ast, parser::CalamarsParser, span::Span, token::Token},
 };
 
@@ -90,23 +90,6 @@ impl SourceFile {
         let mut parser = CalamarsParser::new(FileId(0), tks);
         (parser.parse_file(), parser)
     }
-
-    pub fn anlayse_file(&self) -> Resolver {
-        let (module, parser) = self.parse_file();
-        parser.diag().into_iter().for_each(|e| {
-            println!("{:?}", e);
-        });
-
-        let mut resolver = Resolver::default();
-        resolver.verify_module(&module);
-        resolver
-    }
-
-    pub fn display_errors(&self, resolver: Resolver) {
-        for err in resolver.errors() {
-            err.log_error(&self.file_name(), self.file_source());
-        }
-    }
 }
 
 /// All of the projects files
@@ -172,13 +155,6 @@ impl SourceDB {
 
         builder.finish()
     }
-
-    pub fn analyse_all(&self) {
-        for file in &self.files {
-            let resolver = file.anlayse_file();
-            file.display_errors(resolver);
-        }
-    }
 }
 
 impl TryFrom<SourceDBBuilder> for SourceDB {
@@ -239,30 +215,4 @@ impl SourceDBBuilder {
     pub fn finish(self) -> Result<SourceDB, std::io::Error> {
         TryFrom::try_from(self)
     }
-}
-
-#[cfg(test)]
-mod test_builder {
-    use std::{fs, path::PathBuf};
-
-    use crate::source::{FileId, SourceDBBuilder};
-    /*
-    #[test]
-    fn load_many_files() {
-        let sourcedb = SourceDBBuilder::default()
-            .add_path("./tests/test_files/sample_file.cm".into())
-            .add_path("./tests/test_files/bad_function.cm".into())
-            .add_config("./tests/test_files/bad_function.cm".into())
-            .finish();
-
-        assert!(sourcedb.is_ok());
-        let sourcedb = sourcedb.unwrap();
-        assert_eq!(sourcedb.len(), 2);
-        assert_eq!(
-            sourcedb.get_file(FileId(0)).unwrap().path().clone(),
-            PathBuf::from("./tests/test_files/bad_function.cm"),
-            "Paths shuold be inserted in alphabetical order"
-        );
-    }
-    */
 }

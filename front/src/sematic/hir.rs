@@ -3,11 +3,7 @@ use calamars_core::{
     ids::{self, ExpressionId, IdentId, SymbolId},
 };
 
-use crate::{
-    sematic::{error::SemanticError, types::TypeId},
-    source::FileId,
-    syntax::span::Span,
-};
+use crate::{sematic::error::SemanticError, source::FileId, syntax::span::Span};
 
 pub type TypeArena = calamars_core::InternArena<Type, ids::TypeId>;
 
