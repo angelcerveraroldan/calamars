@@ -98,6 +98,18 @@ pub enum Expr {
     },
 }
 
+impl Expr {
+    pub fn get_span(&self) -> Option<Span> {
+        match self {
+            Expr::Err => None,
+            Expr::Literal { span, .. }
+            | Expr::Identifier { span, .. }
+            | Expr::BinaryOperation { span, .. }
+            | Expr::Call { span, .. } => Some(*span),
+        }
+    }
+}
+
 impl MaybeErr for Expr {
     const ERR: Self = Expr::Err;
 }
@@ -170,6 +182,10 @@ impl Symbol {
 
     pub fn name_span(&self) -> Span {
         self.name_span
+    }
+
+    pub fn ty_id(&self) -> ids::TypeId {
+        self.ty
     }
 }
 
