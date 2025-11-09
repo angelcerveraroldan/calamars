@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+calamars_core = { path="../calamars_core" }
+front = { path="../front" }
+hashbrown = "0.16.0"
