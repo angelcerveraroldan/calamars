@@ -92,6 +92,8 @@ pub enum BinOp {
     Mult,
     Div,
     Mod,
+
+    EqEq,
 }
 
 #[derive(Debug, PartialEq)]
@@ -120,6 +122,16 @@ pub enum Expr {
         inputs: Box<[ids::ExpressionId]>,
         span: Span,
     },
+    If {
+        predicate: ids::ExpressionId,
+        then: ids::ExpressionId,
+        otherwise: ids::ExpressionId,
+
+        span: Span,
+        pred_span: Span,
+        then_span: Span,
+        othewise_span: Span,
+    },
 }
 
 impl Expr {
@@ -127,6 +139,7 @@ impl Expr {
         match self {
             Expr::Err => None,
             Expr::Literal { span, .. }
+            | Expr::If { span, .. }
             | Expr::Identifier { span, .. }
             | Expr::BinaryOperation { span, .. }
             | Expr::Call { span, .. } => Some(*span),

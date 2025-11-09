@@ -325,6 +325,25 @@ impl HirBuilder {
                     span: func_call.span(),
                 }
             }
+            ast::Expression::IfStm(ifstm) => {
+                let pred = ifstm.pred();
+                let then = ifstm.then_expr();
+                let othr = ifstm.else_expr();
+
+                let predicate = self.expression(pred.as_ref());
+                let then = self.expression(then.as_ref());
+                let otherwise = self.expression(othr.as_ref());
+
+                Expr::If {
+                    predicate,
+                    then,
+                    otherwise,
+                    span: ifstm.span(),
+                    pred_span: ifstm.pred_span(),
+                    then_span: ifstm.then_span(),
+                    othewise_span: ifstm.else_span(),
+                }
+            }
             otherwise => {
                 self.insert_error(SemanticError::NotSupported {
                     msg: "Expression not yet supported",
