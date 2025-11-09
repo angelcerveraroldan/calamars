@@ -29,6 +29,12 @@ impl From<Range<usize>> for Span {
     }
 }
 
+impl Span {
+    pub fn dummy() -> Self {
+        Span::from(0..0)
+    }
+}
+
 pub type FileSpan = CtxSpan<FileId>;
 
 impl FileSpan {

@@ -124,6 +124,14 @@ impl<Ty: Hash + Eq + Clone, Id: Identifier> InternArena<Ty, Id> {
         self.map.insert(ty.clone(), id);
         id
     }
+
+    pub fn resolve(&self, ty: &Ty) -> Option<&Id> {
+        self.map.get(ty)
+    }
+
+    pub fn resolve_unchecked(&self, ty: &Ty) -> &Id {
+        self.map.get(ty).unwrap()
+    }
 }
 
 impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {

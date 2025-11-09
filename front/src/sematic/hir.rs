@@ -54,6 +54,30 @@ impl MaybeErr for Type {
     const ERR: Self = Type::Error;
 }
 
+pub fn type_id_stringify(arena: &TypeArena, id: ids::TypeId) -> String {
+    let ty = arena.get_unchecked(id);
+
+    match ty {
+        Type::Error => "Error".into(),
+        Type::Integer => "int".into(),
+        Type::Float => "float".into(),
+        Type::Boolean => "bool".into(),
+        Type::String => "str".into(),
+        Type::Char => "char".into(),
+        Type::Unit => "()".into(),
+        Type::Array(tid) => format!("[{}]", type_id_stringify(arena, *tid)),
+        Type::Function { input, output } => {
+            let inp = input
+                .iter()
+                .map(|x| type_id_stringify(arena, *x))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let out = type_id_stringify(arena, *output);
+            format!("fn({}) -> ({})", inp, out)
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Const {
     I64(i64),
@@ -96,6 +120,18 @@ pub enum Expr {
         inputs: Box<[ids::ExpressionId]>,
         span: Span,
     },
+}
+
+impl Expr {
+    pub fn get_span(&self) -> Option<Span> {
+        match self {
+            Expr::Err => None,
+            Expr::Literal { span, .. }
+            | Expr::Identifier { span, .. }
+            | Expr::BinaryOperation { span, .. }
+            | Expr::Call { span, .. } => Some(*span),
+        }
+    }
 }
 
 impl MaybeErr for Expr {
@@ -170,6 +206,10 @@ impl Symbol {
 
     pub fn name_span(&self) -> Span {
         self.name_span
+    }
+
+    pub fn ty_id(&self) -> ids::TypeId {
+        self.ty
     }
 }
 
