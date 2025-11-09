@@ -10,18 +10,49 @@
 //! links that can be used to find a lot of information:
 //! LLVM: https://releases.llvm.org/18.1.4/docs/LangRef.html
 
-use std::fmt::Debug;
+mod lower;
 
-pub struct FunctionId(usize);
+use calamars_core::ids;
+use front::syntax::span::Span;
+
+/// An identifier for a `BBlock`
+#[derive(Copy, Debug, Clone)]
 pub struct BlockId(usize);
+
+impl From<usize> for BlockId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl calamars_core::Identifier for BlockId {
+    fn inner_id(&self) -> usize {
+        self.0
+    }
+}
+
+/// Identifier for an SSA value
+#[derive(Copy, Debug, Clone)]
 pub struct ValueId(usize);
+
+impl From<usize> for ValueId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl calamars_core::Identifier for ValueId {
+    fn inner_id(&self) -> usize {
+        self.0
+    }
+}
+
 pub struct DataId(usize);
-pub struct TypeId(usize);
 
 /// Ways in which we can call a function
 pub enum Callee {
     /// Call a function with a given function id. These are functions defined in the same language
-    Function(FunctionId),
+    Function(ids::SymbolId),
     /// Externed functions
     Extern(String),
 }
@@ -46,9 +77,9 @@ pub enum Types {
 #[derive(Debug, Clone)]
 pub enum Consts {
     Unit,
-    I32(i32),
+    I64(i64),
     Bool(bool),
-    Char(char),
+    String(ids::StringId),
 }
 
 /// Store some binary data
@@ -91,7 +122,7 @@ pub enum BitwiseBinaryOperator {
     Or,
 }
 
-pub enum InstructionKind {
+pub enum VInstructionKind {
     Constant(Consts),
     ConstDataPointer {
         data: DataId,
@@ -114,16 +145,16 @@ pub enum InstructionKind {
     Call {
         callee: Callee,
         args: Vec<ValueId>,
-        return_ty: TypeId,
+        return_ty: ids::TypeId,
     },
 }
 
-/// A single instruction that produces a basic type.
+/// A single value producing instruction.
 ///
 /// Reference: https://releases.llvm.org/18.1.4/docs/LangRef.html#instruction-reference
-pub struct Instruct {
+pub struct VInstruct {
     dst: Option<ValueId>,
-    kind: InstructionKind,
+    kind: VInstructionKind,
     span: Span,
 }
 
@@ -148,11 +179,6 @@ pub enum Terminator {
     // Switch { .. }
 }
 
-pub struct Span {
-    start: usize,
-    end: usize,
-}
-
 /// Where in the source code did this come from
 ///
 /// Since there may have been de-sugaring, this may not just be a single span
@@ -164,22 +190,21 @@ pub enum Origin {
 
 /// A [Basic Block](https://en.wikipedia.org/wiki/Basic_block)
 pub struct BBlock {
-    id: BlockId,
-    params: Vec<(ValueId, TypeId)>,
-    instructs: Vec<Instruct>,
+    params: Vec<(ValueId, ids::TypeId)>,
+    instructs: Vec<ValueId>,
     finally: Terminator,
 }
 
 pub struct Function {
-    id: FunctionId,
-    name: String,
-    return_ty: TypeId,
+    id: ids::SymbolId,
+    name: ids::IdentId,
+    return_ty: ids::TypeId,
     /// The input parameters are the output params of this block
     entry: BlockId,
-    blocks: Vec<BBlock>,
+    blocks: Vec<BlockId>,
 }
 
 pub struct Module {
     data: Vec<DataId>,
-    funcs: Vec<FunctionId>,
+    funcs: Vec<ids::SymbolId>,
 }
