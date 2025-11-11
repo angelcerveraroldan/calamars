@@ -39,6 +39,18 @@ pub struct MirBuilder<'a> {
 }
 
 impl<'a> MirBuilder<'a> {
+    pub fn new(ctx: &'a Context) -> Self {
+        let mut s = Self {
+            ctx,
+            current_block_id: BlockId(0),
+            blocks: BlockArena::new_unchecked(),
+            instructions: InstructionArena::new_unchecked(),
+            locals: hashbrown::HashMap::new(),
+        };
+        s.next_block();
+        s
+    }
+
     /// Start working on the next block
     fn next_block(&mut self) {
         let default_block = BBlock {
@@ -110,5 +122,115 @@ impl<'a> MirBuilder<'a> {
             .push(value_id);
 
         value_id
+    }
+}
+
+#[cfg(test)]
+mod test_lower {
+
+    use calamars_core::ids;
+    use front::{
+        sematic::hir::{
+            self, ConstantStringArena, ExpressionArena, IdentArena, SymbolArena, TypeArena,
+        },
+        syntax::span::Span,
+    };
+
+    use crate::{
+        VInstructionKind,
+        lower::{Context, MirBuilder},
+    };
+
+    fn make_context() -> Context {
+        Context {
+            types: TypeArena::new_checked(),
+            const_str: ConstantStringArena::new_unchecked(),
+            idents: IdentArena::new_unchecked(),
+            symbols: SymbolArena::new_unchecked(),
+            exprs: ExpressionArena::new_checked(),
+        }
+    }
+
+    fn lit_i64(v: i64) -> hir::Expr {
+        hir::Expr::Literal {
+            constant: hir::Const::I64(v),
+            span: Span::dummy(),
+        }
+    }
+
+    fn lit_bool(v: bool) -> hir::Expr {
+        hir::Expr::Literal {
+            constant: hir::Const::Bool(v),
+            span: Span::dummy(),
+        }
+    }
+
+    fn ident(sym: ids::SymbolId) -> hir::Expr {
+        hir::Expr::Identifier {
+            id: sym,
+            span: Span::dummy(),
+        }
+    }
+
+    fn bin_expr(op: hir::BinOp, l: ids::ExpressionId, r: ids::ExpressionId) -> hir::Expr {
+        hir::Expr::BinaryOperation {
+            operator: op,
+            lhs: l,
+            rhs: r,
+            span: Span::dummy(),
+        }
+    }
+
+    #[test]
+    fn lower_literal() {
+        let mut context = make_context();
+
+        // 1 + 3
+        let one = lit_i64(1);
+        let one_id = context.exprs.push(one);
+
+        let mut builder = MirBuilder::new(&context);
+        let value_id = builder.lower_expression(one_id);
+
+        let block = builder.blocks.get_unchecked(builder.current_block_id);
+
+        assert!(block.instructs.len() == 1);
+        let id = block.instructs[0];
+        let instruct = builder.instructions.get_unchecked(id);
+        assert!(matches!(instruct.kind, VInstructionKind::Constant { .. }));
+    }
+
+    #[test]
+    fn lower_simple_binary_expr() {
+        let mut context = make_context();
+
+        // 1 + 3
+        let one = lit_i64(1);
+        let one_id = context.exprs.push(one);
+        let three = lit_i64(3);
+        let three_id = context.exprs.push(three);
+
+        let sum = bin_expr(hir::BinOp::Add, one_id, three_id);
+        let sum_id = context.exprs.push(sum);
+
+        let mut builder = MirBuilder::new(&context);
+        let value_id = builder.lower_expression(sum_id);
+
+        let block = builder.blocks.get_unchecked(builder.current_block_id);
+
+        assert!(block.instructs.len() == 3);
+
+        let zi = builder.instructions.get_unchecked(block.instructs[0]);
+        let oi = builder.instructions.get_unchecked(block.instructs[1]);
+        let ti = builder.instructions.get_unchecked(block.instructs[2]);
+
+        // The desired block should be:
+        //
+        // v0 = const 1
+        // v1 = const 2
+        // v2 = + v0 v1
+        assert!(matches!(zi.kind, VInstructionKind::Constant { .. }));
+        assert!(matches!(oi.kind, VInstructionKind::Constant { .. }));
+        assert!(matches!(ti.kind, VInstructionKind::Binary { .. }));
     }
 }
