@@ -10,10 +10,14 @@
 //! links that can be used to find a lot of information:
 //! LLVM: https://releases.llvm.org/18.1.4/docs/LangRef.html
 
-mod lower;
+pub mod lower;
+pub mod printer;
 
 use calamars_core::ids;
 use front::syntax::span::Span;
+
+pub type InstructionArena = calamars_core::UncheckedArena<VInstruct, ValueId>;
+pub type BlockArena = calamars_core::UncheckedArena<BBlock, BlockId>;
 
 /// An identifier for a `BBlock`
 #[derive(Copy, Debug, Clone)]

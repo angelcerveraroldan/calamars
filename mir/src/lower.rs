@@ -5,8 +5,7 @@ use front::sematic::hir;
 
 use crate::{BBlock, BinaryOperator, BlockId, Function, VInstruct, VInstructionKind, ValueId};
 
-type InstructionArena = calamars_core::UncheckedArena<VInstruct, ValueId>;
-type BlockArena = calamars_core::UncheckedArena<BBlock, BlockId>;
+use super::{BlockArena, InstructionArena};
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
     match op {
@@ -139,6 +138,7 @@ mod test_lower {
     use crate::{
         VInstructionKind,
         lower::{Context, MirBuilder},
+        printer::MirPrinter,
     };
 
     fn make_context() -> Context {
