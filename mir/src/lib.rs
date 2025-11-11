@@ -47,9 +47,11 @@ impl calamars_core::Identifier for ValueId {
     }
 }
 
+#[derive(Debug)]
 pub struct DataId(usize);
 
 /// Ways in which we can call a function
+#[derive(Debug)]
 pub enum Callee {
     /// Call a function with a given function id. These are functions defined in the same language
     Function(ids::SymbolId),
@@ -90,6 +92,7 @@ pub struct DataSeg {
     align: u32,
 }
 
+#[derive(Debug)]
 pub enum UnaryOperator {
     /// Negate a boolean value
     Not,
@@ -97,6 +100,7 @@ pub enum UnaryOperator {
     Negate,
 }
 
+#[derive(Debug)]
 pub enum BinaryOperator {
     Add,
     Sub,
@@ -116,12 +120,14 @@ pub enum BinaryOperator {
 ///
 /// TODO: There are many [missing operators](https://releases.llvm.org/18.1.4/docs/LangRef.html#bitwiseops)
 /// that may be worth implementing later.
+#[derive(Debug)]
 pub enum BitwiseBinaryOperator {
     And,
     Xor,
     Or,
 }
 
+#[derive(Debug)]
 pub enum VInstructionKind {
     Constant(Consts),
     ConstDataPointer {
