@@ -291,6 +291,11 @@ dependencies = [
 [[package]]
 name = "ir"
 version = "0.1.0"
+dependencies = [
+ "calamars_core",
+ "front",
+ "hashbrown",
+]
 
 [[package]]
 name = "is_terminal_polyfill"

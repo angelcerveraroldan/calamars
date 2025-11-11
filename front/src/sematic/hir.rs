@@ -174,7 +174,7 @@ pub enum SymbolKind {
 
 #[derive(Debug)]
 pub struct Symbol {
-    kind: SymbolKind,
+    pub kind: SymbolKind,
     ty: ids::TypeId,
     name: ids::IdentId,
     /// Span to the identifier for this symbol
