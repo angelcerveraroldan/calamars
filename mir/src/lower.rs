@@ -1,9 +1,12 @@
 //! Lower HIR to MIR
 
 use calamars_core::ids;
-use front::sematic::hir;
+use front::sematic::hir::{self, SymbolKind};
 
-use crate::{BBlock, BinaryOperator, BlockId, Function, VInstruct, VInstructionKind, ValueId};
+use crate::{
+    BBlock, BinaryOperator, BlockId, Function, VInstruct, VInstructionKind, ValueId,
+    errors::MirErrors,
+};
 
 use super::{BlockArena, InstructionArena};
 
@@ -121,6 +124,23 @@ impl<'a> MirBuilder<'a> {
             .push(value_id);
 
         value_id
+    }
+
+    fn lower_binding(&mut self, binding_id: ids::SymbolId) -> Result<ValueId, MirErrors> {
+        let s = self.ctx.symbols.get_unchecked(binding_id);
+        match s.kind {
+            SymbolKind::Variable { body, .. } => {
+                let assignment = self.lower_expression(body);
+                self.locals.insert(binding_id, assignment);
+                Ok(assignment)
+            }
+            SymbolKind::VariableUndeclared { .. } | SymbolKind::FunctionUndeclared { .. } => {
+                Err(MirErrors::LoweringErr {
+                    msg: "Cannot do mir lowering with undeclared var/fn".into(),
+                })
+            }
+            _ => todo!(),
+        }
     }
 }
 
