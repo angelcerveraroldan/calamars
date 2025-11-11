@@ -76,6 +76,10 @@ impl<'a> MirBuilder<'a> {
         }
 
         let kind = match expression {
+            // The case is handled differently, as it does not generate a new instruction, but
+            // uses an old one.
+            hir::Expr::Identifier { id, .. } => unreachable!("This case was handled above"),
+
             hir::Expr::Literal { constant, .. } => VInstructionKind::Constant(match constant {
                 hir::Const::I64(i) => crate::Consts::I64(*i),
                 hir::Const::Bool(b) => crate::Consts::Bool(*b),
@@ -92,7 +96,6 @@ impl<'a> MirBuilder<'a> {
                 let op = operator_map(operator);
                 VInstructionKind::Binary { op, lhs, rhs }
             }
-            hir::Expr::Identifier { id, .. } => unreachable!("This case was handled above"),
             _ => todo!(),
         };
 
