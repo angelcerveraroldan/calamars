@@ -10,6 +10,7 @@
 //! links that can be used to find a lot of information:
 //! LLVM: https://releases.llvm.org/18.1.4/docs/LangRef.html
 
+pub mod errors;
 pub mod lower;
 pub mod printer;
 
