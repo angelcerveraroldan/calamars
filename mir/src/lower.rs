@@ -31,8 +31,6 @@ pub struct Context {
 /// Handle the process of building a function from the HIR context
 pub struct MirBuilder<'a> {
     pub ctx: &'a Context,
-    pub func: Function,
-
     current_block_id: BlockId,
 
     blocks: BlockArena,
