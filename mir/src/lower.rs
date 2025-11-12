@@ -246,6 +246,22 @@ mod test_lower {
         }
     }
 
+    fn if_stm(
+        predicate: ids::ExpressionId,
+        then: ids::ExpressionId,
+        otherwise: ids::ExpressionId,
+    ) -> hir::Expr {
+        hir::Expr::If {
+            predicate,
+            then,
+            otherwise,
+            span: Span::dummy(),
+            pred_span: Span::dummy(),
+            then_span: Span::dummy(),
+            othewise_span: Span::dummy(),
+        }
+    }
+
     #[test]
     fn lower_literal() {
         let mut context = make_context();
@@ -297,5 +313,58 @@ mod test_lower {
         assert!(matches!(zi.kind, VInstructionKind::Constant { .. }));
         assert!(matches!(oi.kind, VInstructionKind::Constant { .. }));
         assert!(matches!(ti.kind, VInstructionKind::Binary { .. }));
+    }
+
+    #[test]
+    fn simple_if() {
+        /*
+         * Try to lower the following:
+         * if true then 1+1 else 4
+         *
+         * This should generate 4 blocks:
+         * 1. define constant "true" and do conditional break
+         * 2. define constant 1 and return 1+1
+         * 3. define constant 4 and return it
+         * 4. Phi instruction that assigns either 1 or 4
+         * */
+
+        let mut context = make_context();
+        // Boolean Type
+        let bt = context.types.intern(&hir::Type::Boolean);
+        // Integer Type
+        let it = context.types.intern(&hir::Type::Integer);
+
+        // Make literals
+        let t = lit_bool(true);
+        let f = lit_i64(4);
+        let o = lit_i64(1);
+        let op = lit_i64(1);
+
+        // Generate expression ids
+        let t = context.exprs.push(t);
+        let f = context.exprs.push(f);
+        let o = context.exprs.push(o);
+        let op = context.exprs.push(op);
+
+        // Map expression ids to their types
+        context.expr_ty.insert(t, bt);
+        context.expr_ty.insert(f, it);
+        context.expr_ty.insert(o, it);
+        context.expr_ty.insert(op, it);
+
+        // Binary expression
+        let bin = bin_expr(hir::BinOp::Add, o, op);
+        let bin = context.exprs.push(bin);
+        context.expr_ty.insert(bin, it);
+
+        // If expression
+        let cond = if_stm(t, bin, f);
+        let cond = context.exprs.push(cond);
+        context.expr_ty.insert(cond, it);
+
+        let mut builder = MirBuilder::new(&context);
+        let if_lower = builder.lower_expression(cond);
+
+        assert_eq!(builder.blocks.len(), 4);
     }
 }
