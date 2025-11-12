@@ -216,10 +216,30 @@ pub enum Origin {
 }
 
 /// A [Basic Block](https://en.wikipedia.org/wiki/Basic_block)
+#[derive(Debug, Default)]
 pub struct BBlock {
     params: Vec<(ValueId, ids::TypeId)>,
     instructs: Vec<ValueId>,
     finally: Option<Terminator>,
+}
+
+impl BBlock {
+    pub fn with_param(&mut self, value: ValueId, ty: ids::TypeId) -> &mut BBlock {
+        self.params.push((value, ty));
+        self
+    }
+
+    pub fn with_term(&mut self, term: Terminator) -> &mut BBlock {
+        debug_assert!(self.finally.is_none(), "Cannot double-assign a temrinator");
+
+        self.finally = Some(term);
+        self
+    }
+
+    pub fn with_instruct(&mut self, instruct: ValueId) -> &mut BBlock {
+        self.instructs.push(instruct);
+        self
+    }
 }
 
 pub struct Function {
