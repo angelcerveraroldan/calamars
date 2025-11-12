@@ -219,7 +219,7 @@ pub enum Origin {
 pub struct BBlock {
     params: Vec<(ValueId, ids::TypeId)>,
     instructs: Vec<ValueId>,
-    finally: Terminator,
+    finally: Option<Terminator>,
 }
 
 pub struct Function {

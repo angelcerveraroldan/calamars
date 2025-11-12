@@ -58,7 +58,7 @@ impl<'a> MirBuilder<'a> {
         let default_block = BBlock {
             params: vec![],
             instructs: vec![],
-            finally: crate::Terminator::Return(None),
+            finally: None,
         };
         let id = self.blocks.push(default_block);
         self.current_block_id = id;
@@ -73,7 +73,7 @@ impl<'a> MirBuilder<'a> {
     /// Add a return type to the current block
     fn finish_block_with_return(&mut self, vid: ValueId) {
         self.blocks.get_unchecked_mut(self.current_block_id).finally =
-            crate::Terminator::Return(Some(vid))
+            Some(crate::Terminator::Return(Some(vid)))
     }
 
     /// Given some (value producing) expression from the HIR, turn it into a `VInstruct`, add it to
