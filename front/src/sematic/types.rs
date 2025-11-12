@@ -64,6 +64,8 @@ impl TypeHandler {
     /// Given some expression, this will return it's type id. If there are any semantic typing
     /// errors, for example: `2 + "hello"` they will be added to the `errors` vector, and will
     /// return the typeid of the `Error` type.
+    ///
+    /// TODO: Insert the typeid to a map, so that later we can check the type of an expression id
     fn type_expression(&mut self, ctx: &Context, e_id: &ids::ExpressionId) -> ids::TypeId {
         let expression = ctx.expressions.get_unchecked(*e_id);
 
