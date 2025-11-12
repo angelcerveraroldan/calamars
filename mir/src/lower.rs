@@ -147,11 +147,11 @@ impl<'a> MirBuilder<'a> {
                 let joining_block = self.new_block();
 
                 self.switch_to(then_block);
-                let then = self.lower_expression(*predicate);
+                let then = self.lower_expression(*then);
                 self.term_br(joining_block);
 
                 self.switch_to(othr_block);
-                let otherwise = self.lower_expression(*predicate);
+                let otherwise = self.lower_expression(*otherwise);
                 self.term_br(joining_block);
 
                 self.switch_to(joining_block);
