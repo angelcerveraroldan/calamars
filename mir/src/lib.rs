@@ -186,26 +186,23 @@ pub enum VInstructionKind {
 pub struct VInstruct {
     dst: Option<ValueId>,
     kind: VInstructionKind,
-    span: Span,
 }
 
 /// Every basic block will end with a terminator instruction.
+#[derive(Debug)]
 pub enum Terminator {
     /// When a return instruction is executed, control flow will return back to the calling
     /// functions context.
     Return(Option<ValueId>),
     /// Break out of a block
-    Br {
-        target: BlockId,
-        args: Box<[ValueId]>,
-    },
+    Br { target: BlockId },
     BrIf {
         /// This is the result value of the predicate in the if statement
         condition: ValueId,
         /// What block to jump to if the predicate was true
-        then_target: (BlockId, Box<ValueId>),
+        then_target: BlockId,
         /// What block to jump to if the predicate was false
-        else_target: (BlockId, Box<ValueId>),
+        else_target: BlockId,
     },
     // Switch { .. }
 }

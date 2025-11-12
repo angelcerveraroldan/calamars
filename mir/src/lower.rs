@@ -1,7 +1,10 @@
 //! Lower HIR to MIR
 
 use calamars_core::ids;
-use front::sematic::hir::{self, SymbolKind};
+use front::{
+    sematic::hir::{self, SymbolKind},
+    syntax::span::Span,
+};
 
 use crate::{
     BBlock, BinaryOperator, BlockId, Function, VInstruct, VInstructionKind, ValueId,
@@ -42,38 +45,52 @@ pub struct MirBuilder<'a> {
 
 impl<'a> MirBuilder<'a> {
     pub fn new(ctx: &'a Context) -> Self {
-        let mut s = Self {
+        let mut blocks = BlockArena::new_unchecked();
+        let current_block_id = blocks.push(BBlock::default());
+        Self {
             ctx,
-            current_block_id: BlockId(0),
-            blocks: BlockArena::new_unchecked(),
+            current_block_id,
+            blocks,
             instructions: InstructionArena::new_unchecked(),
             locals: hashbrown::HashMap::new(),
+        }
+    }
+
+    fn switch_to(&mut self, b: BlockId) {
+        self.current_block_id = b;
+    }
+
+    fn block_mut(&mut self) -> &mut BBlock {
+        self.blocks.get_unchecked_mut(self.current_block_id)
+    }
+
+    fn new_block(&mut self) -> BlockId {
+        self.blocks.push(BBlock::default())
+    }
+
+    fn term_br(&mut self, go: BlockId) {
+        let term = crate::Terminator::Br { target: go };
+        self.block_mut().with_term(term);
+    }
+
+    fn term_cond_br(&mut self, condition: ValueId, then: BlockId, otherwise: BlockId) {
+        let term = crate::Terminator::BrIf {
+            condition,
+            then_target: then,
+            else_target: otherwise,
         };
-        s.next_block();
-        s
+        self.block_mut().with_term(term);
     }
 
-    /// Start working on the next block
-    fn next_block(&mut self) {
-        let default_block = BBlock {
-            params: vec![],
-            instructs: vec![],
-            finally: None,
-        };
-        let id = self.blocks.push(default_block);
-        self.current_block_id = id;
+    fn emit(&mut self, kind: VInstructionKind) -> ValueId {
+        let instruct = self.instructions.push(VInstruct { dst: None, kind });
+        self.block_mut().with_instruct(instruct);
+        instruct
     }
 
-    /// Finalize the current block, and insert it into a function
-    fn insert_block_to_fn(&mut self, func: &mut Function) {
-        func.blocks.push(self.current_block_id);
-        self.next_block();
-    }
-
-    /// Add a return type to the current block
-    fn finish_block_with_return(&mut self, vid: ValueId) {
-        self.blocks.get_unchecked_mut(self.current_block_id).finally =
-            Some(crate::Terminator::Return(Some(vid)))
+    fn emit_phi(&mut self, ty: ids::TypeId, incoming: Box<[(BlockId, ValueId)]>) -> ValueId {
+        let kind = VInstructionKind::Phi { ty, incoming };
+        self.emit(kind)
     }
 
     /// Given some (value producing) expression from the HIR, turn it into a `VInstruct`, add it to
@@ -111,19 +128,7 @@ impl<'a> MirBuilder<'a> {
             _ => todo!(),
         };
 
-        let instruction = VInstruct {
-            dst: None,
-            kind,
-            span: expression.get_span().unwrap(),
-        };
-
-        let value_id = self.instructions.push(instruction);
-        self.blocks
-            .get_unchecked_mut(self.current_block_id)
-            .instructs
-            .push(value_id);
-
-        value_id
+        self.emit(kind)
     }
 
     fn lower_binding(&mut self, binding_id: ids::SymbolId) -> Result<ValueId, MirErrors> {

@@ -87,6 +87,15 @@ impl<'a> MirPrinter<'a> {
                     .join(", ");
                 format!("call {callee_s}({args_s}) : ty#{}", return_ty.inner_id())
             }
+            VInstructionKind::Phi { ty, incoming } => {
+                let cs = incoming
+                    .iter()
+                    .map(|(b, v)| format!("{}: %v{}", self.bb(*b), self.v(*v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                format!("phi ty#{} [{}]", ty.inner_id(), cs)
+            }
         }
     }
 
