@@ -231,6 +231,7 @@ pub struct Function {
 }
 
 pub struct Module {
-    data: Vec<DataId>,
-    funcs: Vec<ids::SymbolId>,
+    pub functions: FunctionArena,
+    pub blocks: BlockArena,
+    pub values: InstructionArena,
 }
