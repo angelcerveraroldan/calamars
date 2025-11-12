@@ -190,6 +190,7 @@ impl<'a> MirBuilder<'a> {
 mod test_lower {
 
     use core::hash;
+    use indoc::indoc;
 
     use calamars_core::ids;
     use front::{
@@ -200,7 +201,7 @@ mod test_lower {
     };
 
     use crate::{
-        VInstructionKind,
+        BlockId, VInstructionKind,
         lower::{Context, MirBuilder},
         printer::MirPrinter,
     };
@@ -266,7 +267,6 @@ mod test_lower {
     fn lower_literal() {
         let mut context = make_context();
 
-        // 1 + 3
         let one = lit_i64(1);
         let one_id = context.exprs.push(one);
 
@@ -279,6 +279,28 @@ mod test_lower {
         let id = block.instructs[0];
         let instruct = builder.instructions.get_unchecked(id);
         assert!(matches!(instruct.kind, VInstructionKind::Constant { .. }));
+    }
+
+    #[test]
+    fn lower_literal_txt() {
+        let mut context = make_context();
+
+        // 1
+        let one = lit_i64(1);
+        let one_id = context.exprs.push(one);
+
+        let mut builder = MirBuilder::new(&context);
+        let value_id = builder.lower_expression(one_id);
+        builder.term_ret(value_id);
+
+        let printer = MirPrinter::new(&builder.blocks, &builder.instructions);
+        let b = printer.fmt_block(&builder.current_block_id);
+        let exp = indoc! {"
+            bb0:
+              %v0 = const 1
+              return %v0
+        "};
+        assert_eq!(b, exp);
     }
 
     #[test]
@@ -364,7 +386,6 @@ mod test_lower {
 
         let mut builder = MirBuilder::new(&context);
         let if_lower = builder.lower_expression(cond);
-
         assert_eq!(builder.blocks.len(), 4);
     }
 }
