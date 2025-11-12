@@ -95,28 +95,19 @@ impl<'a> MirPrinter<'a> {
         match t {
             Terminator::Return(Some(v)) => format!("return {}", self.v(*v)),
             Terminator::Return(None) => "return".to_string(),
-            Terminator::Br { target, args } => {
-                let args_s = args
-                    .iter()
-                    .map(|a| self.v(*a))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("br {} ({})", self.bb(*target), args_s)
+            Terminator::Br { target } => {
+                format!("br {}", self.bb(*target))
             }
             Terminator::BrIf {
                 condition,
                 then_target,
                 else_target,
             } => {
-                let (tbb, tv) = then_target;
-                let (ebb, ev) = else_target;
                 format!(
-                    "br_if {}, then: {} ({}) else: {} ({})",
+                    "br_if {}, then: {} else: {}",
                     self.v(*condition),
-                    self.bb(*tbb),
-                    self.v(*tv.as_ref()),
-                    self.bb(*ebb),
-                    self.v(*ev.as_ref()),
+                    self.bb(*then_target),
+                    self.bb(*else_target),
                 )
             }
         }

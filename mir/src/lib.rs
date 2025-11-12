@@ -174,6 +174,10 @@ pub enum VInstructionKind {
         args: Vec<ValueId>,
         return_ty: ids::TypeId,
     },
+    Phi {
+        ty: ids::TypeId,
+        incoming: Box<[(BlockId, ValueId)]>,
+    },
 }
 
 /// A single value producing instruction.
