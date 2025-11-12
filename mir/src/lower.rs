@@ -83,6 +83,11 @@ impl<'a> MirBuilder<'a> {
         self.block_mut().with_term(term);
     }
 
+    fn term_ret(&mut self, value: ValueId) {
+        let term = crate::Terminator::Return(Some(value));
+        self.block_mut().with_term(term);
+    }
+
     fn emit(&mut self, kind: VInstructionKind) -> ValueId {
         let instruct = self.instructions.push(VInstruct { dst: None, kind });
         self.block_mut().with_instruct(instruct);
