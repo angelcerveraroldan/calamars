@@ -62,6 +62,10 @@ impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
         self.data.len()
     }
 
+    pub fn inner(&self) -> &Vec<Ty> {
+        &self.data
+    }
+
     pub fn new_unchecked() -> Self {
         Self {
             data: vec![],
@@ -71,6 +75,10 @@ impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
 }
 
 impl<Ty, Id> InternArena<Ty, Id> {
+    pub fn inner(&self) -> &Vec<Ty> {
+        &self.data
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }
