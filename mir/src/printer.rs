@@ -1,10 +1,14 @@
 use std::fmt;
 
 use calamars_core::Identifier;
+use front::sematic::hir::IdentArena;
+
+use std::fmt::Write;
 
 use crate::{
     BinaryOperator, BitwiseBinaryOperator, BlockArena, BlockId, Callee, Consts, Function,
-    InstructionArena, Terminator, UnaryOperator, VInstructionKind, ValueId,
+    FunctionArena, FunctionId, InstructionArena, Terminator, UnaryOperator, VInstructionKind,
+    ValueId,
 };
 
 pub struct MirPrinter<'a> {
@@ -19,7 +23,7 @@ impl<'a> MirPrinter<'a> {
 
     #[inline]
     fn v(&self, id: ValueId) -> String {
-        format!("v{}", id.0)
+        format!("%v{}", id.0)
     }
 
     #[inline]
@@ -90,7 +94,7 @@ impl<'a> MirPrinter<'a> {
             VInstructionKind::Phi { ty, incoming } => {
                 let cs = incoming
                     .iter()
-                    .map(|(b, v)| format!("{}: %v{}", self.bb(*b), self.v(*v)))
+                    .map(|(b, v)| format!("{}: {}", self.bb(*b), self.v(*v)))
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -120,5 +124,21 @@ impl<'a> MirPrinter<'a> {
                 )
             }
         }
+    }
+
+    pub fn fmt_block(&self, b: &BlockId) -> String {
+        let mut s = String::new();
+        let _ = writeln!(s, "{}:", self.bb(*b));
+
+        let block = self.blocks.get_unchecked(*b);
+        for inst in &block.instructs {
+            let val = self.insts.get_unchecked(*inst);
+            let rhs = self.fmt_vinst(&val.kind);
+            let _ = writeln!(s, "  {} = {}", self.v(*inst), rhs);
+        }
+        if let Some(t) = &block.finally {
+            let _ = writeln!(s, "  {}", self.fmt_term(t));
+        }
+        s
     }
 }
