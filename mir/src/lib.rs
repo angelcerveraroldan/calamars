@@ -19,6 +19,22 @@ use front::syntax::span::Span;
 
 pub type InstructionArena = calamars_core::UncheckedArena<VInstruct, ValueId>;
 pub type BlockArena = calamars_core::UncheckedArena<BBlock, BlockId>;
+pub type FunctionArena = calamars_core::UncheckedArena<Function, FunctionId>;
+
+#[derive(Copy, Debug, Clone)]
+pub struct FunctionId(usize);
+
+impl From<usize> for FunctionId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl calamars_core::Identifier for FunctionId {
+    fn inner_id(&self) -> usize {
+        self.0
+    }
+}
 
 /// An identifier for a `BBlock`
 #[derive(Copy, Debug, Clone)]
@@ -207,7 +223,6 @@ pub struct BBlock {
 }
 
 pub struct Function {
-    id: ids::SymbolId,
     name: ids::IdentId,
     return_ty: ids::TypeId,
     /// The input parameters are the output params of this block
