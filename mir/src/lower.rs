@@ -31,6 +31,7 @@ pub struct Context {
     pub idents: hir::IdentArena,
     pub symbols: hir::SymbolArena,
     pub exprs: hir::ExpressionArena,
+    pub expr_ty: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
 }
 
 /// Handle the process of building a function from the HIR context
@@ -125,6 +126,37 @@ impl<'a> MirBuilder<'a> {
                 let op = operator_map(operator);
                 VInstructionKind::Binary { op, lhs, rhs }
             }
+            hir::Expr::If {
+                predicate,
+                then,
+                otherwise,
+                ..
+            } => {
+                // Lower the predicate, and end the block in a CondBr terminator
+                let pred = self.lower_expression(*predicate);
+                let then_block = self.new_block();
+                let othr_block = self.new_block();
+                self.term_cond_br(pred, then_block, othr_block);
+
+                // A block where we join the two branches into one
+                let joining_block = self.new_block();
+
+                self.switch_to(then_block);
+                let then = self.lower_expression(*predicate);
+                self.term_br(joining_block);
+
+                self.switch_to(othr_block);
+                let otherwise = self.lower_expression(*predicate);
+                self.term_br(joining_block);
+
+                self.switch_to(joining_block);
+
+                let ty = self.ctx.expr_ty.get(&expression_id).unwrap();
+                return self.emit_phi(
+                    *ty,
+                    Box::from([(then_block, then), (othr_block, otherwise)]),
+                );
+            }
             _ => todo!(),
         };
 
@@ -152,6 +184,8 @@ impl<'a> MirBuilder<'a> {
 #[cfg(test)]
 mod test_lower {
 
+    use core::hash;
+
     use calamars_core::ids;
     use front::{
         sematic::hir::{
@@ -173,6 +207,7 @@ mod test_lower {
             idents: IdentArena::new_unchecked(),
             symbols: SymbolArena::new_unchecked(),
             exprs: ExpressionArena::new_checked(),
+            expr_ty: hashbrown::HashMap::new(),
         }
     }
 
