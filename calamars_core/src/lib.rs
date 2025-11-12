@@ -58,11 +58,21 @@ pub type UncheckedArena<Ty, Id> = PolicyArena<Ty, Id, NoFilter>;
 pub type Arena<Ty, Id> = PolicyArena<Ty, Id, RejectErr>;
 
 impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
     pub fn new_unchecked() -> Self {
         Self {
             data: vec![],
             _pd: PhantomData,
         }
+    }
+}
+
+impl<Ty, Id> InternArena<Ty, Id> {
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 }
 
