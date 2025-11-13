@@ -48,6 +48,13 @@ impl Type {
         }
         unreachable!("Make sure to only call this on functions!")
     }
+
+    pub fn function_output(&self) -> ids::TypeId {
+        if let Type::Function { output, .. } = self {
+            return *output;
+        }
+        unreachable!("Make sure to only call this on functions!")
+    }
 }
 
 impl MaybeErr for Type {
