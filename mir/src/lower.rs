@@ -1,14 +1,14 @@
 //! Lower HIR to MIR
 
-use calamars_core::ids;
+use calamars_core::ids::{self, ExpressionId, SymbolId, TypeId};
 use front::{
     sematic::hir::{self, SymbolKind},
-    syntax::span::Span,
+    syntax::{ast::Expression, span::Span},
 };
 
 use crate::{
-    BBlock, BinaryOperator, BlockId, Function, VInstruct, VInstructionKind, ValueId,
-    errors::MirErrors,
+    BBlock, BinaryOperator, BindingId, BlockId, Function, FunctionArena, FunctionId, VInstruct,
+    VInstructionKind, ValueId, errors::MirErrors,
 };
 
 use super::{BlockArena, InstructionArena};
@@ -37,9 +37,12 @@ pub struct Context {
 /// Handle the process of building a function from the HIR context
 pub struct MirBuilder<'a> {
     pub ctx: &'a Context,
+
     current_block_id: BlockId,
+    working_blocks: Vec<BlockId>,
 
     blocks: BlockArena,
+    functions: FunctionArena,
     instructions: InstructionArena,
     locals: hashbrown::HashMap<ids::SymbolId, ValueId>,
 }
@@ -51,7 +54,9 @@ impl<'a> MirBuilder<'a> {
         Self {
             ctx,
             current_block_id,
+            working_blocks: vec![],
             blocks,
+            functions: FunctionArena::new_unchecked(),
             instructions: InstructionArena::new_unchecked(),
             locals: hashbrown::HashMap::new(),
         }
@@ -66,7 +71,9 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn new_block(&mut self) -> BlockId {
-        self.blocks.push(BBlock::default())
+        let id = self.blocks.push(BBlock::default());
+        self.working_blocks.push(id);
+        id
     }
 
     fn term_br(&mut self, go: BlockId) {
@@ -168,14 +175,50 @@ impl<'a> MirBuilder<'a> {
         self.emit(kind)
     }
 
-    fn lower_binding(&mut self, binding_id: ids::SymbolId) -> Result<ValueId, MirErrors> {
+    fn lower_function(
+        &mut self,
+        name: ids::IdentId,
+        return_ty: TypeId,
+        params: &Box<[SymbolId]>,
+        body: ExpressionId,
+    ) -> Result<FunctionId, MirErrors> {
+        self.locals.clear();
+        self.working_blocks.clear();
+
+        let entry = self.new_block();
+        self.current_block_id = entry;
+
+        for (i, param_id) in params.iter().enumerate() {
+            let vk = VInstructionKind::Parameter { index: i as u8 };
+            let vi = self.emit(vk);
+            self.locals.insert(*param_id, vi);
+        }
+
+        let expr = self.lower_expression(body);
+        self.term_ret(expr);
+
+        let f = Function {
+            name,
+            return_ty,
+            entry,
+            blocks: self.working_blocks.clone(),
+        };
+
+        Ok(self.functions.push(f))
+    }
+
+    fn lower_binding(&mut self, binding_id: ids::SymbolId) -> Result<BindingId, MirErrors> {
         let s = self.ctx.symbols.get_unchecked(binding_id);
-        match s.kind {
+        let t = self.ctx.types.get_unchecked(s.ty_id());
+        match &s.kind {
             SymbolKind::Variable { body, .. } => {
-                let assignment = self.lower_expression(body);
+                let assignment = self.lower_expression(*body);
                 self.locals.insert(binding_id, assignment);
-                Ok(assignment)
+                Ok(assignment.into())
             }
+            SymbolKind::Function { params, body } => self
+                .lower_function(s.ident_id(), t.function_output(), &params, *body)
+                .map(Into::into),
             SymbolKind::VariableUndeclared { .. } | SymbolKind::FunctionUndeclared { .. } => {
                 Err(MirErrors::LoweringErr {
                     msg: "Cannot do mir lowering with undeclared var/fn".into(),

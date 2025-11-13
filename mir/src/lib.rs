@@ -22,6 +22,24 @@ pub type BlockArena = calamars_core::UncheckedArena<BBlock, BlockId>;
 pub type FunctionArena = calamars_core::UncheckedArena<Function, FunctionId>;
 
 #[derive(Copy, Debug, Clone)]
+pub enum BindingId {
+    Function(FunctionId),
+    Variable(ValueId),
+}
+
+impl From<FunctionId> for BindingId {
+    fn from(value: FunctionId) -> Self {
+        Self::Function(value)
+    }
+}
+
+impl From<ValueId> for BindingId {
+    fn from(value: ValueId) -> Self {
+        Self::Variable(value)
+    }
+}
+
+#[derive(Copy, Debug, Clone)]
 pub struct FunctionId(usize);
 
 impl From<usize> for FunctionId {
@@ -177,6 +195,10 @@ pub enum VInstructionKind {
     Phi {
         ty: ids::TypeId,
         incoming: Box<[(BlockId, ValueId)]>,
+    },
+
+    Parameter {
+        index: u8,
     },
 }
 
