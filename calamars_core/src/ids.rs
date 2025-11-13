@@ -19,4 +19,4 @@ macro_rules! id_gen {
     };
 }
 
-id_gen!(Type, Symbol, Expression, Ident, String);
+id_gen!(Type, Symbol, Expression, Ident, String, File);

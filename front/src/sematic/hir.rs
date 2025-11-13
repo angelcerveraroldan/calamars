@@ -3,7 +3,7 @@ use calamars_core::{
     ids::{self, ExpressionId, IdentId, SymbolId},
 };
 
-use crate::{sematic::error::SemanticError, source::FileId, syntax::span::Span};
+use crate::{sematic::error::SemanticError, syntax::span::Span};
 
 pub type TypeArena = calamars_core::InternArena<Type, ids::TypeId>;
 
@@ -248,7 +248,7 @@ impl Symbol {
 /// - SymbolArena
 struct Module {
     /// For now, ModuleId is the same as FileId, as each file is exactly a module.
-    pub id: FileId,
+    pub id: ids::FileId,
     pub name: ids::IdentId,
 
     /// All of the symbols in this module.
