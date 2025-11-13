@@ -151,15 +151,18 @@ impl MaybeErr for Expr {
     const ERR: Self = Expr::Err;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SymbolKind {
     /// A function parameter, this will have no body, as it will be used when type cecking a
     /// function, not during the call
     Parameter,
     Extern,
     /// A function that has yet to have a body attached to it
-    FunctionUndeclared,
+    FunctionUndeclared {
+        params: Box<[SymbolId]>,
+    },
     Function {
+        params: Box<[SymbolId]>,
         body: ids::ExpressionId,
     },
     /// A variable that has yet to have a body attached to it
@@ -201,16 +204,19 @@ impl Symbol {
     }
 
     pub fn update_body(&mut self, body: ids::ExpressionId) {
-        let sk = match self.kind {
-            SymbolKind::Parameter | SymbolKind::Extern => return (),
-            SymbolKind::FunctionUndeclared | SymbolKind::Function { .. } => {
-                SymbolKind::Function { body }
+        match &mut self.kind {
+            SymbolKind::Parameter | SymbolKind::Extern => return,
+            SymbolKind::FunctionUndeclared { params } | SymbolKind::Function { params, .. } => {
+                let params = std::mem::take(params);
+                self.kind = SymbolKind::Function { params, body };
             }
             SymbolKind::VariableUndeclared { mutable } | SymbolKind::Variable { mutable, .. } => {
-                SymbolKind::Variable { mutable, body }
+                self.kind = SymbolKind::Variable {
+                    mutable: *mutable,
+                    body,
+                };
             }
         };
-        self.kind = sk;
     }
 
     pub fn ident_id(&self) -> ids::IdentId {
