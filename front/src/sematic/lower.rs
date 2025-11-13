@@ -1,5 +1,7 @@
 //! Lower AST to HIR
 
+use std::ops::Index;
+
 use calamars_core::ids::{self, SymbolId};
 
 use crate::{
@@ -86,6 +88,31 @@ impl HirBuilder {
             })
         }
         sid
+    }
+
+    /// Given a functions declaration detials, generate SymbolIds for the input parameters, but
+    /// dont add them to the current scope.
+    fn function_param_ids(
+        &mut self,
+        idents: &Vec<ast::Ident>,
+        fn_type: &ast::Type,
+    ) -> Box<[SymbolId]> {
+        let ty_id = self.type_lower(fn_type);
+        let input_tys = self.types.get_unchecked(ty_id).function_input();
+
+        let mut v = vec![];
+        for (ident, ty_id) in idents.iter().zip(input_tys) {
+            let ident_id = self.identifiers.intern(&ident.ident().to_owned());
+            let symbol = Symbol::new(
+                hir::SymbolKind::Parameter,
+                *ty_id,
+                ident_id,
+                ident.span(),
+                ident.span(),
+            );
+            v.push(self.symbols.push(symbol));
+        }
+        v.into()
     }
 
     fn resolve(&self, s: ids::IdentId, usage: Span) -> Result<SymbolId, SemanticError> {
@@ -190,7 +217,8 @@ impl HirBuilder {
     fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
         let ty = self.type_lower(def.fntype());
-        let kind = hir::SymbolKind::FunctionUndeclared;
+        let params = self.function_param_ids(def.input_idents(), def.fntype());
+        let kind = hir::SymbolKind::FunctionUndeclared { params };
         let symbol = Symbol::new(kind, ty, name, def.name_span(), def.span());
         self.insert_symbol(symbol)
     }
@@ -204,33 +232,20 @@ impl HirBuilder {
             ast::Declaration::Function(func_dec) => func_dec.body(),
         };
 
-        if let ast::Declaration::Function(fd) = declaration {
+        let symbol = self.symbols.get_unchecked(sid);
+        let skc = symbol.kind.clone();
+
+        if let hir::SymbolKind::FunctionUndeclared { params } = &skc {
             self.push_scope();
-
-            let ast_ty = fd.fntype();
-            let ty_id = self.type_lower(ast_ty);
-            let ty = self.types.get_unchecked(ty_id);
-            let input_tys = ty.function_input();
-            let input_nms = fd.input_idents();
-
-            let symbols = input_tys.iter().zip(input_nms).map(|(ty, ident)| {
-                let id = self.identifiers.intern(&ident.ident().to_string());
-                Symbol::new(
-                    hir::SymbolKind::Parameter,
-                    *ty,
-                    id,
-                    ident.span(),
-                    ident.span(),
-                )
-            });
-
-            for symbol in symbols.collect::<Vec<_>>() {
-                self.insert_symbol(symbol);
+            let last = self.scopes.last_mut().expect("We just created a scope!");
+            for id in params {
+                let param = self.symbols.get_unchecked(*id);
+                last.insert(param.ident_id(), *id);
             }
         }
 
         let expression_id = self.expression(body);
-        if matches!(declaration, ast::Declaration::Function(_)) {
+        if matches!(skc, hir::SymbolKind::FunctionUndeclared { .. }) {
             self.pop_scope();
         }
 
