@@ -19,9 +19,19 @@ pub struct Context {
     expressions: ExpressionArena,
 }
 
+impl Context {
+    pub fn new(symbols: SymbolArena, expressions: ExpressionArena) -> Self {
+        Self {
+            symbols,
+            expressions,
+        }
+    }
+}
+
 pub struct TypeHandler {
-    types: TypeArena,
-    errors: Vec<SemanticError>,
+    pub types: TypeArena,
+    pub expression_types: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
+    pub errors: Vec<SemanticError>,
 }
 
 impl TypeHandler {
@@ -67,9 +77,12 @@ impl TypeHandler {
     ///
     /// TODO: Insert the typeid to a map, so that later we can check the type of an expression id
     fn type_expression(&mut self, ctx: &Context, e_id: &ids::ExpressionId) -> ids::TypeId {
-        let expression = ctx.expressions.get_unchecked(*e_id);
+        if let Some(ty) = self.expression_types.get(e_id) {
+            return *ty;
+        }
 
-        match expression {
+        let expression = ctx.expressions.get_unchecked(*e_id);
+        let type_id = match expression {
             hir::Expr::Err => self.types.err_id(),
             hir::Expr::Literal { constant, .. } => {
                 let ty = match constant {
@@ -140,7 +153,10 @@ impl TypeHandler {
                 // If both branches retur the same, then return that type
                 t_ty
             }
-        }
+        };
+
+        self.expression_types.insert(*e_id, type_id);
+        type_id
     }
 
     fn type_check_binary_ops(
@@ -220,6 +236,7 @@ mod tests {
         types.intern(&Type::String);
         TypeHandler {
             types,
+            expression_types: hashbrown::HashMap::new(),
             errors: vec![],
         }
     }

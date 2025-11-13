@@ -13,16 +13,16 @@ use crate::{
 };
 
 pub struct HirBuilder {
-    types: hir::TypeArena,
-    const_str: hir::ConstantStringArena,
-    identifiers: hir::IdentArena,
-    expressions: hir::ExpressionArena,
-    symbols: hir::SymbolArena,
+    pub types: hir::TypeArena,
+    pub const_str: hir::ConstantStringArena,
+    pub identifiers: hir::IdentArena,
+    pub expressions: hir::ExpressionArena,
+    pub symbols: hir::SymbolArena,
     /// Scopes are used for shadowing. When in the same scope we do not allow shadowing.
     scopes: Vec<hashbrown::HashMap<ids::IdentId, SymbolId>>,
 
     /// Errors, if any are present, we cannot proceed with compilation
-    diag_err: Vec<SemanticError>,
+    pub diag_err: Vec<SemanticError>,
     /// Warnings, if any are presenet, we can still proceed with compilation
     diag_war: Vec<()>,
 }
