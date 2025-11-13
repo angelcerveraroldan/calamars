@@ -1,10 +1,14 @@
 use std::fmt;
 
 use calamars_core::Identifier;
+use front::sematic::hir::IdentArena;
+
+use std::fmt::Write;
 
 use crate::{
     BinaryOperator, BitwiseBinaryOperator, BlockArena, BlockId, Callee, Consts, Function,
-    InstructionArena, Terminator, UnaryOperator, VInstructionKind, ValueId,
+    FunctionArena, FunctionId, InstructionArena, Terminator, UnaryOperator, VInstructionKind,
+    ValueId,
 };
 
 pub struct MirPrinter<'a> {
@@ -19,7 +23,7 @@ impl<'a> MirPrinter<'a> {
 
     #[inline]
     fn v(&self, id: ValueId) -> String {
-        format!("v{}", id.0)
+        format!("%v{}", id.0)
     }
 
     #[inline]
@@ -87,6 +91,15 @@ impl<'a> MirPrinter<'a> {
                     .join(", ");
                 format!("call {callee_s}({args_s}) : ty#{}", return_ty.inner_id())
             }
+            VInstructionKind::Phi { ty, incoming } => {
+                let cs = incoming
+                    .iter()
+                    .map(|(b, v)| format!("{}: {}", self.bb(*b), self.v(*v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                format!("phi ty#{} [{}]", ty.inner_id(), cs)
+            }
         }
     }
 
@@ -95,30 +108,37 @@ impl<'a> MirPrinter<'a> {
         match t {
             Terminator::Return(Some(v)) => format!("return {}", self.v(*v)),
             Terminator::Return(None) => "return".to_string(),
-            Terminator::Br { target, args } => {
-                let args_s = args
-                    .iter()
-                    .map(|a| self.v(*a))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("br {} ({})", self.bb(*target), args_s)
+            Terminator::Br { target } => {
+                format!("br {}", self.bb(*target))
             }
             Terminator::BrIf {
                 condition,
                 then_target,
                 else_target,
             } => {
-                let (tbb, tv) = then_target;
-                let (ebb, ev) = else_target;
                 format!(
-                    "br_if {}, then: {} ({}) else: {} ({})",
+                    "br_if {}, then: {} else: {}",
                     self.v(*condition),
-                    self.bb(*tbb),
-                    self.v(*tv.as_ref()),
-                    self.bb(*ebb),
-                    self.v(*ev.as_ref()),
+                    self.bb(*then_target),
+                    self.bb(*else_target),
                 )
             }
         }
+    }
+
+    pub fn fmt_block(&self, b: &BlockId) -> String {
+        let mut s = String::new();
+        let _ = writeln!(s, "{}:", self.bb(*b));
+
+        let block = self.blocks.get_unchecked(*b);
+        for inst in &block.instructs {
+            let val = self.insts.get_unchecked(*inst);
+            let rhs = self.fmt_vinst(&val.kind);
+            let _ = writeln!(s, "  {} = {}", self.v(*inst), rhs);
+        }
+        if let Some(t) = &block.finally {
+            let _ = writeln!(s, "  {}", self.fmt_term(t));
+        }
+        s
     }
 }

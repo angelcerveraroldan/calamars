@@ -1,7 +1,10 @@
 //! Lower HIR to MIR
 
 use calamars_core::ids;
-use front::sematic::hir::{self, SymbolKind};
+use front::{
+    sematic::hir::{self, SymbolKind},
+    syntax::span::Span,
+};
 
 use crate::{
     BBlock, BinaryOperator, BlockId, Function, VInstruct, VInstructionKind, ValueId,
@@ -28,6 +31,7 @@ pub struct Context {
     pub idents: hir::IdentArena,
     pub symbols: hir::SymbolArena,
     pub exprs: hir::ExpressionArena,
+    pub expr_ty: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
 }
 
 /// Handle the process of building a function from the HIR context
@@ -42,38 +46,57 @@ pub struct MirBuilder<'a> {
 
 impl<'a> MirBuilder<'a> {
     pub fn new(ctx: &'a Context) -> Self {
-        let mut s = Self {
+        let mut blocks = BlockArena::new_unchecked();
+        let current_block_id = blocks.push(BBlock::default());
+        Self {
             ctx,
-            current_block_id: BlockId(0),
-            blocks: BlockArena::new_unchecked(),
+            current_block_id,
+            blocks,
             instructions: InstructionArena::new_unchecked(),
             locals: hashbrown::HashMap::new(),
+        }
+    }
+
+    fn switch_to(&mut self, b: BlockId) {
+        self.current_block_id = b;
+    }
+
+    fn block_mut(&mut self) -> &mut BBlock {
+        self.blocks.get_unchecked_mut(self.current_block_id)
+    }
+
+    fn new_block(&mut self) -> BlockId {
+        self.blocks.push(BBlock::default())
+    }
+
+    fn term_br(&mut self, go: BlockId) {
+        let term = crate::Terminator::Br { target: go };
+        self.block_mut().with_term(term);
+    }
+
+    fn term_cond_br(&mut self, condition: ValueId, then: BlockId, otherwise: BlockId) {
+        let term = crate::Terminator::BrIf {
+            condition,
+            then_target: then,
+            else_target: otherwise,
         };
-        s.next_block();
-        s
+        self.block_mut().with_term(term);
     }
 
-    /// Start working on the next block
-    fn next_block(&mut self) {
-        let default_block = BBlock {
-            params: vec![],
-            instructs: vec![],
-            finally: crate::Terminator::Return(None),
-        };
-        let id = self.blocks.push(default_block);
-        self.current_block_id = id;
+    fn term_ret(&mut self, value: ValueId) {
+        let term = crate::Terminator::Return(Some(value));
+        self.block_mut().with_term(term);
     }
 
-    /// Finalize the current block, and insert it into a function
-    fn insert_block_to_fn(&mut self, func: &mut Function) {
-        func.blocks.push(self.current_block_id);
-        self.next_block();
+    fn emit(&mut self, kind: VInstructionKind) -> ValueId {
+        let instruct = self.instructions.push(VInstruct { dst: None, kind });
+        self.block_mut().with_instruct(instruct);
+        instruct
     }
 
-    /// Add a return type to the current block
-    fn finish_block_with_return(&mut self, vid: ValueId) {
-        self.blocks.get_unchecked_mut(self.current_block_id).finally =
-            crate::Terminator::Return(Some(vid))
+    fn emit_phi(&mut self, ty: ids::TypeId, incoming: Box<[(BlockId, ValueId)]>) -> ValueId {
+        let kind = VInstructionKind::Phi { ty, incoming };
+        self.emit(kind)
     }
 
     /// Given some (value producing) expression from the HIR, turn it into a `VInstruct`, add it to
@@ -108,22 +131,41 @@ impl<'a> MirBuilder<'a> {
                 let op = operator_map(operator);
                 VInstructionKind::Binary { op, lhs, rhs }
             }
+            hir::Expr::If {
+                predicate,
+                then,
+                otherwise,
+                ..
+            } => {
+                // Lower the predicate, and end the block in a CondBr terminator
+                let pred = self.lower_expression(*predicate);
+                let then_block = self.new_block();
+                let othr_block = self.new_block();
+                self.term_cond_br(pred, then_block, othr_block);
+
+                // A block where we join the two branches into one
+                let joining_block = self.new_block();
+
+                self.switch_to(then_block);
+                let then = self.lower_expression(*then);
+                self.term_br(joining_block);
+
+                self.switch_to(othr_block);
+                let otherwise = self.lower_expression(*otherwise);
+                self.term_br(joining_block);
+
+                self.switch_to(joining_block);
+
+                let ty = self.ctx.expr_ty.get(&expression_id).unwrap();
+                return self.emit_phi(
+                    *ty,
+                    Box::from([(then_block, then), (othr_block, otherwise)]),
+                );
+            }
             _ => todo!(),
         };
 
-        let instruction = VInstruct {
-            dst: None,
-            kind,
-            span: expression.get_span().unwrap(),
-        };
-
-        let value_id = self.instructions.push(instruction);
-        self.blocks
-            .get_unchecked_mut(self.current_block_id)
-            .instructs
-            .push(value_id);
-
-        value_id
+        self.emit(kind)
     }
 
     fn lower_binding(&mut self, binding_id: ids::SymbolId) -> Result<ValueId, MirErrors> {
@@ -147,6 +189,9 @@ impl<'a> MirBuilder<'a> {
 #[cfg(test)]
 mod test_lower {
 
+    use core::hash;
+    use indoc::indoc;
+
     use calamars_core::ids;
     use front::{
         sematic::hir::{
@@ -156,7 +201,7 @@ mod test_lower {
     };
 
     use crate::{
-        VInstructionKind,
+        BlockId, VInstructionKind,
         lower::{Context, MirBuilder},
         printer::MirPrinter,
     };
@@ -168,6 +213,7 @@ mod test_lower {
             idents: IdentArena::new_unchecked(),
             symbols: SymbolArena::new_unchecked(),
             exprs: ExpressionArena::new_checked(),
+            expr_ty: hashbrown::HashMap::new(),
         }
     }
 
@@ -201,11 +247,26 @@ mod test_lower {
         }
     }
 
+    fn if_stm(
+        predicate: ids::ExpressionId,
+        then: ids::ExpressionId,
+        otherwise: ids::ExpressionId,
+    ) -> hir::Expr {
+        hir::Expr::If {
+            predicate,
+            then,
+            otherwise,
+            span: Span::dummy(),
+            pred_span: Span::dummy(),
+            then_span: Span::dummy(),
+            othewise_span: Span::dummy(),
+        }
+    }
+
     #[test]
     fn lower_literal() {
         let mut context = make_context();
 
-        // 1 + 3
         let one = lit_i64(1);
         let one_id = context.exprs.push(one);
 
@@ -218,6 +279,28 @@ mod test_lower {
         let id = block.instructs[0];
         let instruct = builder.instructions.get_unchecked(id);
         assert!(matches!(instruct.kind, VInstructionKind::Constant { .. }));
+    }
+
+    #[test]
+    fn lower_literal_txt() {
+        let mut context = make_context();
+
+        // 1
+        let one = lit_i64(1);
+        let one_id = context.exprs.push(one);
+
+        let mut builder = MirBuilder::new(&context);
+        let value_id = builder.lower_expression(one_id);
+        builder.term_ret(value_id);
+
+        let printer = MirPrinter::new(&builder.blocks, &builder.instructions);
+        let b = printer.fmt_block(&builder.current_block_id);
+        let exp = indoc! {"
+            bb0:
+              %v0 = const 1
+              return %v0
+        "};
+        assert_eq!(b, exp);
     }
 
     #[test]
@@ -252,5 +335,57 @@ mod test_lower {
         assert!(matches!(zi.kind, VInstructionKind::Constant { .. }));
         assert!(matches!(oi.kind, VInstructionKind::Constant { .. }));
         assert!(matches!(ti.kind, VInstructionKind::Binary { .. }));
+    }
+
+    #[test]
+    fn simple_if() {
+        /*
+         * Try to lower the following:
+         * if true then 1+1 else 4
+         *
+         * This should generate 4 blocks:
+         * 1. define constant "true" and do conditional break
+         * 2. define constant 1 and return 1+1
+         * 3. define constant 4 and return it
+         * 4. Phi instruction that assigns either 1 or 4
+         * */
+
+        let mut context = make_context();
+        // Boolean Type
+        let bt = context.types.intern(&hir::Type::Boolean);
+        // Integer Type
+        let it = context.types.intern(&hir::Type::Integer);
+
+        // Make literals
+        let t = lit_bool(true);
+        let f = lit_i64(4);
+        let o = lit_i64(1);
+        let op = lit_i64(1);
+
+        // Generate expression ids
+        let t = context.exprs.push(t);
+        let f = context.exprs.push(f);
+        let o = context.exprs.push(o);
+        let op = context.exprs.push(op);
+
+        // Map expression ids to their types
+        context.expr_ty.insert(t, bt);
+        context.expr_ty.insert(f, it);
+        context.expr_ty.insert(o, it);
+        context.expr_ty.insert(op, it);
+
+        // Binary expression
+        let bin = bin_expr(hir::BinOp::Add, o, op);
+        let bin = context.exprs.push(bin);
+        context.expr_ty.insert(bin, it);
+
+        // If expression
+        let cond = if_stm(t, bin, f);
+        let cond = context.exprs.push(cond);
+        context.expr_ty.insert(cond, it);
+
+        let mut builder = MirBuilder::new(&context);
+        let if_lower = builder.lower_expression(cond);
+        assert_eq!(builder.blocks.len(), 4);
     }
 }

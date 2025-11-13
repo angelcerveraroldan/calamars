@@ -7,3 +7,4 @@ edition = "2024"
 calamars_core = { path="../calamars_core" }
 front = { path="../front" }
 hashbrown = "0.16.0"
+indoc = "2"

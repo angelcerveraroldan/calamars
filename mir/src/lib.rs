@@ -19,6 +19,22 @@ use front::syntax::span::Span;
 
 pub type InstructionArena = calamars_core::UncheckedArena<VInstruct, ValueId>;
 pub type BlockArena = calamars_core::UncheckedArena<BBlock, BlockId>;
+pub type FunctionArena = calamars_core::UncheckedArena<Function, FunctionId>;
+
+#[derive(Copy, Debug, Clone)]
+pub struct FunctionId(usize);
+
+impl From<usize> for FunctionId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl calamars_core::Identifier for FunctionId {
+    fn inner_id(&self) -> usize {
+        self.0
+    }
+}
 
 /// An identifier for a `BBlock`
 #[derive(Copy, Debug, Clone)]
@@ -158,6 +174,10 @@ pub enum VInstructionKind {
         args: Vec<ValueId>,
         return_ty: ids::TypeId,
     },
+    Phi {
+        ty: ids::TypeId,
+        incoming: Box<[(BlockId, ValueId)]>,
+    },
 }
 
 /// A single value producing instruction.
@@ -166,26 +186,23 @@ pub enum VInstructionKind {
 pub struct VInstruct {
     dst: Option<ValueId>,
     kind: VInstructionKind,
-    span: Span,
 }
 
 /// Every basic block will end with a terminator instruction.
+#[derive(Debug)]
 pub enum Terminator {
     /// When a return instruction is executed, control flow will return back to the calling
     /// functions context.
     Return(Option<ValueId>),
     /// Break out of a block
-    Br {
-        target: BlockId,
-        args: Box<[ValueId]>,
-    },
+    Br { target: BlockId },
     BrIf {
         /// This is the result value of the predicate in the if statement
         condition: ValueId,
         /// What block to jump to if the predicate was true
-        then_target: (BlockId, Box<ValueId>),
+        then_target: BlockId,
         /// What block to jump to if the predicate was false
-        else_target: (BlockId, Box<ValueId>),
+        else_target: BlockId,
     },
     // Switch { .. }
 }
@@ -200,14 +217,33 @@ pub enum Origin {
 }
 
 /// A [Basic Block](https://en.wikipedia.org/wiki/Basic_block)
+#[derive(Debug, Default)]
 pub struct BBlock {
     params: Vec<(ValueId, ids::TypeId)>,
     instructs: Vec<ValueId>,
-    finally: Terminator,
+    finally: Option<Terminator>,
+}
+
+impl BBlock {
+    pub fn with_param(&mut self, value: ValueId, ty: ids::TypeId) -> &mut BBlock {
+        self.params.push((value, ty));
+        self
+    }
+
+    pub fn with_term(&mut self, term: Terminator) -> &mut BBlock {
+        debug_assert!(self.finally.is_none(), "Cannot double-assign a temrinator");
+
+        self.finally = Some(term);
+        self
+    }
+
+    pub fn with_instruct(&mut self, instruct: ValueId) -> &mut BBlock {
+        self.instructs.push(instruct);
+        self
+    }
 }
 
 pub struct Function {
-    id: ids::SymbolId,
     name: ids::IdentId,
     return_ty: ids::TypeId,
     /// The input parameters are the output params of this block
@@ -216,6 +252,7 @@ pub struct Function {
 }
 
 pub struct Module {
-    data: Vec<DataId>,
-    funcs: Vec<ids::SymbolId>,
+    pub functions: FunctionArena,
+    pub blocks: BlockArena,
+    pub values: InstructionArena,
 }

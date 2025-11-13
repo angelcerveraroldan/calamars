@@ -242,7 +242,8 @@ struct Module {
     symbols: Box<[ids::SymbolId]>,
     /// All of the expressions in this module.
     expressions: Box<[ids::ExpressionId]>,
-
+    /// Expression types
+    expression_type: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
     /// Top-level public declarations.
     ///
     /// This can be used by other modules when importing this one.
