@@ -1,74 +1,63 @@
 //! Type checking on the HIR
 
+use std::any::Any;
+
 use calamars_core::{
     MaybeErr,
-    ids::{self, ExpressionId},
+    ids::{self, ExpressionId, SymbolId},
 };
 
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, ExpressionArena, IdentArena, SymbolArena, Type, TypeArena, type_id_stringify},
+        hir::{
+            self, ExpressionArena, IdentArena, Symbol, SymbolArena, Type, TypeArena,
+            type_id_stringify,
+        },
     },
-    syntax::{ast::Expression, span::Span},
+    syntax::{
+        ast::{Declaration, Expression},
+        span::Span,
+    },
 };
 
-/// Immutable context containig arenas from Stage 1
-pub struct Context {
-    symbols: SymbolArena,
-    expressions: ExpressionArena,
-}
-
-impl Context {
-    pub fn new(symbols: SymbolArena, expressions: ExpressionArena) -> Self {
-        Self {
-            symbols,
-            expressions,
-        }
-    }
-}
-
-pub struct TypeHandler {
-    pub types: TypeArena,
-    pub expression_types: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
+/// `TypeHandler` is responsible for checking that the HIR's type semantics are correct.
+///
+/// It should identify errors such as `val x: Int = "hello"`, and return pretty diagnostics.
+pub struct TypeHandler<'a> {
+    pub module: &'a mut hir::Module,
     pub errors: Vec<SemanticError>,
 }
 
-impl TypeHandler {
+impl<'a> TypeHandler<'a> {
     fn match_type(&mut self, id: ids::TypeId, ty: &Type) -> bool {
-        let ty_id = self.types.intern(ty);
+        let ty_id = self.module.types.intern(ty);
         id == ty_id
     }
 
     #[inline]
     fn push_wrong_type(&mut self, actual: ids::TypeId, expected: &str, span: Span) {
         self.errors.push(SemanticError::WrongType {
-            actual: type_id_stringify(&self.types, actual),
+            actual: type_id_stringify(&self.module.types, actual),
             expected: expected.into(),
             span,
         });
     }
 
-    fn ensure_numeric(&mut self, cx: &Context, expr: ids::ExpressionId, t: ids::TypeId) {
+    fn ensure_numeric(&mut self, expr: ids::ExpressionId, t: ids::TypeId) {
         if self.match_type(t, &Type::Integer) || self.match_type(t, &Type::Float) {
             return;
         }
-        let sp = cx.expressions.get_unchecked(expr).get_span().unwrap();
+        let sp = self.module.exprs.get_unchecked(expr).get_span().unwrap();
         self.push_wrong_type(t, "Numerical", sp);
     }
 
-    fn ensure_type(
-        &mut self,
-        ctx: &Context,
-        expr: ids::ExpressionId,
-        ty_id: ids::TypeId,
-        expected: ids::TypeId,
-    ) {
+    fn ensure_type(&mut self, expr: ids::ExpressionId, ty_id: ids::TypeId, expected: ids::TypeId) {
         if ty_id == expected {
             return;
         }
-        let sp = ctx.expressions.get_unchecked(expr).get_span().unwrap();
-        self.push_wrong_type(ty_id, &type_id_stringify(&self.types, expected), sp);
+        let sp = self.module.exprs.get_unchecked(expr).get_span().unwrap();
+        self.push_wrong_type(ty_id, &type_id_stringify(&self.module.types, expected), sp);
     }
 
     /// Given some expression, this will return it's type id. If there are any semantic typing
@@ -76,44 +65,45 @@ impl TypeHandler {
     /// return the typeid of the `Error` type.
     ///
     /// TODO: Insert the typeid to a map, so that later we can check the type of an expression id
-    fn type_expression(&mut self, ctx: &Context, e_id: &ids::ExpressionId) -> ids::TypeId {
-        if let Some(ty) = self.expression_types.get(e_id) {
+    fn type_expression(&mut self, e_id: &ids::ExpressionId) -> ids::TypeId {
+        if let Some(ty) = self.module.expression_types.get(e_id) {
             return *ty;
         }
 
-        let expression = ctx.expressions.get_unchecked(*e_id);
-        let type_id = match expression {
-            hir::Expr::Err => self.types.err_id(),
+        let expression = self.module.exprs.get_unchecked(*e_id).clone();
+        let type_id = match &expression {
+            hir::Expr::Err => self.module.types.err_id(),
             hir::Expr::Literal { constant, .. } => {
                 let ty = match constant {
                     hir::Const::I64(_) => Type::Integer,
                     hir::Const::Bool(_) => Type::Boolean,
                     hir::Const::String(_) => Type::String,
                 };
-                *self.types.resolve_unchecked(&ty)
+                *self.module.types.resolve_unchecked(&ty)
             }
-            hir::Expr::Identifier { id, .. } => ctx
+            hir::Expr::Identifier { id, .. } => self
+                .module
                 .symbols
                 .get(*id)
                 .map(|s| s.ty_id())
-                .unwrap_or(self.types.err_id()),
+                .unwrap_or(self.module.types.err_id()),
             hir::Expr::BinaryOperation {
                 operator,
                 lhs,
                 rhs,
                 span,
-            } => self.type_check_binary_ops(ctx, operator, lhs, rhs, *span),
+            } => self.type_check_binary_ops(operator, lhs, rhs, *span),
             hir::Expr::Call { f, inputs, span } => {
-                let expression_ty = self.type_expression(ctx, f);
+                let expression_ty = self.type_expression(f);
                 // TODO: Handle error type separately here
-                match self.types.get_unchecked(expression_ty) {
+                match self.module.types.get_unchecked(expression_ty) {
                     Type::Function { output, .. } => *output,
                     otherwise => {
                         self.errors.push(SemanticError::NonCallable {
                             msg: "Expected callable",
                             span: *span,
                         });
-                        self.types.err_id()
+                        self.module.types.err_id()
                     }
                 }
             }
@@ -127,27 +117,26 @@ impl TypeHandler {
                 othewise_span,
             } => {
                 // Make sure that the predicate is a boolean
-                let p_ty = self.type_expression(ctx, predicate);
-                if (p_ty != self.types.err_id()) {
-                    let bool = self.types.intern(&Type::Boolean);
-                    self.ensure_type(ctx, *predicate, p_ty, bool);
+                let p_ty = self.type_expression(predicate);
+                if (p_ty != self.module.types.err_id()) {
+                    let bool = self.module.types.intern(&Type::Boolean);
+                    self.ensure_type(*predicate, p_ty, bool);
                 }
 
                 // Make sure that if and else branches return the same
-                let t_ty = self.type_expression(ctx, then);
-                let o_ty = self.type_expression(ctx, otherwise);
+                let t_ty = self.type_expression(then);
+                let o_ty = self.type_expression(otherwise);
 
-                if (t_ty == self.types.err_id() || o_ty == self.types.err_id()) {
-                    return self.types.err_id();
+                if (t_ty == self.module.types.err_id() || o_ty == self.module.types.err_id()) {
+                    return self.module.types.err_id();
                 }
 
-                println!("lhs: {:?}, rhs: {:?}", t_ty, o_ty);
                 if (t_ty != o_ty) {
                     self.errors.push(SemanticError::MismatchedIfBranches {
                         then_span: *then_span,
                         else_span: *othewise_span,
                     });
-                    return self.types.err_id();
+                    return self.module.types.err_id();
                 }
 
                 // If both branches retur the same, then return that type
@@ -155,36 +144,35 @@ impl TypeHandler {
             }
         };
 
-        self.expression_types.insert(*e_id, type_id);
+        self.module.expression_types.insert(*e_id, type_id);
         type_id
     }
 
     fn type_check_binary_ops(
         &mut self,
-        ctx: &Context,
         op: &hir::BinOp,
         lhs: &ExpressionId,
         rhs: &ExpressionId,
         span: Span,
     ) -> ids::TypeId {
-        let lhs_type_id = self.type_expression(ctx, lhs);
-        let rhs_type_id = self.type_expression(ctx, rhs);
+        let lhs_type_id = self.type_expression(lhs);
+        let rhs_type_id = self.type_expression(rhs);
 
-        let int_type_id = *self.types.resolve_unchecked(&Type::Integer);
-        let float_type_id = *self.types.resolve_unchecked(&Type::Float);
+        let int_type_id = *self.module.types.resolve_unchecked(&Type::Integer);
+        let float_type_id = *self.module.types.resolve_unchecked(&Type::Float);
 
         match op {
             // Both numerical
             hir::BinOp::Add | hir::BinOp::Sub | hir::BinOp::Mult | hir::BinOp::Div => {
-                self.ensure_numeric(ctx, *lhs, lhs_type_id);
-                self.ensure_numeric(ctx, *rhs, rhs_type_id);
+                self.ensure_numeric(*lhs, lhs_type_id);
+                self.ensure_numeric(*rhs, rhs_type_id);
 
                 let lhs_numerical = (lhs_type_id == float_type_id) || (lhs_type_id == int_type_id);
                 let rhs_numerical = (rhs_type_id == float_type_id) || (rhs_type_id == int_type_id);
 
                 // If they are not both numerica, then this is an error
                 if !(lhs_numerical && rhs_numerical) {
-                    return self.types.err_id();
+                    return self.module.types.err_id();
                 }
 
                 // If they are both integers, then we will return integer
@@ -196,28 +184,98 @@ impl TypeHandler {
                 float_type_id
             }
             hir::BinOp::EqEq => {
-                if (lhs_type_id == self.types.err_id() || rhs_type_id == self.types.err_id()) {
-                    return self.types.err_id();
+                if (lhs_type_id == self.module.types.err_id()
+                    || rhs_type_id == self.module.types.err_id())
+                {
+                    return self.module.types.err_id();
                 }
 
                 if (lhs_type_id != rhs_type_id) {
-                    let rhs_expr = ctx.expressions.get_unchecked(*rhs);
+                    let rhs_expr = self.module.exprs.get_unchecked(*rhs);
                     self.errors.push(SemanticError::WrongType {
-                        expected: type_id_stringify(&self.types, lhs_type_id),
-                        actual: type_id_stringify(&self.types, rhs_type_id),
+                        expected: type_id_stringify(&self.module.types, lhs_type_id),
+                        actual: type_id_stringify(&self.module.types, rhs_type_id),
                         // We can unwrap since we made sure its not error type
                         span: rhs_expr.get_span().unwrap(),
                     });
                 }
-                self.types.err_id()
+                self.module.types.err_id()
             }
             // Both integers
             hir::BinOp::Mod => {
-                self.ensure_type(ctx, *lhs, lhs_type_id, int_type_id);
-                self.ensure_type(ctx, *rhs, rhs_type_id, int_type_id);
-                self.types.err_id()
+                self.ensure_type(*lhs, lhs_type_id, int_type_id);
+                self.ensure_type(*rhs, rhs_type_id, int_type_id);
+                self.module.types.err_id()
             }
         }
+    }
+
+    pub fn type_check_function_declaration(
+        &mut self,
+        name_span: Span,
+        body: ids::ExpressionId,
+        expected_type: ids::TypeId,
+    ) {
+        let body_ty = self.type_expression(&body);
+        if body_ty != expected_type {
+            let body = self.module.exprs.get_unchecked(body);
+            self.errors.push(SemanticError::FnWrongReturnType {
+                expected: type_id_stringify(&self.module.types, expected_type),
+                // none for now, but it really shuold not be none ... We need to improve spans
+                return_type_span: None,
+                fn_name_span: name_span,
+                actual: type_id_stringify(&self.module.types, body_ty),
+                return_span: body.get_span(),
+                body_span: body.get_span().unwrap(),
+            });
+        }
+    }
+
+    pub fn type_check_variable_declaration(
+        &mut self,
+        name_span: Span,
+        body: ids::ExpressionId,
+        expected_type: ids::TypeId,
+    ) {
+        let body_ty = self.type_expression(&body);
+        if body_ty != expected_type {
+            let body = self.module.exprs.get_unchecked(body);
+            self.errors.push(SemanticError::BindingWrongType {
+                expected: type_id_stringify(&self.module.types, expected_type),
+                return_type_span: name_span,
+                actual: type_id_stringify(&self.module.types, body_ty),
+                return_span: body.get_span(),
+                body_span: body.get_span().unwrap(),
+            })
+        }
+    }
+
+    pub fn type_check_declaration(&mut self, dec: ids::SymbolId) {
+        let sym = self.module.symbols.get_unchecked(dec);
+        match &sym.kind {
+            hir::SymbolKind::Function { body, .. } => {
+                let expected_ty = sym.ty_id();
+                let ty = self.module.types.get_unchecked(expected_ty);
+                self.type_check_function_declaration(sym.name_span(), *body, ty.function_output())
+            }
+            hir::SymbolKind::Variable { body, .. } => {
+                let expected_ty = sym.ty_id();
+                self.type_check_variable_declaration(sym.name_span(), *body, expected_ty);
+            }
+            hir::SymbolKind::FunctionUndeclared { .. }
+            | hir::SymbolKind::VariableUndeclared { .. } => {
+                panic!("Undeclared should not exist after lowering")
+            }
+            _ => {}
+        }
+    }
+
+    pub fn type_check_module(&mut self, module: &mut hir::Module) {
+        for symbol in &module.roots {
+            self.type_check_declaration(*symbol);
+        }
+
+        module.expression_types = self.module.expression_types.clone();
     }
 }
 

@@ -3,7 +3,10 @@ use calamars_core::{
     ids::{self, ExpressionId, IdentId, SymbolId},
 };
 
-use crate::{sematic::error::SemanticError, syntax::span::Span};
+use crate::{
+    sematic::{error::SemanticError, hir},
+    syntax::span::Span,
+};
 
 pub type TypeArena = calamars_core::InternArena<Type, ids::TypeId>;
 
@@ -85,14 +88,14 @@ pub fn type_id_stringify(arena: &TypeArena, id: ids::TypeId) -> String {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Const {
     I64(i64),
     Bool(bool),
     String(ids::StringId),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BinOp {
     Add,
     Sub,
@@ -103,7 +106,7 @@ pub enum BinOp {
     EqEq,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     Err,
     Literal {
@@ -246,20 +249,19 @@ impl Symbol {
 /// - ConstantStringArena
 /// - IdentArena,
 /// - SymbolArena
-struct Module {
+pub struct Module {
     /// For now, ModuleId is the same as FileId, as each file is exactly a module.
     pub id: ids::FileId,
     pub name: ids::IdentId,
 
-    /// All of the symbols in this module.
-    symbols: Box<[ids::SymbolId]>,
-    /// All of the expressions in this module.
-    expressions: Box<[ids::ExpressionId]>,
+    pub types: hir::TypeArena,
+    pub const_str: hir::ConstantStringArena,
+    pub idents: hir::IdentArena,
+    pub symbols: hir::SymbolArena,
+    pub exprs: hir::ExpressionArena,
+
+    /// Top level symbols defined in the module
+    pub roots: Box<[ids::SymbolId]>,
     /// Expression types
-    expression_type: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
-    /// Top-level public declarations.
-    ///
-    /// This can be used by other modules when importing this one.
-    export: hashbrown::HashMap<ids::IdentId, ids::SymbolId>,
-    diag: Vec<SemanticError>,
+    pub expression_types: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
 }
