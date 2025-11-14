@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 calamars_core = { path="../calamars_core" }
 front = { path = "../front" }
+ir = { path = "../mir" }
 ariadne = "0.6.0"
 clap = "4.5.51"
 logos = "0.15.1"
+hashbrown = "0.16.0"

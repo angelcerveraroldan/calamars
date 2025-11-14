@@ -123,6 +123,8 @@ dependencies = [
  "calamars_core",
  "clap",
  "front",
+ "hashbrown",
+ "ir",
  "logos",
 ]
 
