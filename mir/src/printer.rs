@@ -14,11 +14,20 @@ use crate::{
 pub struct MirPrinter<'a> {
     pub blocks: &'a super::BlockArena,
     pub insts: &'a super::InstructionArena,
+    pub functions: &'a super::FunctionArena,
 }
 
 impl<'a> MirPrinter<'a> {
-    pub fn new(blocks: &'a BlockArena, insts: &'a InstructionArena) -> Self {
-        Self { blocks, insts }
+    pub fn new(
+        blocks: &'a BlockArena,
+        insts: &'a InstructionArena,
+        functions: &'a FunctionArena,
+    ) -> Self {
+        Self {
+            blocks,
+            insts,
+            functions,
+        }
     }
 
     #[inline]
@@ -143,5 +152,32 @@ impl<'a> MirPrinter<'a> {
             let _ = writeln!(s, "  {}", self.fmt_term(t));
         }
         s
+    }
+
+    pub fn fmt_function_id(&self, fid: FunctionId) -> String {
+        let f = self.functions.get_unchecked(fid);
+        self.fmt_function(f)
+    }
+
+    pub fn fmt_function(&self, f: &Function) -> String {
+        let mut s = String::new();
+
+        let _ = writeln!(s, "func @{} {{", f.name.inner());
+
+        for bid in &f.blocks {
+            s.push_str(&self.fmt_block(bid));
+        }
+
+        let _ = writeln!(s, "}}");
+        s
+    }
+
+    pub fn fmt_all_functions(&self) -> String {
+        let mut out = String::new();
+        for f in self.functions.inner() {
+            out.push_str(&self.fmt_function(f));
+            out.push('\n');
+        }
+        out
     }
 }
