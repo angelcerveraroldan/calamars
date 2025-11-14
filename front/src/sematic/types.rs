@@ -270,12 +270,12 @@ impl<'a> TypeHandler<'a> {
         }
     }
 
-    pub fn type_check_module(&mut self, module: &mut hir::Module) {
-        for symbol in &module.roots {
-            self.type_check_declaration(*symbol);
-        }
-
-        module.expression_types = self.module.expression_types.clone();
+    pub fn type_check_module(&mut self) {
+        self.module
+            .roots
+            .clone()
+            .into_iter()
+            .for_each(|symbol| self.type_check_declaration(symbol));
     }
 }
 
@@ -286,37 +286,49 @@ mod tests {
     use super::hir::{BinOp, Const, Expr, Symbol, SymbolKind};
     use super::ids;
     use super::*;
-    fn mk_handler() -> TypeHandler {
+
+    fn mk_module(
+        exprs: ExpressionArena,
+        syms: SymbolArena,
+        consts: ConstantStringArena,
+    ) -> hir::Module {
         let mut types = TypeArena::new_checked();
         types.intern(&Type::Integer);
         types.intern(&Type::Float);
         types.intern(&Type::Boolean);
         types.intern(&Type::String);
-        TypeHandler {
+
+        hir::Module {
+            id: ids::FileId::from(0),
+            name: ids::IdentId::from(0),
             types,
+            const_str: consts,
+            idents: IdentArena::new_unchecked(),
+            symbols: syms,
+            exprs,
+            roots: Box::new([]),
             expression_types: hashbrown::HashMap::new(),
-            errors: vec![],
         }
     }
 
     fn ty_int(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::Integer)
+        *handler.module.types.resolve_unchecked(&Type::Integer)
     }
 
     fn ty_float(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::Float)
+        *handler.module.types.resolve_unchecked(&Type::Float)
     }
 
     fn ty_bool(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::Boolean)
+        *handler.module.types.resolve_unchecked(&Type::Boolean)
     }
 
     fn ty_str(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::String)
+        *handler.module.types.resolve_unchecked(&Type::String)
     }
 
     fn ty_err(handler: &TypeHandler) -> ids::TypeId {
-        handler.types.err_id()
+        handler.module.types.err_id()
     }
 
     fn lit_i64(arena: &mut ExpressionArena, v: i64) -> ids::ExpressionId {
@@ -419,14 +431,16 @@ mod tests {
         let hello = lit_str(&mut exprs, "hello", &mut consts);
         let add = bin(&mut exprs, BinOp::Add, one, hello);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let syms = SymbolArena::new_unchecked();
+        let mut module = mk_module(exprs, syms, consts);
+
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &add);
+        let ty = handler.type_expression(&add);
 
         assert_eq!(ty, ty_err(&handler));
         assert_eq!(
@@ -439,27 +453,35 @@ mod tests {
     #[test]
     /// 1 + 1.0 and 1.0 + 1 should both return float
     fn add_int_and_float_is_float_and_commutative() {
-        let mut exprs = ExpressionArena::new_checked();
-        let mut syms = SymbolArena::new_unchecked();
-        let mut handler = mk_handler();
+        let mut handler = mk_module(
+            ExpressionArena::new_checked(),
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
 
-        let one = lit_i64(&mut exprs, 1);
-
-        let float_ty = ty_float(&handler);
-        let dummy_body = one;
-        let y_sym_id = syms.push(var_symbol(float_ty, dummy_body));
-        let y_ident = ident(&mut exprs, y_sym_id);
-
-        let add1 = bin(&mut exprs, BinOp::Add, one, y_ident);
-        let add2 = bin(&mut exprs, BinOp::Add, y_ident, one);
-
-        let ctx = Context {
-            symbols: syms,
-            expressions: exprs,
+        let mut handler = TypeHandler {
+            module: &mut handler,
+            errors: vec![],
         };
 
-        let t1 = handler.type_expression(&ctx, &add1);
-        let t2 = handler.type_expression(&ctx, &add2);
+        let float_ty = ty_float(&handler);
+        let exprs = &mut handler.module.exprs;
+
+        let one = lit_i64(exprs, 1);
+
+        let dummy_body = one;
+        let y_sym_id = handler
+            .module
+            .symbols
+            .push(var_symbol(float_ty, dummy_body));
+
+        let y_ident = ident(exprs, y_sym_id);
+
+        let add1 = bin(exprs, BinOp::Add, one, y_ident);
+        let add2 = bin(exprs, BinOp::Add, y_ident, one);
+
+        let t1 = handler.type_expression(&add1);
+        let t2 = handler.type_expression(&add2);
 
         assert_eq!(t1, ty_float(&handler));
         assert_eq!(t2, ty_float(&handler));
@@ -473,14 +495,18 @@ mod tests {
         let b = lit_i64(&mut exprs, 2);
         let mul = bin(&mut exprs, BinOp::Mult, a, b);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
-        let ty = handler.type_expression(&ctx, &mul);
-
+        let ty = handler.type_expression(&mul);
         assert_eq!(ty, ty_int(&handler));
     }
 
@@ -493,33 +519,36 @@ mod tests {
         let b = lit_bool(&mut exprs, true);
         let s = lit_str(&mut exprs, "x", &mut consts);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(exprs, SymbolArena::new_unchecked(), consts);
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-        let mut handler = mk_handler();
 
-        assert_eq!(handler.type_expression(&ctx, &i), ty_int(&handler));
-        assert_eq!(handler.type_expression(&ctx, &b), ty_bool(&handler));
-        assert_eq!(handler.type_expression(&ctx, &s), ty_str(&handler));
+        assert_eq!(handler.type_expression(&i), ty_int(&handler));
+        assert_eq!(handler.type_expression(&b), ty_bool(&handler));
+        assert_eq!(handler.type_expression(&s), ty_str(&handler));
     }
 
     #[test]
     fn identifier_uses_symbol_type() {
         let mut exprs = ExpressionArena::new_checked();
         let mut syms = SymbolArena::new_unchecked();
-        let mut handler = mk_handler();
 
-        let val_expr = lit_i64(&mut exprs, 2);
-        let x_sym = syms.push(var_symbol(ty_int(&handler), val_expr));
-        let x_id = ident(&mut exprs, x_sym);
-
-        let ctx = Context {
-            symbols: syms,
-            expressions: exprs,
+        let mut module = mk_module(exprs, syms, ConstantStringArena::new_unchecked());
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-        let ty = handler.type_expression(&ctx, &x_id);
 
+        let val_expr = lit_i64(&mut handler.module.exprs, 2);
+        let x_sym = handler
+            .module
+            .symbols
+            .push(var_symbol(ty_int(&handler), val_expr));
+        let x_id = ident(&mut handler.module.exprs, x_sym);
+
+        let ty = handler.type_expression(&x_id);
         assert_eq!(ty, ty_int(&handler));
     }
 
@@ -532,15 +561,19 @@ mod tests {
         let else_e = lit_i64(&mut exprs, 20);
         let ife = if_expr(&mut exprs, two, then_e, else_e);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
-        let integer_type = handler.types.intern(&Type::Integer);
+        let ty = handler.type_expression(&ife);
+        let integer_type = handler.module.types.intern(&Type::Integer);
 
         assert_eq!(
             ty, integer_type,
@@ -562,15 +595,19 @@ mod tests {
 
         let ife = if_expr(&mut exprs, sum, c, d);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
-        let integer_type = handler.types.intern(&Type::Integer);
+        let ty = handler.type_expression(&ife);
+        let integer_type = handler.module.types.intern(&Type::Integer);
 
         assert_eq!(
             ty, integer_type,
@@ -588,14 +625,18 @@ mod tests {
         let else_e = lit_bool(&mut exprs, false);
         let ife = if_expr(&mut exprs, pred, then_e, else_e);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
+        let ty = handler.type_expression(&ife);
 
         assert_eq!(ty, ty_err(&handler));
         assert_eq!(handler.errors.len(), before + 1, "one type error expected");
@@ -610,14 +651,17 @@ mod tests {
 
         let ife = if_expr(&mut exprs, t, a, b);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
+        let ty = handler.type_expression(&ife);
 
         assert_eq!(handler.errors.len(), before, "no type errors expected");
         assert_eq!(ty, ty_int(&handler));
@@ -648,14 +692,17 @@ mod tests {
         let inner_if = if_expr(&mut exprs, pred_inner, three, four);
         let outer_if = if_expr(&mut exprs, pred_outer, three, inner_if);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &outer_if);
+        let ty = handler.type_expression(&outer_if);
 
         assert_eq!(handler.errors.len(), before, "no type errors expected");
         assert_eq!(ty, ty_int(&handler));
