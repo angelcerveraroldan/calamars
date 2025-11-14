@@ -357,7 +357,7 @@ mod test_lower {
         let value_id = builder.lower_expression(one_id);
         builder.term_ret(value_id);
 
-        let printer = MirPrinter::new(&builder.blocks, &builder.instructions);
+        let printer = MirPrinter::new(&builder.blocks, &builder.instructions, &builder.functions);
         let b = printer.fmt_block(&builder.current_block_id);
         let exp = indoc! {"
             bb0:
