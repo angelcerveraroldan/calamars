@@ -300,7 +300,7 @@ mod tests {
 
         hir::Module {
             id: ids::FileId::from(0),
-            name: ids::IdentId::from(0),
+            name: "TestFile".to_owned(),
             types,
             const_str: consts,
             idents: IdentArena::new_unchecked(),
