@@ -1,74 +1,63 @@
 //! Type checking on the HIR
 
+use std::any::Any;
+
 use calamars_core::{
     MaybeErr,
-    ids::{self, ExpressionId},
+    ids::{self, ExpressionId, SymbolId},
 };
 
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, ExpressionArena, IdentArena, SymbolArena, Type, TypeArena, type_id_stringify},
+        hir::{
+            self, ExpressionArena, IdentArena, Symbol, SymbolArena, Type, TypeArena,
+            type_id_stringify,
+        },
     },
-    syntax::{ast::Expression, span::Span},
+    syntax::{
+        ast::{Declaration, Expression},
+        span::Span,
+    },
 };
 
-/// Immutable context containig arenas from Stage 1
-pub struct Context {
-    symbols: SymbolArena,
-    expressions: ExpressionArena,
-}
-
-impl Context {
-    pub fn new(symbols: SymbolArena, expressions: ExpressionArena) -> Self {
-        Self {
-            symbols,
-            expressions,
-        }
-    }
-}
-
-pub struct TypeHandler {
-    pub types: TypeArena,
-    pub expression_types: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
+/// `TypeHandler` is responsible for checking that the HIR's type semantics are correct.
+///
+/// It should identify errors such as `val x: Int = "hello"`, and return pretty diagnostics.
+pub struct TypeHandler<'a> {
+    pub module: &'a mut hir::Module,
     pub errors: Vec<SemanticError>,
 }
 
-impl TypeHandler {
+impl<'a> TypeHandler<'a> {
     fn match_type(&mut self, id: ids::TypeId, ty: &Type) -> bool {
-        let ty_id = self.types.intern(ty);
+        let ty_id = self.module.types.intern(ty);
         id == ty_id
     }
 
     #[inline]
     fn push_wrong_type(&mut self, actual: ids::TypeId, expected: &str, span: Span) {
         self.errors.push(SemanticError::WrongType {
-            actual: type_id_stringify(&self.types, actual),
+            actual: type_id_stringify(&self.module.types, actual),
             expected: expected.into(),
             span,
         });
     }
 
-    fn ensure_numeric(&mut self, cx: &Context, expr: ids::ExpressionId, t: ids::TypeId) {
+    fn ensure_numeric(&mut self, expr: ids::ExpressionId, t: ids::TypeId) {
         if self.match_type(t, &Type::Integer) || self.match_type(t, &Type::Float) {
             return;
         }
-        let sp = cx.expressions.get_unchecked(expr).get_span().unwrap();
+        let sp = self.module.exprs.get_unchecked(expr).get_span().unwrap();
         self.push_wrong_type(t, "Numerical", sp);
     }
 
-    fn ensure_type(
-        &mut self,
-        ctx: &Context,
-        expr: ids::ExpressionId,
-        ty_id: ids::TypeId,
-        expected: ids::TypeId,
-    ) {
+    fn ensure_type(&mut self, expr: ids::ExpressionId, ty_id: ids::TypeId, expected: ids::TypeId) {
         if ty_id == expected {
             return;
         }
-        let sp = ctx.expressions.get_unchecked(expr).get_span().unwrap();
-        self.push_wrong_type(ty_id, &type_id_stringify(&self.types, expected), sp);
+        let sp = self.module.exprs.get_unchecked(expr).get_span().unwrap();
+        self.push_wrong_type(ty_id, &type_id_stringify(&self.module.types, expected), sp);
     }
 
     /// Given some expression, this will return it's type id. If there are any semantic typing
@@ -76,44 +65,45 @@ impl TypeHandler {
     /// return the typeid of the `Error` type.
     ///
     /// TODO: Insert the typeid to a map, so that later we can check the type of an expression id
-    fn type_expression(&mut self, ctx: &Context, e_id: &ids::ExpressionId) -> ids::TypeId {
-        if let Some(ty) = self.expression_types.get(e_id) {
+    fn type_expression(&mut self, e_id: &ids::ExpressionId) -> ids::TypeId {
+        if let Some(ty) = self.module.expression_types.get(e_id) {
             return *ty;
         }
 
-        let expression = ctx.expressions.get_unchecked(*e_id);
-        let type_id = match expression {
-            hir::Expr::Err => self.types.err_id(),
+        let expression = self.module.exprs.get_unchecked(*e_id).clone();
+        let type_id = match &expression {
+            hir::Expr::Err => self.module.types.err_id(),
             hir::Expr::Literal { constant, .. } => {
                 let ty = match constant {
                     hir::Const::I64(_) => Type::Integer,
                     hir::Const::Bool(_) => Type::Boolean,
                     hir::Const::String(_) => Type::String,
                 };
-                *self.types.resolve_unchecked(&ty)
+                *self.module.types.resolve_unchecked(&ty)
             }
-            hir::Expr::Identifier { id, .. } => ctx
+            hir::Expr::Identifier { id, .. } => self
+                .module
                 .symbols
                 .get(*id)
                 .map(|s| s.ty_id())
-                .unwrap_or(self.types.err_id()),
+                .unwrap_or(self.module.types.err_id()),
             hir::Expr::BinaryOperation {
                 operator,
                 lhs,
                 rhs,
                 span,
-            } => self.type_check_binary_ops(ctx, operator, lhs, rhs, *span),
+            } => self.type_check_binary_ops(operator, lhs, rhs, *span),
             hir::Expr::Call { f, inputs, span } => {
-                let expression_ty = self.type_expression(ctx, f);
+                let expression_ty = self.type_expression(f);
                 // TODO: Handle error type separately here
-                match self.types.get_unchecked(expression_ty) {
+                match self.module.types.get_unchecked(expression_ty) {
                     Type::Function { output, .. } => *output,
                     otherwise => {
                         self.errors.push(SemanticError::NonCallable {
                             msg: "Expected callable",
                             span: *span,
                         });
-                        self.types.err_id()
+                        self.module.types.err_id()
                     }
                 }
             }
@@ -127,27 +117,26 @@ impl TypeHandler {
                 othewise_span,
             } => {
                 // Make sure that the predicate is a boolean
-                let p_ty = self.type_expression(ctx, predicate);
-                if (p_ty != self.types.err_id()) {
-                    let bool = self.types.intern(&Type::Boolean);
-                    self.ensure_type(ctx, *predicate, p_ty, bool);
+                let p_ty = self.type_expression(predicate);
+                if (p_ty != self.module.types.err_id()) {
+                    let bool = self.module.types.intern(&Type::Boolean);
+                    self.ensure_type(*predicate, p_ty, bool);
                 }
 
                 // Make sure that if and else branches return the same
-                let t_ty = self.type_expression(ctx, then);
-                let o_ty = self.type_expression(ctx, otherwise);
+                let t_ty = self.type_expression(then);
+                let o_ty = self.type_expression(otherwise);
 
-                if (t_ty == self.types.err_id() || o_ty == self.types.err_id()) {
-                    return self.types.err_id();
+                if (t_ty == self.module.types.err_id() || o_ty == self.module.types.err_id()) {
+                    return self.module.types.err_id();
                 }
 
-                println!("lhs: {:?}, rhs: {:?}", t_ty, o_ty);
                 if (t_ty != o_ty) {
                     self.errors.push(SemanticError::MismatchedIfBranches {
                         then_span: *then_span,
                         else_span: *othewise_span,
                     });
-                    return self.types.err_id();
+                    return self.module.types.err_id();
                 }
 
                 // If both branches retur the same, then return that type
@@ -155,36 +144,35 @@ impl TypeHandler {
             }
         };
 
-        self.expression_types.insert(*e_id, type_id);
+        self.module.expression_types.insert(*e_id, type_id);
         type_id
     }
 
     fn type_check_binary_ops(
         &mut self,
-        ctx: &Context,
         op: &hir::BinOp,
         lhs: &ExpressionId,
         rhs: &ExpressionId,
         span: Span,
     ) -> ids::TypeId {
-        let lhs_type_id = self.type_expression(ctx, lhs);
-        let rhs_type_id = self.type_expression(ctx, rhs);
+        let lhs_type_id = self.type_expression(lhs);
+        let rhs_type_id = self.type_expression(rhs);
 
-        let int_type_id = *self.types.resolve_unchecked(&Type::Integer);
-        let float_type_id = *self.types.resolve_unchecked(&Type::Float);
+        let int_type_id = *self.module.types.resolve_unchecked(&Type::Integer);
+        let float_type_id = *self.module.types.resolve_unchecked(&Type::Float);
 
         match op {
             // Both numerical
             hir::BinOp::Add | hir::BinOp::Sub | hir::BinOp::Mult | hir::BinOp::Div => {
-                self.ensure_numeric(ctx, *lhs, lhs_type_id);
-                self.ensure_numeric(ctx, *rhs, rhs_type_id);
+                self.ensure_numeric(*lhs, lhs_type_id);
+                self.ensure_numeric(*rhs, rhs_type_id);
 
                 let lhs_numerical = (lhs_type_id == float_type_id) || (lhs_type_id == int_type_id);
                 let rhs_numerical = (rhs_type_id == float_type_id) || (rhs_type_id == int_type_id);
 
                 // If they are not both numerica, then this is an error
                 if !(lhs_numerical && rhs_numerical) {
-                    return self.types.err_id();
+                    return self.module.types.err_id();
                 }
 
                 // If they are both integers, then we will return integer
@@ -196,28 +184,98 @@ impl TypeHandler {
                 float_type_id
             }
             hir::BinOp::EqEq => {
-                if (lhs_type_id == self.types.err_id() || rhs_type_id == self.types.err_id()) {
-                    return self.types.err_id();
+                if (lhs_type_id == self.module.types.err_id()
+                    || rhs_type_id == self.module.types.err_id())
+                {
+                    return self.module.types.err_id();
                 }
 
                 if (lhs_type_id != rhs_type_id) {
-                    let rhs_expr = ctx.expressions.get_unchecked(*rhs);
+                    let rhs_expr = self.module.exprs.get_unchecked(*rhs);
                     self.errors.push(SemanticError::WrongType {
-                        expected: type_id_stringify(&self.types, lhs_type_id),
-                        actual: type_id_stringify(&self.types, rhs_type_id),
+                        expected: type_id_stringify(&self.module.types, lhs_type_id),
+                        actual: type_id_stringify(&self.module.types, rhs_type_id),
                         // We can unwrap since we made sure its not error type
                         span: rhs_expr.get_span().unwrap(),
                     });
                 }
-                self.types.err_id()
+                self.module.types.err_id()
             }
             // Both integers
             hir::BinOp::Mod => {
-                self.ensure_type(ctx, *lhs, lhs_type_id, int_type_id);
-                self.ensure_type(ctx, *rhs, rhs_type_id, int_type_id);
-                self.types.err_id()
+                self.ensure_type(*lhs, lhs_type_id, int_type_id);
+                self.ensure_type(*rhs, rhs_type_id, int_type_id);
+                self.module.types.err_id()
             }
         }
+    }
+
+    pub fn type_check_function_declaration(
+        &mut self,
+        name_span: Span,
+        body: ids::ExpressionId,
+        expected_type: ids::TypeId,
+    ) {
+        let body_ty = self.type_expression(&body);
+        if body_ty != expected_type {
+            let body = self.module.exprs.get_unchecked(body);
+            self.errors.push(SemanticError::FnWrongReturnType {
+                expected: type_id_stringify(&self.module.types, expected_type),
+                // none for now, but it really shuold not be none ... We need to improve spans
+                return_type_span: None,
+                fn_name_span: name_span,
+                actual: type_id_stringify(&self.module.types, body_ty),
+                return_span: body.get_span(),
+                body_span: body.get_span().unwrap(),
+            });
+        }
+    }
+
+    pub fn type_check_variable_declaration(
+        &mut self,
+        name_span: Span,
+        body: ids::ExpressionId,
+        expected_type: ids::TypeId,
+    ) {
+        let body_ty = self.type_expression(&body);
+        if body_ty != expected_type {
+            let body = self.module.exprs.get_unchecked(body);
+            self.errors.push(SemanticError::BindingWrongType {
+                expected: type_id_stringify(&self.module.types, expected_type),
+                return_type_span: name_span,
+                actual: type_id_stringify(&self.module.types, body_ty),
+                return_span: body.get_span(),
+                body_span: body.get_span().unwrap(),
+            })
+        }
+    }
+
+    pub fn type_check_declaration(&mut self, dec: ids::SymbolId) {
+        let sym = self.module.symbols.get_unchecked(dec);
+        match &sym.kind {
+            hir::SymbolKind::Function { body, .. } => {
+                let expected_ty = sym.ty_id();
+                let ty = self.module.types.get_unchecked(expected_ty);
+                self.type_check_function_declaration(sym.name_span(), *body, ty.function_output())
+            }
+            hir::SymbolKind::Variable { body, .. } => {
+                let expected_ty = sym.ty_id();
+                self.type_check_variable_declaration(sym.name_span(), *body, expected_ty);
+            }
+            hir::SymbolKind::FunctionUndeclared { .. }
+            | hir::SymbolKind::VariableUndeclared { .. } => {
+                panic!("Undeclared should not exist after lowering")
+            }
+            _ => {}
+        }
+    }
+
+    pub fn type_check_module(&mut self) {
+        self.module
+            .roots
+            .clone()
+            .into_iter()
+            .for_each(|symbol| self.type_check_declaration(symbol));
     }
 }
 
@@ -228,37 +286,49 @@ mod tests {
     use super::hir::{BinOp, Const, Expr, Symbol, SymbolKind};
     use super::ids;
     use super::*;
-    fn mk_handler() -> TypeHandler {
+
+    fn mk_module(
+        exprs: ExpressionArena,
+        syms: SymbolArena,
+        consts: ConstantStringArena,
+    ) -> hir::Module {
         let mut types = TypeArena::new_checked();
         types.intern(&Type::Integer);
         types.intern(&Type::Float);
         types.intern(&Type::Boolean);
         types.intern(&Type::String);
-        TypeHandler {
+
+        hir::Module {
+            id: ids::FileId::from(0),
+            name: "TestFile".to_owned(),
             types,
+            const_str: consts,
+            idents: IdentArena::new_unchecked(),
+            symbols: syms,
+            exprs,
+            roots: Box::new([]),
             expression_types: hashbrown::HashMap::new(),
-            errors: vec![],
         }
     }
 
     fn ty_int(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::Integer)
+        *handler.module.types.resolve_unchecked(&Type::Integer)
     }
 
     fn ty_float(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::Float)
+        *handler.module.types.resolve_unchecked(&Type::Float)
     }
 
     fn ty_bool(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::Boolean)
+        *handler.module.types.resolve_unchecked(&Type::Boolean)
     }
 
     fn ty_str(handler: &TypeHandler) -> ids::TypeId {
-        *handler.types.resolve_unchecked(&Type::String)
+        *handler.module.types.resolve_unchecked(&Type::String)
     }
 
     fn ty_err(handler: &TypeHandler) -> ids::TypeId {
-        handler.types.err_id()
+        handler.module.types.err_id()
     }
 
     fn lit_i64(arena: &mut ExpressionArena, v: i64) -> ids::ExpressionId {
@@ -361,14 +431,16 @@ mod tests {
         let hello = lit_str(&mut exprs, "hello", &mut consts);
         let add = bin(&mut exprs, BinOp::Add, one, hello);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let syms = SymbolArena::new_unchecked();
+        let mut module = mk_module(exprs, syms, consts);
+
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &add);
+        let ty = handler.type_expression(&add);
 
         assert_eq!(ty, ty_err(&handler));
         assert_eq!(
@@ -381,27 +453,35 @@ mod tests {
     #[test]
     /// 1 + 1.0 and 1.0 + 1 should both return float
     fn add_int_and_float_is_float_and_commutative() {
-        let mut exprs = ExpressionArena::new_checked();
-        let mut syms = SymbolArena::new_unchecked();
-        let mut handler = mk_handler();
+        let mut handler = mk_module(
+            ExpressionArena::new_checked(),
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
 
-        let one = lit_i64(&mut exprs, 1);
-
-        let float_ty = ty_float(&handler);
-        let dummy_body = one;
-        let y_sym_id = syms.push(var_symbol(float_ty, dummy_body));
-        let y_ident = ident(&mut exprs, y_sym_id);
-
-        let add1 = bin(&mut exprs, BinOp::Add, one, y_ident);
-        let add2 = bin(&mut exprs, BinOp::Add, y_ident, one);
-
-        let ctx = Context {
-            symbols: syms,
-            expressions: exprs,
+        let mut handler = TypeHandler {
+            module: &mut handler,
+            errors: vec![],
         };
 
-        let t1 = handler.type_expression(&ctx, &add1);
-        let t2 = handler.type_expression(&ctx, &add2);
+        let float_ty = ty_float(&handler);
+        let exprs = &mut handler.module.exprs;
+
+        let one = lit_i64(exprs, 1);
+
+        let dummy_body = one;
+        let y_sym_id = handler
+            .module
+            .symbols
+            .push(var_symbol(float_ty, dummy_body));
+
+        let y_ident = ident(exprs, y_sym_id);
+
+        let add1 = bin(exprs, BinOp::Add, one, y_ident);
+        let add2 = bin(exprs, BinOp::Add, y_ident, one);
+
+        let t1 = handler.type_expression(&add1);
+        let t2 = handler.type_expression(&add2);
 
         assert_eq!(t1, ty_float(&handler));
         assert_eq!(t2, ty_float(&handler));
@@ -415,14 +495,18 @@ mod tests {
         let b = lit_i64(&mut exprs, 2);
         let mul = bin(&mut exprs, BinOp::Mult, a, b);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
-        let ty = handler.type_expression(&ctx, &mul);
-
+        let ty = handler.type_expression(&mul);
         assert_eq!(ty, ty_int(&handler));
     }
 
@@ -435,33 +519,36 @@ mod tests {
         let b = lit_bool(&mut exprs, true);
         let s = lit_str(&mut exprs, "x", &mut consts);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(exprs, SymbolArena::new_unchecked(), consts);
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-        let mut handler = mk_handler();
 
-        assert_eq!(handler.type_expression(&ctx, &i), ty_int(&handler));
-        assert_eq!(handler.type_expression(&ctx, &b), ty_bool(&handler));
-        assert_eq!(handler.type_expression(&ctx, &s), ty_str(&handler));
+        assert_eq!(handler.type_expression(&i), ty_int(&handler));
+        assert_eq!(handler.type_expression(&b), ty_bool(&handler));
+        assert_eq!(handler.type_expression(&s), ty_str(&handler));
     }
 
     #[test]
     fn identifier_uses_symbol_type() {
         let mut exprs = ExpressionArena::new_checked();
         let mut syms = SymbolArena::new_unchecked();
-        let mut handler = mk_handler();
 
-        let val_expr = lit_i64(&mut exprs, 2);
-        let x_sym = syms.push(var_symbol(ty_int(&handler), val_expr));
-        let x_id = ident(&mut exprs, x_sym);
-
-        let ctx = Context {
-            symbols: syms,
-            expressions: exprs,
+        let mut module = mk_module(exprs, syms, ConstantStringArena::new_unchecked());
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-        let ty = handler.type_expression(&ctx, &x_id);
 
+        let val_expr = lit_i64(&mut handler.module.exprs, 2);
+        let x_sym = handler
+            .module
+            .symbols
+            .push(var_symbol(ty_int(&handler), val_expr));
+        let x_id = ident(&mut handler.module.exprs, x_sym);
+
+        let ty = handler.type_expression(&x_id);
         assert_eq!(ty, ty_int(&handler));
     }
 
@@ -474,15 +561,19 @@ mod tests {
         let else_e = lit_i64(&mut exprs, 20);
         let ife = if_expr(&mut exprs, two, then_e, else_e);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
-        let integer_type = handler.types.intern(&Type::Integer);
+        let ty = handler.type_expression(&ife);
+        let integer_type = handler.module.types.intern(&Type::Integer);
 
         assert_eq!(
             ty, integer_type,
@@ -504,15 +595,19 @@ mod tests {
 
         let ife = if_expr(&mut exprs, sum, c, d);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
-        let integer_type = handler.types.intern(&Type::Integer);
+        let ty = handler.type_expression(&ife);
+        let integer_type = handler.module.types.intern(&Type::Integer);
 
         assert_eq!(
             ty, integer_type,
@@ -530,14 +625,18 @@ mod tests {
         let else_e = lit_bool(&mut exprs, false);
         let ife = if_expr(&mut exprs, pred, then_e, else_e);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
 
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
+        let ty = handler.type_expression(&ife);
 
         assert_eq!(ty, ty_err(&handler));
         assert_eq!(handler.errors.len(), before + 1, "one type error expected");
@@ -552,14 +651,17 @@ mod tests {
 
         let ife = if_expr(&mut exprs, t, a, b);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &ife);
+        let ty = handler.type_expression(&ife);
 
         assert_eq!(handler.errors.len(), before, "no type errors expected");
         assert_eq!(ty, ty_int(&handler));
@@ -590,14 +692,17 @@ mod tests {
         let inner_if = if_expr(&mut exprs, pred_inner, three, four);
         let outer_if = if_expr(&mut exprs, pred_outer, three, inner_if);
 
-        let ctx = Context {
-            symbols: SymbolArena::new_unchecked(),
-            expressions: exprs,
+        let mut module = mk_module(
+            exprs,
+            SymbolArena::new_unchecked(),
+            ConstantStringArena::new_unchecked(),
+        );
+        let mut handler = TypeHandler {
+            module: &mut module,
+            errors: vec![],
         };
-
-        let mut handler = mk_handler();
         let before = handler.errors.len();
-        let ty = handler.type_expression(&ctx, &outer_if);
+        let ty = handler.type_expression(&outer_if);
 
         assert_eq!(handler.errors.len(), before, "no type errors expected");
         assert_eq!(ty, ty_int(&handler));

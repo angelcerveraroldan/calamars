@@ -7,7 +7,8 @@ use calamars_core::ids::{self, SymbolId};
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, Const, Expr, Symbol},
+        hir::{self, Const, Expr, Symbol, default_typearena},
+        lower,
     },
     syntax::{ast, span::Span},
 };
@@ -18,6 +19,7 @@ pub struct HirBuilder {
     pub identifiers: hir::IdentArena,
     pub expressions: hir::ExpressionArena,
     pub symbols: hir::SymbolArena,
+
     /// Scopes are used for shadowing. When in the same scope we do not allow shadowing.
     scopes: Vec<hashbrown::HashMap<ids::IdentId, SymbolId>>,
 
@@ -30,7 +32,7 @@ pub struct HirBuilder {
 impl Default for HirBuilder {
     fn default() -> Self {
         let mut d = Self {
-            types: hir::TypeArena::new_checked(),
+            types: default_typearena(),
             const_str: hir::ConstantStringArena::new_unchecked(),
             identifiers: hir::IdentArena::new_unchecked(),
             expressions: hir::ExpressionArena::new_checked(),
@@ -171,14 +173,16 @@ impl HirBuilder {
         self.types.intern(&ty)
     }
 
-    pub fn module(&mut self, module: &ast::Module) {
+    pub fn module(&mut self, module: &ast::Module) -> Box<[SymbolId]> {
         // Insert all of the symbols to the table
         let pass_a: Box<[SymbolId]> = self.module_pass_a(module);
 
         // Add bodies to the declarations
-        for (dec, id) in module.items.iter().zip(pass_a) {
-            self.attach_body_declaration(dec, id);
+        for (dec, id) in module.items.iter().zip(&pass_a) {
+            self.attach_body_declaration(dec, *id);
         }
+
+        pass_a
     }
 
     /// Pass A is responsible for adding all of the declaration names to the scope, it will ignore
@@ -368,5 +372,30 @@ impl HirBuilder {
             }
         };
         self.expressions.push(expr)
+    }
+
+    pub fn lower_module(
+        module: &ast::Module,
+        id: ids::FileId,
+        name: String,
+    ) -> Result<hir::Module, Vec<SemanticError>> {
+        let mut lowerer = HirBuilder::default();
+        let roots = lowerer.module(module);
+
+        if !lowerer.errors().is_empty() {
+            return Err(lowerer.errors().clone());
+        }
+
+        Ok(hir::Module {
+            id,
+            name,
+            types: lowerer.types,
+            const_str: lowerer.const_str,
+            idents: lowerer.identifiers,
+            symbols: lowerer.symbols,
+            exprs: lowerer.expressions,
+            roots,
+            expression_types: hashbrown::HashMap::new(),
+        })
     }
 }

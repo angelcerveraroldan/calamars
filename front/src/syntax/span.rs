@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::source::FileId;
+use calamars_core::ids;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CtxSpan<Ctx> {
@@ -35,7 +35,7 @@ impl Span {
     }
 }
 
-pub type FileSpan = CtxSpan<FileId>;
+pub type FileSpan = CtxSpan<ids::FileId>;
 
 impl FileSpan {
     pub fn start(&self) -> usize {
@@ -46,13 +46,13 @@ impl FileSpan {
         self.end
     }
 
-    pub fn file(&self) -> &FileId {
+    pub fn file(&self) -> &ids::FileId {
         &self.ctx
     }
 }
 
-impl From<(logos::Span, FileId)> for FileSpan {
-    fn from((s, f): (logos::Span, FileId)) -> Self {
+impl From<(logos::Span, ids::FileId)> for FileSpan {
+    fn from((s, f): (logos::Span, ids::FileId)) -> Self {
         Self {
             start: s.start,
             end: s.end,

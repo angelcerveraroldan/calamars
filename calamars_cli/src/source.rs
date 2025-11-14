@@ -7,15 +7,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use calamars_core::ids;
+use front::syntax;
+
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use clap::builder::{self, PathBufValueParser};
-use proptest::collection::HashMapStrategy;
-
-use crate::{
-    errors::PrettyError,
-    sematic::error::SemanticError,
-    syntax::{ast, parser::CalamarsParser, span::Span, token::Token},
-};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileId(pub usize);
@@ -81,13 +77,13 @@ impl SourceFile {
     }
 
     /// Tokenize the file, and return the tokens as a TokenInput stream
-    pub fn as_spanned_token_stream(&self) -> Vec<(Token, logos::Span)> {
-        Token::tokens_spanned_stream(&self.src)
+    pub fn as_spanned_token_stream(&self) -> Vec<(syntax::token::Token, logos::Span)> {
+        syntax::token::Token::tokens_spanned_stream(&self.src)
     }
 
-    pub fn parse_file(&self) -> (ast::Module, CalamarsParser) {
+    pub fn parse_file(&self) -> (syntax::ast::Module, syntax::parser::CalamarsParser) {
         let tks = self.as_spanned_token_stream();
-        let mut parser = CalamarsParser::new(FileId(0), tks);
+        let mut parser = syntax::parser::CalamarsParser::new(ids::FileId::from(0), tks);
         (parser.parse_file(), parser)
     }
 }

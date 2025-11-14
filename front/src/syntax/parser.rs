@@ -1,13 +1,12 @@
 //! A parser for Calamars files!
 
-use crate::{
-    source::FileId,
-    syntax::{
-        ast::{self, Expression, FuncCall},
-        errors::ParsingError,
-        span::Span,
-        token::Token,
-    },
+use calamars_core::ids;
+
+use crate::syntax::{
+    ast::{self, Expression, FuncCall},
+    errors::ParsingError,
+    span::Span,
+    token::Token,
 };
 
 fn uni_span(s: &Span) -> Span {
@@ -54,7 +53,7 @@ const fn binary_op_from_token(token: &Token) -> Option<ast::BinaryOperator> {
 
 pub struct CalamarsParser {
     /// Id for the file for which this parser is responsible
-    fileid: FileId,
+    fileid: ids::FileId,
     // Input tokens
     tokens: Vec<(Token, Span)>,
     /// Keep a set of errors that need to be reported
@@ -67,7 +66,7 @@ impl CalamarsParser {
 
     /// This function guarantees:
     /// - Tokens is never empty
-    pub fn new(fileid: FileId, tokens: Vec<(Token, logos::Span)>) -> Self {
+    pub fn new(fileid: ids::FileId, tokens: Vec<(Token, logos::Span)>) -> Self {
         let mut tokens = tokens
             .into_iter()
             .map(|(t, s)| (t, Span::from(s)))
@@ -812,28 +811,28 @@ mod tests {
     fn parse_expr_from_tokens(
         tokens: Vec<(Token, logos::Span)>,
     ) -> (CalamarsParser, ast::Expression) {
-        let file = FileId(0);
+        let file = ids::FileId::from(0);
         let mut p = CalamarsParser::new(file, tokens);
         let expr = p.parse_expression();
         (p, expr)
     }
 
     fn parse_ty(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Type) {
-        let file = FileId(0);
+        let file = ids::FileId::from(0);
         let mut p = CalamarsParser::new(file, tokens);
         let ty = p.parse_type();
         (p, ty)
     }
 
     fn parse_varval(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Binding) {
-        let file = FileId(0);
+        let file = ids::FileId::from(0);
         let mut p = CalamarsParser::new(file, tokens);
         let ty = p.parse_binding();
         (p, ty)
     }
 
     fn parse_fn(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::FuncDec) {
-        let file = FileId(0);
+        let file = ids::FileId::from(0);
         let mut p = CalamarsParser::new(file, tokens);
         let ty = p.parse_function_declaration();
         (p, ty)
