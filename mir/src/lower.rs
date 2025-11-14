@@ -1,5 +1,7 @@
 //! Lower HIR to MIR
 
+use std::ptr::eq;
+
 use calamars_core::ids::{self, ExpressionId, SymbolId, TypeId};
 use front::{
     sematic::hir::{self, SymbolKind},
@@ -216,6 +218,36 @@ impl<'a> MirBuilder<'a> {
             }
             _ => todo!(),
         }
+    }
+
+    pub fn lower_module(&mut self) -> Result<(), Vec<MirErrors>> {
+        let mut errors = vec![];
+        for binding in &self.ctx.roots {
+            match self.lower_binding(*binding) {
+                Ok(_) => {}
+                Err(mir_err) => {
+                    errors.push(mir_err);
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    pub fn blocks(&self) -> &BlockArena {
+        &self.blocks
+    }
+
+    pub fn functions(&self) -> &FunctionArena {
+        &self.functions
+    }
+
+    pub fn instructions(&self) -> &InstructionArena {
+        &self.instructions
     }
 }
 
