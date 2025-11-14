@@ -24,19 +24,9 @@ fn operator_map(op: &hir::BinOp) -> BinaryOperator {
     }
 }
 
-/// Immutable data outputted by the HIR
-pub struct Context {
-    pub types: hir::TypeArena,
-    pub const_str: hir::ConstantStringArena,
-    pub idents: hir::IdentArena,
-    pub symbols: hir::SymbolArena,
-    pub exprs: hir::ExpressionArena,
-    pub expr_ty: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
-}
-
 /// Handle the process of building a function from the HIR context
 pub struct MirBuilder<'a> {
-    pub ctx: &'a Context,
+    pub ctx: &'a hir::Module,
 
     current_block_id: BlockId,
     working_blocks: Vec<BlockId>,
@@ -48,7 +38,7 @@ pub struct MirBuilder<'a> {
 }
 
 impl<'a> MirBuilder<'a> {
-    pub fn new(ctx: &'a Context) -> Self {
+    pub fn new(ctx: &'a hir::Module) -> Self {
         let mut blocks = BlockArena::new_unchecked();
         let current_block_id = blocks.push(BBlock::default());
         Self {
@@ -163,7 +153,7 @@ impl<'a> MirBuilder<'a> {
 
                 self.switch_to(joining_block);
 
-                let ty = self.ctx.expr_ty.get(&expression_id).unwrap();
+                let ty = self.ctx.expression_types.get(&expression_id).unwrap();
                 return self.emit_phi(
                     *ty,
                     Box::from([(then_block, then), (othr_block, otherwise)]),
@@ -243,20 +233,19 @@ mod test_lower {
         syntax::span::Span,
     };
 
-    use crate::{
-        BlockId, VInstructionKind,
-        lower::{Context, MirBuilder},
-        printer::MirPrinter,
-    };
+    use crate::{BlockId, VInstructionKind, lower::MirBuilder, printer::MirPrinter};
 
-    fn make_context() -> Context {
-        Context {
+    fn make_context() -> hir::Module {
+        hir::Module {
+            id: ids::FileId::from(0),
+            name: "TestingFile".to_owned(),
+            roots: Box::new([]),
             types: TypeArena::new_checked(),
             const_str: ConstantStringArena::new_unchecked(),
             idents: IdentArena::new_unchecked(),
             symbols: SymbolArena::new_unchecked(),
             exprs: ExpressionArena::new_checked(),
-            expr_ty: hashbrown::HashMap::new(),
+            expression_types: hashbrown::HashMap::new(),
         }
     }
 
@@ -412,20 +401,20 @@ mod test_lower {
         let op = context.exprs.push(op);
 
         // Map expression ids to their types
-        context.expr_ty.insert(t, bt);
-        context.expr_ty.insert(f, it);
-        context.expr_ty.insert(o, it);
-        context.expr_ty.insert(op, it);
+        context.expression_types.insert(t, bt);
+        context.expression_types.insert(f, it);
+        context.expression_types.insert(o, it);
+        context.expression_types.insert(op, it);
 
         // Binary expression
         let bin = bin_expr(hir::BinOp::Add, o, op);
         let bin = context.exprs.push(bin);
-        context.expr_ty.insert(bin, it);
+        context.expression_types.insert(bin, it);
 
         // If expression
         let cond = if_stm(t, bin, f);
         let cond = context.exprs.push(cond);
-        context.expr_ty.insert(cond, it);
+        context.expression_types.insert(cond, it);
 
         let mut builder = MirBuilder::new(&context);
         let if_lower = builder.lower_expression(cond);
