@@ -10,6 +10,18 @@ use crate::{
 
 pub type TypeArena = calamars_core::InternArena<Type, ids::TypeId>;
 
+pub fn default_typearena() -> TypeArena {
+    let mut ta = TypeArena::new_checked();
+    ta.intern(&Type::Error);
+    ta.intern(&Type::Unit);
+    ta.intern(&Type::Integer);
+    ta.intern(&Type::Float);
+    ta.intern(&Type::Boolean);
+    ta.intern(&Type::String);
+    ta.intern(&Type::Char);
+    ta
+}
+
 /// An arena for compile-time known strings.
 pub type ConstantStringArena = calamars_core::InternArena<String, ids::StringId>;
 
@@ -252,7 +264,7 @@ impl Symbol {
 pub struct Module {
     /// For now, ModuleId is the same as FileId, as each file is exactly a module.
     pub id: ids::FileId,
-    pub name: ids::IdentId,
+    pub name: String,
 
     pub types: hir::TypeArena,
     pub const_str: hir::ConstantStringArena,

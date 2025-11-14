@@ -7,7 +7,7 @@ use calamars_core::ids::{self, SymbolId};
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, Const, Expr, Symbol},
+        hir::{self, Const, Expr, Symbol, default_typearena},
         lower,
     },
     syntax::{ast, span::Span},
@@ -32,7 +32,7 @@ pub struct HirBuilder {
 impl Default for HirBuilder {
     fn default() -> Self {
         let mut d = Self {
-            types: hir::TypeArena::new_checked(),
+            types: default_typearena(),
             const_str: hir::ConstantStringArena::new_unchecked(),
             identifiers: hir::IdentArena::new_unchecked(),
             expressions: hir::ExpressionArena::new_checked(),
@@ -377,7 +377,7 @@ impl HirBuilder {
     pub fn lower_module(
         module: &ast::Module,
         id: ids::FileId,
-        name: ids::IdentId,
+        name: String,
     ) -> Result<hir::Module, Vec<SemanticError>> {
         let mut lowerer = HirBuilder::default();
         let roots = lowerer.module(module);
