@@ -93,20 +93,7 @@ impl<'a> TypeHandler<'a> {
                 rhs,
                 span,
             } => self.type_check_binary_ops(operator, lhs, rhs, *span),
-            hir::Expr::Call { f, inputs, span } => {
-                let expression_ty = self.type_expression(f);
-                // TODO: Handle error type separately here
-                match self.module.types.get_unchecked(expression_ty) {
-                    Type::Function { output, .. } => *output,
-                    otherwise => {
-                        self.errors.push(SemanticError::NonCallable {
-                            msg: "Expected callable",
-                            span: *span,
-                        });
-                        self.module.types.err_id()
-                    }
-                }
-            }
+            hir::Expr::Call { f, inputs, span } => self.type_check_fncall(f, inputs, *span),
             hir::Expr::If {
                 predicate,
                 then,
@@ -148,6 +135,26 @@ impl<'a> TypeHandler<'a> {
 
         self.module.expression_types.insert(*e_id, type_id);
         type_id
+    }
+
+    fn type_check_fncall(
+        &mut self,
+        f: &ExpressionId,
+        inputs: &Box<[ExpressionId]>,
+        span: Span,
+    ) -> ids::TypeId {
+        let expression_ty = self.type_expression(f);
+        // TODO: Handle error type separately here
+        match self.module.types.get_unchecked(expression_ty) {
+            Type::Function { output, .. } => *output,
+            otherwise => {
+                self.errors.push(SemanticError::NonCallable {
+                    msg: "Expected callable",
+                    span: span,
+                });
+                self.module.types.err_id()
+            }
+        }
     }
 
     fn type_check_binary_ops(
