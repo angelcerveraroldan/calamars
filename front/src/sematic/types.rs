@@ -134,7 +134,9 @@ impl<'a> TypeHandler<'a> {
                 if (t_ty != o_ty) {
                     self.errors.push(SemanticError::MismatchedIfBranches {
                         then_span: *then_span,
+                        then_return: type_id_stringify(&self.module.types, t_ty),
                         else_span: *othewise_span,
+                        else_return: type_id_stringify(&self.module.types, o_ty),
                     });
                     return self.module.types.err_id();
                 }
@@ -157,6 +159,11 @@ impl<'a> TypeHandler<'a> {
     ) -> ids::TypeId {
         let lhs_type_id = self.type_expression(lhs);
         let rhs_type_id = self.type_expression(rhs);
+
+        let error_id = self.module.types.err_id();
+        if (lhs_type_id == error_id || rhs_type_id == error_id) {
+            return error_id;
+        }
 
         let int_type_id = *self.module.types.resolve_unchecked(&Type::Integer);
         let float_type_id = *self.module.types.resolve_unchecked(&Type::Float);
@@ -217,7 +224,7 @@ impl<'a> TypeHandler<'a> {
         expected_type: ids::TypeId,
     ) {
         let body_ty = self.type_expression(&body);
-        if body_ty != expected_type {
+        if body_ty != expected_type && body_ty != self.module.types.err_id() {
             let body = self.module.exprs.get_unchecked(body);
             self.errors.push(SemanticError::FnWrongReturnType {
                 expected: type_id_stringify(&self.module.types, expected_type),
@@ -238,7 +245,7 @@ impl<'a> TypeHandler<'a> {
         expected_type: ids::TypeId,
     ) {
         let body_ty = self.type_expression(&body);
-        if body_ty != expected_type {
+        if body_ty != expected_type && body_ty != self.module.types.err_id() {
             let body = self.module.exprs.get_unchecked(body);
             self.errors.push(SemanticError::BindingWrongType {
                 expected: type_id_stringify(&self.module.types, expected_type),

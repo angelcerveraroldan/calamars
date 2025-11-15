@@ -35,8 +35,10 @@ pub enum SemanticError {
     MismatchedIfBranches {
         /// Span of the expressoin being returned in the `then`
         then_span: Span,
+        then_return: String,
         /// Span of the expression being returned in the `else`
         else_span: Span,
+        else_return: String,
     },
     WrongType {
         /// Accepted type or types
@@ -240,17 +242,19 @@ impl PrettyError for SemanticError {
             SemanticError::MismatchedIfBranches {
                 then_span,
                 else_span,
+                then_return,
+                else_return,
             } => vec![
                 label_from(
                     file_name,
                     *then_span,
-                    "First return here",
+                    format!("{} returned here", then_return.fg(Color::Blue)),
                     Some(Color::Blue),
                 ),
                 label_from(
                     file_name,
                     *else_span,
-                    "Second return here",
+                    format!("{} returned here", else_return.fg(Color::Cyan)),
                     Some(Color::Cyan),
                 ),
             ],
@@ -286,9 +290,9 @@ impl PrettyError for SemanticError {
     fn notes(&self) -> Option<String> {
         match self {
             SemanticError::FnWrongReturnType {
-                return_type_span, ..
-            } => Some(
-                "No return type was given to this function, so it was inferred that the function should expect no return `()`".to_string(),
+                return_type_span, expected, ..
+            }  if expected == "Unit" => Some(
+                "If you didnt specify a return type for this function, then `Unit` return was inferred".to_string(),
             ),
             _ => None,
         }
