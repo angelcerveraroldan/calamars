@@ -148,9 +148,10 @@ impl<'a> TypeHandler<'a> {
         let (out_ty, in_tys) = match self.module.types.get_unchecked(expression_ty) {
             Type::Function { output, input } => (*output, input.clone()),
             otherwise => {
+                let call_span = self.module.exprs.get_unchecked(*f).get_span().unwrap();
                 self.errors.push(SemanticError::NonCallable {
                     msg: "Expected callable",
-                    span: span,
+                    span: call_span,
                 });
                 return self.module.types.err_id();
             }
