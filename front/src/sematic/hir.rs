@@ -81,12 +81,12 @@ pub fn type_id_stringify(arena: &TypeArena, id: ids::TypeId) -> String {
 
     match ty {
         Type::Error => "Error".into(),
-        Type::Integer => "int".into(),
-        Type::Float => "float".into(),
-        Type::Boolean => "bool".into(),
-        Type::String => "str".into(),
-        Type::Char => "char".into(),
-        Type::Unit => "()".into(),
+        Type::Integer => "Int".into(),
+        Type::Float => "Float".into(),
+        Type::Boolean => "Bool".into(),
+        Type::String => "String".into(),
+        Type::Char => "Char".into(),
+        Type::Unit => "Unit".into(),
         Type::Array(tid) => format!("[{}]", type_id_stringify(arena, *tid)),
         Type::Function { input, output } => {
             let inp = input
