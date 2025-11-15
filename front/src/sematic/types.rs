@@ -93,20 +93,7 @@ impl<'a> TypeHandler<'a> {
                 rhs,
                 span,
             } => self.type_check_binary_ops(operator, lhs, rhs, *span),
-            hir::Expr::Call { f, inputs, span } => {
-                let expression_ty = self.type_expression(f);
-                // TODO: Handle error type separately here
-                match self.module.types.get_unchecked(expression_ty) {
-                    Type::Function { output, .. } => *output,
-                    otherwise => {
-                        self.errors.push(SemanticError::NonCallable {
-                            msg: "Expected callable",
-                            span: *span,
-                        });
-                        self.module.types.err_id()
-                    }
-                }
-            }
+            hir::Expr::Call { f, inputs, span } => self.type_check_fncall(f, inputs, *span),
             hir::Expr::If {
                 predicate,
                 then,
@@ -148,6 +135,53 @@ impl<'a> TypeHandler<'a> {
 
         self.module.expression_types.insert(*e_id, type_id);
         type_id
+    }
+
+    fn type_check_fncall(
+        &mut self,
+        f: &ExpressionId,
+        inputs: &Box<[ExpressionId]>,
+        span: Span,
+    ) -> ids::TypeId {
+        let expression_ty = self.type_expression(f);
+        // TODO: Handle error type separately here
+        let (out_ty, in_tys) = match self.module.types.get_unchecked(expression_ty) {
+            Type::Function { output, input } => (*output, input.clone()),
+            otherwise => {
+                let call_span = self.module.exprs.get_unchecked(*f).get_span().unwrap();
+                self.errors.push(SemanticError::NonCallable {
+                    msg: "Expected callable",
+                    span: call_span,
+                });
+                return self.module.types.err_id();
+            }
+        };
+
+        // Airity check
+        if inputs.len() != in_tys.len() {
+            self.errors.push(SemanticError::ArityError {
+                expected: in_tys.len(),
+                actual: inputs.len(),
+                span: span,
+            });
+
+            return out_ty;
+        }
+
+        // Check that there are no input errors when calling the function
+        for (actual, exp) in inputs.into_iter().zip(in_tys) {
+            let acc_ty = self.type_expression(&actual);
+            let acc_expr = self.module.exprs.get_unchecked(*actual);
+            if acc_ty != exp && acc_ty != self.module.types.err_id() {
+                self.errors.push(SemanticError::WrongType {
+                    expected: type_id_stringify(&self.module.types, exp),
+                    actual: type_id_stringify(&self.module.types, acc_ty),
+                    span: acc_expr.get_span().unwrap(),
+                });
+            }
+        }
+
+        out_ty
     }
 
     fn type_check_binary_ops(
