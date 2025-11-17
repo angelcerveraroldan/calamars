@@ -128,10 +128,8 @@ impl Token {
     pub fn tokenize_line(s: &str) -> Vec<Token> {
         let lex = Token::lexer(s);
         let mut tokens = vec![];
-        for token in lex {
-            if let Ok(t) = token {
-                tokens.push(t);
-            }
+        for token in lex.flatten() {
+            tokens.push(token);
         }
         tokens
     }
