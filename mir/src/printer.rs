@@ -1,7 +1,5 @@
-use std::fmt;
 
 use calamars_core::Identifier;
-use front::sematic::hir::IdentArena;
 
 use std::fmt::Write;
 
@@ -44,10 +42,10 @@ impl<'a> MirPrinter<'a> {
     pub fn fmt_vinst(&self, kind: &VInstructionKind) -> String {
         match kind {
             VInstructionKind::Constant(c) => match c {
-                Consts::I64(i) => format!("const {}", i),
-                Consts::Bool(b) => format!("const {}", b),
+                Consts::I64(i) => format!("const {i}"),
+                Consts::Bool(b) => format!("const {b}"),
                 // TODO: Shuold we resolve for the actual text here ?
-                Consts::String(s) => format!("const str#{:?}", s),
+                Consts::String(s) => format!("const str#{s:?}"),
                 Consts::Unit => "const ()".to_string(),
             },
             VInstructionKind::ConstDataPointer { data } => {
@@ -91,7 +89,7 @@ impl<'a> MirPrinter<'a> {
             } => {
                 let callee_s = match callee {
                     Callee::Function(fid) => format!("fn#{}", fid.inner_id()),
-                    Callee::Extern(name) => format!("@{}", name),
+                    Callee::Extern(name) => format!("@{name}"),
                 };
                 let args_s = args
                     .iter()
@@ -110,7 +108,7 @@ impl<'a> MirPrinter<'a> {
                 format!("phi ty#{} [{}]", ty.inner_id(), cs)
             }
             VInstructionKind::Parameter { index } => {
-                format!("param #{}", index)
+                format!("param #{index}")
             }
         }
     }

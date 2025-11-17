@@ -3,7 +3,7 @@
 use calamars_core::ids;
 
 use crate::syntax::{
-    ast::{self, Expression, FuncCall},
+    ast::{self, FuncCall},
     errors::ParsingError,
     span::Span,
     token::Token,
@@ -795,8 +795,8 @@ impl CalamarsParser {
 
 #[cfg(test)]
 mod tests {
-    use crate::syntax::ast::IfStm;
-    use std::collections::btree_set::Range;
+    
+    
 
     use super::*;
 
@@ -990,7 +990,7 @@ mod tests {
             (Token::RBracket, (6, 7)),
         ]);
 
-        let (mut p, ty) = parse_ty(tokens);
+        let (p, ty) = parse_ty(tokens);
         assert!(p.diag.is_empty());
         assert!(matches!(ty, ast::Type::Array { .. }));
     }

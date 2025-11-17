@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
+use ariadne::{Color, Fmt, Label};
 
 use crate::{
     errors::{PrettyError, label_from},
@@ -290,7 +290,7 @@ impl PrettyError for SemanticError {
     fn notes(&self) -> Option<String> {
         match self {
             SemanticError::FnWrongReturnType {
-                return_type_span, expected, ..
+                 expected, ..
             }  if expected == "Unit" => Some(
                 "If you didnt specify a return type for this function, then `Unit` return was inferred".to_string(),
             ),

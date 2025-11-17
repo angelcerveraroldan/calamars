@@ -1,17 +1,15 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::BTreeSet,
     env,
     fmt::Debug,
     fs::{self, File},
     io::{BufReader, Read},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use calamars_core::ids;
 use front::syntax;
 
-use ariadne::{Color, Label, Report, ReportKind, Source};
-use clap::builder::{self, PathBufValueParser};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileId(pub usize);
@@ -62,8 +60,7 @@ impl SourceFile {
     fn file_name(&self) -> String {
         self.path
             .file_name()
-            .map(|os_str| os_str.to_str())
-            .flatten()
+            .and_then(|os_str| os_str.to_str())
             .unwrap()
             .to_string()
     }
