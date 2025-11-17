@@ -1,10 +1,10 @@
 use calamars_core::{
     MaybeErr,
-    ids::{self, ExpressionId, IdentId, SymbolId},
+    ids::{self, SymbolId},
 };
 
 use crate::{
-    sematic::{error::SemanticError, hir},
+    sematic::hir,
     syntax::span::Span,
 };
 
@@ -95,7 +95,7 @@ pub fn type_id_stringify(arena: &TypeArena, id: ids::TypeId) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             let out = type_id_stringify(arena, *output);
-            format!("fn({}) -> ({})", inp, out)
+            format!("fn({inp}) -> ({out})")
         }
     }
 }
@@ -227,7 +227,7 @@ impl Symbol {
 
     pub fn update_body(&mut self, body: ids::ExpressionId) {
         match &mut self.kind {
-            SymbolKind::Parameter | SymbolKind::Extern => return,
+            SymbolKind::Parameter | SymbolKind::Extern => (),
             SymbolKind::FunctionUndeclared { params } | SymbolKind::Function { params, .. } => {
                 let params = std::mem::take(params);
                 self.kind = SymbolKind::Function { params, body };
@@ -238,7 +238,7 @@ impl Symbol {
                     body,
                 };
             }
-        };
+        }
     }
 
     pub fn ident_id(&self) -> ids::IdentId {

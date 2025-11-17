@@ -2,8 +2,8 @@ use calamars_core::ids;
 use clap::{Parser, Subcommand};
 use front::{
     errors::PrettyError,
-    sematic::{hir::TypeArena, lower::HirBuilder, types::TypeHandler},
-    syntax::{parser::CalamarsParser, token},
+    sematic::{lower::HirBuilder, types::TypeHandler},
+    syntax::parser::CalamarsParser,
 };
 use ir::printer::MirPrinter;
 use std::path::PathBuf;
@@ -82,7 +82,7 @@ fn main() {
                 Ok(_) => {}
                 Err(errs) => {
                     for err in errs {
-                        println!("{:?}", err);
+                        println!("{err:?}");
                     }
                 }
             }

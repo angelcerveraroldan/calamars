@@ -1,14 +1,7 @@
 //! Tokenizer for Calamars language using [Logos](https://github.com/maciejhirsz/logos)
 
-use std::{
-    convert::identity,
-    fmt::Debug,
-    fs::{self, File},
-    process::Output,
-    str::FromStr,
-};
+use std::{fmt::Debug, str::FromStr};
 
-use crate::syntax::span::Span;
 use std::fmt;
 
 use logos::{Lexer, Logos};
@@ -132,18 +125,16 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn tokenize_line<'a>(s: &'a str) -> Vec<Token> {
-        let mut lex = Token::lexer(&s);
+    pub fn tokenize_line(s: &str) -> Vec<Token> {
+        let lex = Token::lexer(s);
         let mut tokens = vec![];
-        for token in lex.into_iter() {
-            if let Ok(t) = token {
-                tokens.push(t);
-            }
+        for token in lex.flatten() {
+            tokens.push(token);
         }
         tokens
     }
 
-    pub fn tokens_spanned_stream<'a>(source: &'a str) -> Vec<(Token, logos::Span)> {
+    pub fn tokens_spanned_stream(source: &str) -> Vec<(Token, logos::Span)> {
         Token::lexer(source)
             .spanned()
             .map(|(token, span)| match token {
@@ -241,7 +232,7 @@ impl fmt::Display for Token {
 
             // comments
             Token::LineComment => write!(f, "--…"),
-            Token::DocComment(s) => write!(f, "--*{}*--", s),
+            Token::DocComment(s) => write!(f, "--*{s}*--"),
 
             // identifiers & literals
             Token::Ident(s) => write!(f, "{s}"),

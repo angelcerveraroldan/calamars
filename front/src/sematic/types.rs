@@ -1,24 +1,13 @@
 //! Type checking on the HIR
 
-use std::any::Any;
-
-use calamars_core::{
-    MaybeErr,
-    ids::{self, ExpressionId, SymbolId},
-};
+use calamars_core::ids::{self, ExpressionId};
 
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{
-            self, ExpressionArena, IdentArena, Symbol, SymbolArena, Type, TypeArena,
-            type_id_stringify,
-        },
+        hir::{self, Type, type_id_stringify},
     },
-    syntax::{
-        ast::{Declaration, Expression},
-        span::Span,
-    },
+    syntax::span::Span,
 };
 
 /// `TypeHandler` is responsible for checking that the HIR's type semantics are correct.
@@ -105,7 +94,7 @@ impl<'a> TypeHandler<'a> {
             } => {
                 // Make sure that the predicate is a boolean
                 let p_ty = self.type_expression(predicate);
-                if (p_ty != self.module.types.err_id()) {
+                if p_ty != self.module.types.err_id() {
                     let bool = self.module.types.intern(&Type::Boolean);
                     self.ensure_type(*predicate, p_ty, bool);
                 }
@@ -114,11 +103,11 @@ impl<'a> TypeHandler<'a> {
                 let t_ty = self.type_expression(then);
                 let o_ty = self.type_expression(otherwise);
 
-                if (t_ty == self.module.types.err_id() || o_ty == self.module.types.err_id()) {
+                if t_ty == self.module.types.err_id() || o_ty == self.module.types.err_id() {
                     return self.module.types.err_id();
                 }
 
-                if (t_ty != o_ty) {
+                if t_ty != o_ty {
                     self.errors.push(SemanticError::MismatchedIfBranches {
                         then_span: *then_span,
                         then_return: type_id_stringify(&self.module.types, t_ty),
@@ -162,7 +151,7 @@ impl<'a> TypeHandler<'a> {
             self.errors.push(SemanticError::ArityError {
                 expected: in_tys.len(),
                 actual: inputs.len(),
-                span: span,
+                span,
             });
 
             return out_ty;
@@ -170,7 +159,7 @@ impl<'a> TypeHandler<'a> {
 
         // Check that there are no input errors when calling the function
         for (actual, exp) in inputs.into_iter().zip(in_tys) {
-            let acc_ty = self.type_expression(&actual);
+            let acc_ty = self.type_expression(actual);
             let acc_expr = self.module.exprs.get_unchecked(*actual);
             if acc_ty != exp && acc_ty != self.module.types.err_id() {
                 self.errors.push(SemanticError::WrongType {
@@ -195,7 +184,7 @@ impl<'a> TypeHandler<'a> {
         let rhs_type_id = self.type_expression(rhs);
 
         let error_id = self.module.types.err_id();
-        if (lhs_type_id == error_id || rhs_type_id == error_id) {
+        if lhs_type_id == error_id || rhs_type_id == error_id {
             return error_id;
         }
 
@@ -217,7 +206,7 @@ impl<'a> TypeHandler<'a> {
                 }
 
                 // If they are both integers, then we will return integer
-                if (lhs_type_id == int_type_id && rhs_type_id == int_type_id) {
+                if lhs_type_id == int_type_id && rhs_type_id == int_type_id {
                     return int_type_id;
                 }
 
@@ -225,13 +214,13 @@ impl<'a> TypeHandler<'a> {
                 float_type_id
             }
             hir::BinOp::EqEq => {
-                if (lhs_type_id == self.module.types.err_id()
-                    || rhs_type_id == self.module.types.err_id())
+                if lhs_type_id == self.module.types.err_id()
+                    || rhs_type_id == self.module.types.err_id()
                 {
                     return self.module.types.err_id();
                 }
 
-                if (lhs_type_id != rhs_type_id) {
+                if lhs_type_id != rhs_type_id {
                     let rhs_expr = self.module.exprs.get_unchecked(*rhs);
                     self.errors.push(SemanticError::WrongType {
                         expected: type_id_stringify(&self.module.types, lhs_type_id),
@@ -250,9 +239,11 @@ impl<'a> TypeHandler<'a> {
 
                 let bool_ty = self.module.types.intern(&Type::Boolean);
 
-                (lhs_type_id != int_type_id || rhs_type_id != int_type_id)
-                    .then(|| error_id)
-                    .unwrap_or(bool_ty)
+                if lhs_type_id != int_type_id || rhs_type_id != int_type_id {
+                    error_id
+                } else {
+                    bool_ty
+                }
             }
         }
     }
@@ -328,7 +319,9 @@ impl<'a> TypeHandler<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::sematic::hir::ConstantStringArena;
+    use crate::sematic::hir::{
+        ConstantStringArena, ExpressionArena, IdentArena, SymbolArena, TypeArena,
+    };
 
     use super::hir::{BinOp, Const, Expr, Symbol, SymbolKind};
     use super::ids;
@@ -579,8 +572,8 @@ mod tests {
 
     #[test]
     fn identifier_uses_symbol_type() {
-        let mut exprs = ExpressionArena::new_checked();
-        let mut syms = SymbolArena::new_unchecked();
+        let exprs = ExpressionArena::new_checked();
+        let syms = SymbolArena::new_unchecked();
 
         let mut module = mk_module(exprs, syms, ConstantStringArena::new_unchecked());
         let mut handler = TypeHandler {

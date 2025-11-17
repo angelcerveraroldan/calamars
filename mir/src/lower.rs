@@ -1,12 +1,8 @@
 //! Lower HIR to MIR
 
-use std::ptr::eq;
 
 use calamars_core::ids::{self, ExpressionId, SymbolId, TypeId};
-use front::{
-    sematic::hir::{self, SymbolKind},
-    syntax::{ast::Expression, span::Span},
-};
+use front::sematic::hir::{self, SymbolKind};
 
 use crate::{
     BBlock, BinaryOperator, BindingId, BlockId, Function, FunctionArena, FunctionId, VInstruct,
@@ -112,7 +108,7 @@ impl<'a> MirBuilder<'a> {
         let kind = match expression {
             // The case is handled differently, as it does not generate a new instruction, but
             // uses an old one.
-            hir::Expr::Identifier { id, .. } => unreachable!("This case was handled above"),
+            hir::Expr::Identifier {  .. } => unreachable!("This case was handled above"),
 
             hir::Expr::Literal { constant, .. } => VInstructionKind::Constant(match constant {
                 hir::Const::I64(i) => crate::Consts::I64(*i),
@@ -209,7 +205,7 @@ impl<'a> MirBuilder<'a> {
                 Ok(assignment.into())
             }
             SymbolKind::Function { params, body } => self
-                .lower_function(s.ident_id(), t.function_output(), &params, *body)
+                .lower_function(s.ident_id(), t.function_output(), params, *body)
                 .map(Into::into),
             SymbolKind::VariableUndeclared { .. } | SymbolKind::FunctionUndeclared { .. } => {
                 Err(MirErrors::LoweringErr {
@@ -254,7 +250,7 @@ impl<'a> MirBuilder<'a> {
 #[cfg(test)]
 mod test_lower {
 
-    use core::hash;
+    
     use indoc::indoc;
 
     use calamars_core::ids;
@@ -265,7 +261,7 @@ mod test_lower {
         syntax::span::Span,
     };
 
-    use crate::{BlockId, VInstructionKind, lower::MirBuilder, printer::MirPrinter};
+    use crate::{VInstructionKind, lower::MirBuilder, printer::MirPrinter};
 
     fn make_context() -> hir::Module {
         hir::Module {

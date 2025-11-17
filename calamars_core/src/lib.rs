@@ -2,7 +2,7 @@
 
 pub mod ids;
 
-use std::{hash::Hash, marker::PhantomData, ops::Deref};
+use std::{hash::Hash, marker::PhantomData};
 
 pub trait Identifier
 where

@@ -1,6 +1,5 @@
 //! Lower AST to HIR
 
-use std::ops::Index;
 
 use calamars_core::ids::{self, SymbolId};
 
@@ -8,7 +7,6 @@ use crate::{
     sematic::{
         error::SemanticError,
         hir::{self, Const, Expr, Symbol, default_typearena},
-        lower,
     },
     syntax::{ast, span::Span},
 };
@@ -321,8 +319,8 @@ impl HirBuilder {
                     ast::BinaryOperator::Mod => hir::BinOp::Mod,
                     _ => break 'binop_case Expr::Err,
                 };
-                let lhs = self.expression(&binary_op.lhs());
-                let rhs = self.expression(&binary_op.rhs());
+                let lhs = self.expression(binary_op.lhs());
+                let rhs = self.expression(binary_op.rhs());
                 let span = binary_op.span();
                 Expr::BinaryOperation {
                     operator,
