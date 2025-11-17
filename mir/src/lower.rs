@@ -161,7 +161,7 @@ impl<'a> MirBuilder<'a> {
                     Box::from([(then_block, then), (othr_block, otherwise)]),
                 );
             }
-            _ => todo!(),
+            _ => todo!("Cannot yet handle: {:?}", expression),
         };
 
         self.emit(kind)
