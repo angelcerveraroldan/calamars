@@ -96,6 +96,7 @@ pub enum Token {
     #[token("=")] Equal,
     #[token("<")] Less,
     #[token(">")] Greater,
+    #[token("%")] Mod,
 
     #[regex(r"--[^\n]*", priority = 2)]
     LineComment,
@@ -236,6 +237,7 @@ impl fmt::Display for Token {
             Token::Less => write!(f, "<"),
             Token::Greater => write!(f, ">"),
             Token::Pow => write!(f, "^"),
+            Token::Mod => write!(f, "%"),
 
             // comments
             Token::LineComment => write!(f, "--…"),

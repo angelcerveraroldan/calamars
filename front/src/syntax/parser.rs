@@ -47,6 +47,9 @@ const fn binary_op_from_token(token: &Token) -> Option<ast::BinaryOperator> {
         Token::Slash => Some(ast::BinaryOperator::Div),
         Token::Less => Some(ast::BinaryOperator::Less),
         Token::Greater => Some(ast::BinaryOperator::Greater),
+        Token::Mod => Some(ast::BinaryOperator::Mod),
+
+        // Not a binary operator!
         _ => None,
     }
 }
