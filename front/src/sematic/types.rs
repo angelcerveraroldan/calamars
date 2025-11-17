@@ -240,13 +240,19 @@ impl<'a> TypeHandler<'a> {
                         span: rhs_expr.get_span().unwrap(),
                     });
                 }
-                self.module.types.err_id()
+
+                self.module.types.intern(&Type::Boolean)
             }
             // Both integers
             hir::BinOp::Mod => {
                 self.ensure_type(*lhs, lhs_type_id, int_type_id);
                 self.ensure_type(*rhs, rhs_type_id, int_type_id);
-                self.module.types.err_id()
+
+                let bool_ty = self.module.types.intern(&Type::Boolean);
+
+                (lhs_type_id != int_type_id || rhs_type_id != int_type_id)
+                    .then(|| error_id)
+                    .unwrap_or(bool_ty)
             }
         }
     }
