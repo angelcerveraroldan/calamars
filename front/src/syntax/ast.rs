@@ -216,6 +216,7 @@ pub enum BinaryOperator {
     Leq,      // <=
     EqEq,     // ==
     NotEqual, // !=
+    Mod,      // %
 
     Or,  // or
     Xor, // xor

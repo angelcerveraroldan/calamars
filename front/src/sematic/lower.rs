@@ -317,6 +317,8 @@ impl HirBuilder {
                     ast::BinaryOperator::Sub => hir::BinOp::Sub,
                     ast::BinaryOperator::Times => hir::BinOp::Mult,
                     ast::BinaryOperator::Div => hir::BinOp::Div,
+                    ast::BinaryOperator::EqEq => hir::BinOp::EqEq,
+                    ast::BinaryOperator::Mod => hir::BinOp::Mod,
                     _ => break 'binop_case Expr::Err,
                 };
                 let lhs = self.expression(&binary_op.lhs());
