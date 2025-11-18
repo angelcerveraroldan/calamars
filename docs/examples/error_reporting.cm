@@ -1,0 +1,20 @@
+-- A file with a bunch of parsing/semantic errors
+
+-- 1) Wrong return type (returns String, declared Int)
+def bad_ret(): Int = "oops"
+
+def add(a: Int, b: Int): Int = a + b
+
+
+-- 2) Wrong argument count
+def bad_arity(): Int = add(1, a, 3)
+
+-- 3) Identifier not found
+def ident_not_found(): Int = add(1, a)
+
+-- 4) Redeclaration
+def add(a: Int, b: Int): Int = a * b
+
+-- 5.1) Non-boolean in if predicate
+-- 5.2) Different return types in if branches
+def if_branches(): Int = if "hello" then 2 else false

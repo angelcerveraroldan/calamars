@@ -1,0 +1,16 @@
+-- A simple and minimial file that should lower to MIR without any issues!
+
+--*
+Given $a, b in ZZ$ return $a + b$
+*--
+def add(a: Int, b: Int): Int  = a + b
+
+def mul(a: Int, b: Int): Int = a * b
+
+def mod(a: Int, m: Int): Int = a % m
+
+-- If statements
+def is_even(a: Int): Bool = 
+	if a % 2 == 0
+		then true
+		else false
