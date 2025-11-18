@@ -96,7 +96,7 @@ impl PrettyError for SemanticError {
             SemanticError::WrongType { .. } | SemanticError::BindingWrongType { .. } => {
                 "Wrong type returned"
             }
-            SemanticError::TypeNotFound { .. } => " Type not found",
+            SemanticError::TypeNotFound { .. } => "Type not found",
             SemanticError::TypeMissingCtx { .. } => "Missing type",
             SemanticError::MismatchedIfBranches { .. } => {
                 "Both branches in if statement must return the same type"
@@ -142,7 +142,12 @@ impl PrettyError for SemanticError {
                 Some(Color::Magenta),
             )],
             SemanticError::TypeNotFound { type_name, span } => {
-                vec![label_from(file_name, *span, "Type not found", None)]
+                vec![label_from(
+                    file_name,
+                    *span,
+                    "Type not found",
+                    Some(Color::Red),
+                )]
             }
             SemanticError::WrongType {
                 expected,
