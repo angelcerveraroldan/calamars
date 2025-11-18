@@ -247,7 +247,80 @@ impl CalamarsParser {
         Some(ast::Literal::new(lit_kind, *span))
     }
 
-    // Literals, name/path, bracketed expressions
+    fn parse_if_expr(&mut self) -> ast::Expression {
+        let start = self.begin_span();
+
+        self.need(Token::If, "if");
+        let pred = self.parse_expression();
+
+        self.need(Token::Then, "then");
+        let then = self.parse_expression();
+
+        self.need(Token::Else, "else");
+
+        let otherwise = self.parse_expression();
+        let end = self.end_span();
+        let ifs = ast::IfStm::new(
+            pred.into(),
+            then.into(),
+            otherwise.into(),
+            Span::from(start..end),
+        );
+        ast::Expression::IfStm(ifs)
+    }
+
+    fn parse_block_expr(&mut self) -> ast::Expression {
+        let start = self.begin_span();
+        let opening_loc = self.zero_width_here();
+        self.advance_one();
+        let mut items = vec![];
+        let mut final_expr = None;
+
+        loop {
+            match self.next_token_ref() {
+                Token::Var | Token::Val | Token::Def => {
+                    let d = self.parse_declaration();
+                    items.push(ast::Item::Declaration(d));
+                }
+                Token::Semicolon => {
+                    // TODO: Warning, semicolon not necessary
+                    self.advance_one();
+                }
+                tk if self.is_expr_init(tk) => {
+                    let e = self.parse_expression();
+                    // If this is the tail of the function, we will return it
+                    if self.next_eq(Token::RBrace) {
+                        final_expr = Some(Box::new(e));
+                        break;
+                    } else {
+                        items.push(ast::Item::Expression(e));
+                        self.handle_semicolon();
+                    }
+                }
+                Token::RBrace => break,
+                _ => {
+                    // TODO:Skip until a good point here, recover
+                    break;
+                }
+            }
+        }
+
+        if self.next_eq(Token::RBrace) {
+            self.advance_one();
+        } else {
+            self.diag.push(ParsingError::DelimeterNotClosed {
+                expected: "}",
+                at: self.zero_width_here(),
+                opening_loc,
+            });
+        }
+
+        let end = self.end_span();
+        let comp = ast::CompoundExpression::new(items, final_expr, Span::from(start..end));
+        ast::Expression::Block(comp)
+    }
+
+    /// Literals, name/path, bracketed expressions
     fn parse_primary(&mut self) -> ast::Expression {
         // A literal is the simplest case
         if let Some(literal) = self.try_lit() {
@@ -276,80 +349,8 @@ impl CalamarsParser {
 
                 expr
             }
-            Token::LBrace => {
-                let start = self.begin_span();
-                self.advance_one();
-                let mut items = vec![];
-                let mut final_expr = None;
-
-                loop {
-                    match self.next_token_ref() {
-                        Token::Var | Token::Val | Token::Def => {
-                            let d = self.parse_declaration();
-                            items.push(ast::Item::Declaration(d));
-                        }
-                        Token::Semicolon => {
-                            // TODO: Warning, semicolon not necessary
-                            self.advance_one();
-                        }
-                        tk if self.is_expr_init(tk) => {
-                            let e = self.parse_expression();
-                            // If this is the tail of the function, we will return it
-                            if self.next_eq(Token::RBrace) {
-                                final_expr = Some(Box::new(e));
-                                break;
-                            } else {
-                                items.push(ast::Item::Expression(e));
-                                self.handle_semicolon();
-                            }
-                        }
-                        Token::RBrace => break,
-                        _ => {
-                            // TODO:Skip until a good point here, recover
-                            break;
-                        }
-                    }
-                }
-
-                if self.next_eq(Token::RBrace) {
-                    self.advance_one();
-                } else {
-                    // We need wayy better errors, at least be consistent.
-                    self.expect_err("closing brace '}'");
-                }
-
-                let end = self.end_span();
-                let comp = ast::CompoundExpression::new(items, final_expr, Span::from(start..end));
-                ast::Expression::Block(comp)
-            }
-            Token::If => {
-                let start = self.begin_span();
-                self.advance_one();
-                let pred = self.parse_expression();
-
-                if !self.next_eq(Token::Then) {
-                    self.expect_err("then");
-                } else {
-                    self.advance_one();
-                }
-                let then = self.parse_expression();
-
-                if !self.next_eq(Token::Else) {
-                    self.expect_err("else");
-                } else {
-                    self.advance_one();
-                }
-
-                let otherwise = self.parse_expression();
-                let end = self.end_span();
-                let ifs = ast::IfStm::new(
-                    pred.into(),
-                    then.into(),
-                    otherwise.into(),
-                    Span::from(start..end),
-                );
-                ast::Expression::IfStm(ifs)
-            }
+            Token::LBrace => self.parse_block_expr(),
+            Token::If => self.parse_if_expr(),
             _ => {
                 let at = self.zero_width_here();
                 self.insert_err(ParsingError::Expected {
