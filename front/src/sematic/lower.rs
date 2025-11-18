@@ -100,11 +100,10 @@ impl HirBuilder {
 
     /// Given a functions declaration detials, generate SymbolIds for the input parameters, but
     /// dont add them to the current scope.
-    fn function_param_ids(
+    fn lower_params_to_symbols(
         &mut self,
         idents: &Vec<ast::Ident>,
         ty_id: ids::TypeId,
-        fn_type: &ast::Type,
     ) -> Box<[SymbolId]> {
         if ty_id == self.types.err_id() {
             return [].into();
@@ -231,7 +230,7 @@ impl HirBuilder {
     fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
         let ty = self.type_lower(def.fntype());
-        let params = self.function_param_ids(def.input_idents(), ty, def.fntype());
+        let params = self.lower_params_to_symbols(def.input_idents(), ty);
         let kind = hir::SymbolKind::FunctionUndeclared { params };
         let symbol = Symbol::new(kind, ty, name, def.name_span(), def.span());
         self.insert_symbol(symbol)
