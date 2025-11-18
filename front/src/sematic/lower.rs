@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Lower AST to HIR in two passes:
-/// - Pass A (`module_pass_a`) walks declarations, creates symbols, and fills scopes so uses can
+/// - Pass A (`declare_symbols_pass`) walks declarations, creates symbols, and fills scopes so uses can
 ///   resolve regardless of order.
 /// - Pass B (`attach_body_declaration`) lowers bodies/expressions now that all symbols exist.
 ///
@@ -184,7 +184,7 @@ impl HirBuilder {
 
     pub fn module(&mut self, module: &ast::Module) -> Box<[SymbolId]> {
         // Insert all of the symbols to the table
-        let pass_a: Box<[SymbolId]> = self.module_pass_a(module);
+        let pass_a: Box<[SymbolId]> = self.declare_symbols_pass(module);
 
         // Add bodies to the declarations
         for (dec, id) in module.items.iter().zip(&pass_a) {
@@ -212,7 +212,7 @@ impl HirBuilder {
     ///
     /// Because of this, we handle all of the declarations first without
     /// looking at the bodies.
-    fn module_pass_a(&mut self, module: &ast::Module) -> Box<[ids::SymbolId]> {
+    fn declare_symbols_pass(&mut self, module: &ast::Module) -> Box<[ids::SymbolId]> {
         for import in &module.imports {
             self.insert_error(SemanticError::NotSupported {
                 msg: "Imports are not yet supported, sorry :(",
