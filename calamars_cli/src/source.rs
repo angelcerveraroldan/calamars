@@ -10,7 +10,6 @@ use std::{
 use calamars_core::ids;
 use front::syntax;
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct FileId(pub usize);
 

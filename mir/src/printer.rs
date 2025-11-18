@@ -1,4 +1,3 @@
-
 use calamars_core::Identifier;
 
 use std::fmt::Write;
