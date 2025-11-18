@@ -143,15 +143,6 @@ impl CalamarsParser {
         self.curr_index += 1;
     }
 
-    /// The next token needs to be `token`, if it isnt then `err` will be added to the diagnostics.
-    fn need(&mut self, token: Token, err: &str) {
-        if self.next_eq(token) {
-            self.advance_one();
-        } else {
-            self.expect_err(err);
-        }
-    }
-
     /// Get the next token by reference
     fn next_token_ref(&self) -> &Token {
         &self.tokens[self.n_index()].0
@@ -177,6 +168,16 @@ impl CalamarsParser {
 
     fn next_eq(&self, tk: Token) -> bool {
         tk == *self.next_token_ref()
+    }
+
+    /// Get the next n tokens
+    fn peek_n(&self, n: usize) -> Box<[&Token]> {
+        let next = self.n_index();
+        let range = next..n.min(next);
+        self.tokens[range]
+            .iter()
+            .map(|(a, _)| a)
+            .collect::<Box<[&Token]>>()
     }
 
     fn checkpoint(&self) -> (usize, usize) {
@@ -270,8 +271,6 @@ impl CalamarsParser {
                         expected: ")",
                         at: self.zero_width_here(),
                     });
-                } else {
-                    self.advance_one();
                 }
 
                 expr
@@ -505,15 +504,15 @@ impl CalamarsParser {
         ast::Type::new_path(segments, Span::from(init_span..end_span))
     }
 
-    /// Parse a function type. Note that this specifically handles a type that is a function, such
-    /// as `(Int) -> Int` (lambda), it is not to meant to be executed on function definitions.
-    ///
-    /// The grammar for lambdas:
-    ///
-    /// `( <type>*, ) -> <type>`
     fn parse_fn_type(&mut self) -> ast::Type {
         let init_span = self.next_span();
-        self.need(Token::LParen, "(");
+        // Start by consuming the first paren
+        if !self.next_matches(|tk| *tk == Token::LParen) {
+            self.expect_err("function type");
+            return ast::Type::Error;
+        } else {
+            self.advance_one();
+        }
 
         let mut inputs = vec![];
         loop {
@@ -530,7 +529,11 @@ impl CalamarsParser {
             }
         }
 
-        self.need(Token::Arrow, "->");
+        if !self.next_matches(|tk| *tk == Token::Arrow) {
+            self.expect_err("->");
+        } else {
+            self.advance_one();
+        }
 
         let output = Box::new(self.parse_type());
         let out_final = output.span().unwrap().end;
@@ -541,12 +544,9 @@ impl CalamarsParser {
         }
     }
 
-    /// Parse an array type, this is:
-    ///
-    /// `[ <type> ]`
     fn parse_arr_type(&mut self) -> ast::Type {
-        let opening_loc = self.zero_width_here();
-        self.need(Token::LBracket, "[");
+        let l_sp = self.next_ref().1;
+        self.advance_one(); // '['
 
         let elem = self.parse_type();
 
@@ -557,7 +557,7 @@ impl CalamarsParser {
             sp
         } else {
             self.insert_err(ParsingError::DelimeterNotClosed {
-                opening_loc,
+                opening_loc: l_sp,
                 expected: "]",
                 at: self.zero_width_here(),
             });
@@ -568,13 +568,13 @@ impl CalamarsParser {
                 self.advance_one();
                 sp
             } else {
-                elem.span().unwrap_or(opening_loc)
+                elem.span().unwrap_or(l_sp)
             }
         };
 
         ast::Type::Array {
             elem_type: Box::new(elem),
-            span: Span::from(opening_loc.start..r_sp.end),
+            span: Span::from(l_sp.start..r_sp.end),
         }
     }
 
@@ -606,19 +606,28 @@ impl CalamarsParser {
     fn parse_binding(&mut self) -> ast::Binding {
         let start = self.begin_span();
 
-        let mutable = match self.next_token_ref() {
-            Token::Var => true,
-            Token::Val => false,
-            _ => panic!("This function should only be executed if the first token is var or val"),
+        let mutable = if self.next_eq(Token::Var) {
+            true
+        } else if self.next_eq(Token::Val) {
+            false
+        } else {
+            panic!("This function should only be executed if the first token is var or val");
         };
 
         self.advance_one();
         let name = self.parse_identifier();
-
-        self.need(Token::Colon, ":");
+        if self.next_eq(Token::Colon) {
+            self.advance_one();
+        } else {
+            self.expect_err(":");
+        }
         let vtype = self.parse_type();
 
-        self.need(Token::Equal, "=");
+        if self.next_eq(Token::Equal) {
+            self.advance_one();
+        } else {
+            self.expect_err("=");
+        }
 
         let assigned = Box::new(self.parse_expression());
         self.handle_semicolon();
@@ -636,7 +645,11 @@ impl CalamarsParser {
             }
             let ident = self.parse_identifier();
 
-            self.need(Token::Colon, ":");
+            if self.next_eq(Token::Colon) {
+                self.advance_one();
+            } else {
+                self.expect_err(":");
+            }
 
             let ty = self.parse_type();
             v.push((ident, ty));
@@ -671,12 +684,18 @@ impl CalamarsParser {
         }
 
         let start = self.begin_span();
+        if !self.next_eq(Token::Def) {
+            panic!("First token must be Def");
+        }
 
-        self.need(Token::Def, "def");
-
+        self.advance_one();
         let fname = self.parse_identifier();
 
-        self.need(Token::LParen, "(");
+        if !self.next_eq(Token::LParen) {
+            self.expect_err("(");
+        } else {
+            self.advance_one();
+        }
 
         let params = self.parse_comma_separated_idents();
 
@@ -704,7 +723,11 @@ impl CalamarsParser {
             ast::Type::Unit
         };
 
-        self.need(Token::Equal, "=");
+        if self.next_eq(Token::Equal) {
+            self.advance_one();
+        } else {
+            self.expect_err("=");
+        }
 
         let expr = self.parse_expression();
         let end = self.end_span();
