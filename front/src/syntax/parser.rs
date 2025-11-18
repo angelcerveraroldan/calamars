@@ -179,16 +179,6 @@ impl CalamarsParser {
         tk == *self.next_token_ref()
     }
 
-    /// Get the next n tokens
-    fn peek_n(&self, n: usize) -> Box<[&Token]> {
-        let next = self.n_index();
-        let range = next..n.min(next);
-        self.tokens[range]
-            .iter()
-            .map(|(a, _)| a)
-            .collect::<Box<[&Token]>>()
-    }
-
     fn checkpoint(&self) -> (usize, usize) {
         (self.curr_index, self.diag.len())
     }
