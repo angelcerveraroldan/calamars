@@ -257,7 +257,7 @@ impl HirBuilder {
             }
         }
 
-        let expression_id = self.expression(body);
+        let expression_id = self.lower_expression(body);
         if matches!(skc, hir::SymbolKind::FunctionUndeclared { .. }) {
             self.pop_scope();
         }
@@ -295,7 +295,7 @@ impl HirBuilder {
     /// Turn an expression into an ExpressionId
     ///
     /// This does not check for the correctness of the expression, but it may return the id of Expr::Err if there was an error generating the expression
-    fn expression(&mut self, expr: &ast::Expression) -> ids::ExpressionId {
+    fn lower_expression(&mut self, expr: &ast::Expression) -> ids::ExpressionId {
         let expr = match expr {
             ast::Expression::Literal(literal) => 'literal_case: {
                 let constant = match literal.kind() {
@@ -330,8 +330,8 @@ impl HirBuilder {
                     ast::BinaryOperator::Mod => hir::BinOp::Mod,
                     _ => break 'binop_case Expr::Err,
                 };
-                let lhs = self.expression(binary_op.lhs());
-                let rhs = self.expression(binary_op.rhs());
+                let lhs = self.lower_expression(binary_op.lhs());
+                let rhs = self.lower_expression(binary_op.rhs());
                 let span = binary_op.span();
                 Expr::BinaryOperation {
                     operator,
@@ -344,10 +344,10 @@ impl HirBuilder {
                 let inputs = func_call
                     .params()
                     .iter()
-                    .map(|exp| self.expression(exp))
+                    .map(|exp| self.lower_expression(exp))
                     .collect();
 
-                let f = self.expression(func_call.callable());
+                let f = self.lower_expression(func_call.callable());
 
                 Expr::Call {
                     f,
@@ -360,9 +360,9 @@ impl HirBuilder {
                 let then = ifstm.then_expr();
                 let othr = ifstm.else_expr();
 
-                let predicate = self.expression(pred.as_ref());
-                let then = self.expression(then.as_ref());
-                let otherwise = self.expression(othr.as_ref());
+                let predicate = self.lower_expression(pred.as_ref());
+                let then = self.lower_expression(then.as_ref());
+                let otherwise = self.lower_expression(othr.as_ref());
 
                 Expr::If {
                     predicate,
