@@ -34,6 +34,17 @@ impl<'a> TypeHandler<'a> {
         });
     }
 
+    #[inline]
+    fn error_ty(&mut self) -> ids::TypeId {
+        self.module.types.err_id()
+    }
+
+    #[inline]
+    fn intern_ty(&mut self, ty: &Type) -> ids::TypeId {
+        self.module.types.intern(ty)
+    }
+
+    /// Check that some expression has a numerical type. Otherwise, log an error.
     fn ensure_numeric(&mut self, expr: ids::ExpressionId, t: ids::TypeId) {
         if self.match_type(t, &Type::Integer) || self.match_type(t, &Type::Float) {
             return;
