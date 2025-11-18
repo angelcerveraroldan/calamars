@@ -9,11 +9,40 @@ Calamars is an experimental programming language that’s still very much in dev
 - **Clean, functional-inspired syntax**. Simple constructs, first class functions, and a style that encourages composition and clarity.
 - **Compiled _and_ interpreted**. Calamars is meant to run both as a compiled language and inside things such as notebooks. This should allow for easy testing and exploring, and for fast binaries.
 
+# Usage
+
+Today the CLI parses Calamars source to AST, lowers to HIR, type-checks, and prints MIR. There is no native codegen/backend yet (but it is coming soon!).
+
+## Quickstart
+
+Run the some code that contains no errors, you should see the MIR in text form printed:
+
+`cargo run -p calamars_cli -- build --mir docs/examples/minimal.cm`
+
+If you want to check out the error reporting capabilities, run the following:
+
+`cargo run -p calamars_cli -- build --mir docs/examples/error_reporting.cm`
+
+
 # Pretty Error Reporting
 
 Currently supports pretty error reporting using [`ariadne`](https://github.com/zesterer/ariadne).
 
 <img src="./docs/error_reporting.png" alt="Error reporting example">
+
+# Branch Structure
+
+Branches are named as `<prefix>/<name>`. When creating a new banch, choose a name that describes the changes being made, to choose the prefix, 
+reference the follwing table:
+
+| Prefix   | Usage                         |
+|----------|-------------------------------|
+| feat     | A new feature                 |
+| fix      | Fix a bug or something else   |
+| docs     | Add documentation             |
+| refactor | Reorganization                |
+| test     | Add new tests                 |
+| chore    | Dependencies, formatting, ... |
 
 # File structure
 
@@ -26,6 +55,21 @@ A Calamars project has to have the following structure:
 ```
 
 Where `project.cm` is the config file for the project.
+
+# Roadmap
+
+Currently working:
+- Lexer and parser to AST
+- HIR lowering with identifier resolution
+- Type checker on the HIR
+- Mir lowerer
+- Mir to text
+- Pretty diagnostics
+
+Things that I want to work on soon, but are not yet implemented:
+- Codegen / backend (This is top-priority, of course! Likely, cranelift will be used for this)
+- Imports / modules (Currently, we just support one file, need to think about how to handle many files)
+- Some expressions (For example, blocks are not yet supported, this should also come really soon, top priority!)
 
 # Syntax Highlighting
 
