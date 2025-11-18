@@ -15,6 +15,20 @@ Currently supports pretty error reporting using [`ariadne`](https://github.com/z
 
 <img src="./docs/error_reporting.png" alt="Error reporting example">
 
+# Branch Structure
+
+Branches are named as `<prefix>/<name>`. When creating a new banch, choose a name that describes the changes being made, to choose the prefix, 
+reference the follwing table:
+
+| Prefix   | Usage                         |
+--------------------------------------------
+| feat     | A new feature                 |
+| fix      | Fix a bug or something else   |
+| docs     | Add documentation             |
+| refactor | Reorganization                |
+| test     | Add new tests                 |
+| chore    | Dependencies, formatting, ... |
+
 # File structure
 
 A Calamars project has to have the following structure:
