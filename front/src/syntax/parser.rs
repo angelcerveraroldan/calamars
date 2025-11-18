@@ -408,6 +408,7 @@ impl CalamarsParser {
                 }
                 // TODO: Index not yet supported
                 Token::LBracket => {
+                    let start = self.begin_span();
                     self.skip_until(1, |a, b| {
                         if matches!(b, Token::RBracket) {
                             *a -= 1;
@@ -416,6 +417,11 @@ impl CalamarsParser {
                             *a += 1;
                         }
                         *a == 0
+                    });
+                    let end = self.end_span();
+                    self.insert_err(ParsingError::NotSupported {
+                        span: Span::from((start..end)),
+                        message: "Cannot index yet, arrays are coming soon.".to_owned(),
                     });
                 }
                 _ => break,
