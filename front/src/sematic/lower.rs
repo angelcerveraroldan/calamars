@@ -182,7 +182,7 @@ impl HirBuilder {
         self.types.intern(&ty)
     }
 
-    pub fn module(&mut self, module: &ast::Module) -> Box<[SymbolId]> {
+    pub fn lower_module_to_symbols(&mut self, module: &ast::Module) -> Box<[SymbolId]> {
         // Insert all of the symbols to the table
         let pass_a: Box<[SymbolId]> = self.declare_symbols_pass(module);
 
@@ -392,13 +392,14 @@ impl HirBuilder {
         self.expressions.push(expr)
     }
 
+    /// Given some module, lower it and return any errors that were generated along the way
     pub fn lower_module(
         module: &ast::Module,
         id: ids::FileId,
         name: String,
     ) -> (hir::Module, Vec<SemanticError>) {
         let mut lowerer = HirBuilder::default();
-        let roots = lowerer.module(module);
+        let roots = lowerer.lower_module_to_symbols(module);
         let errs = lowerer.errors().clone();
 
         (
