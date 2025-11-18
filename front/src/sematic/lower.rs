@@ -13,6 +13,12 @@ use crate::{
     },
 };
 
+/// Lower AST to HIR in two passes:
+/// - Pass A (`module_pass_a`) walks declarations, creates symbols, and fills scopes so uses can
+///   resolve regardless of order.
+/// - Pass B (`attach_body_declaration`) lowers bodies/expressions now that all symbols exist.
+///
+/// This prevents order-dependent resolution errors (e.g., calling a function declared later).
 pub struct HirBuilder {
     pub types: hir::TypeArena,
     pub const_str: hir::ConstantStringArena,
