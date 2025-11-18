@@ -21,7 +21,7 @@ Branches are named as `<prefix>/<name>`. When creating a new banch, choose a nam
 reference the follwing table:
 
 | Prefix   | Usage                         |
---------------------------------------------
+|----------|-------------------------------|
 | feat     | A new feature                 |
 | fix      | Fix a bug or something else   |
 | docs     | Add documentation             |
