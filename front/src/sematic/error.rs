@@ -24,8 +24,7 @@ pub enum SemanticError {
         span: Span,
     },
     /// Something is missing it's type!
-    TypeMissing,
-    TypeMissingCtx {
+    TypeMissing {
         for_identifier: Span,
     },
     QualifiedTypeNotSupported {
@@ -97,16 +96,17 @@ impl PrettyError for SemanticError {
                 "Wrong type returned"
             }
             SemanticError::TypeNotFound { .. } => "Type not found",
-            SemanticError::TypeMissingCtx { .. } => "Missing type",
+            SemanticError::TypeMissing { .. } => "Missing type",
             SemanticError::MismatchedIfBranches { .. } => {
                 "Both branches in if statement must return the same type"
             }
-            SemanticError::TypeMissing => "Type declaration missing",
             SemanticError::QualifiedTypeNotSupported { .. } => {
                 "Qualified types are not yet supported"
             }
             SemanticError::NotSupported { .. } => "Use of unsupported feature",
-            SemanticError::SymbolIdNotFound { .. } => "Internal error",
+            SemanticError::SymbolIdNotFound { .. } => {
+                "Internal error. Please report this as an issue in the repository."
+            }
             SemanticError::ArityError { .. } => "Wrong number of inputs found",
             SemanticError::NonCallable { .. } => "Calling non-callable",
             SemanticError::InternalError { .. } => "Internal error",
@@ -238,7 +238,7 @@ impl PrettyError for SemanticError {
                 v.push(l);
                 v
             }
-            SemanticError::TypeMissingCtx { for_identifier } => vec![label_from(
+            SemanticError::TypeMissing { for_identifier } => vec![label_from(
                 file_name,
                 *for_identifier,
                 "Type annotation is needed",
@@ -263,7 +263,14 @@ impl PrettyError for SemanticError {
                     Some(Color::Cyan),
                 ),
             ],
-            SemanticError::QualifiedTypeNotSupported { span } => todo!(),
+            SemanticError::QualifiedTypeNotSupported { span } => {
+                vec![label_from(
+                    file_name,
+                    *span,
+                    "Qualifed types are not yet supported! Sorry!",
+                    Some(Color::Magenta),
+                )]
+            }
             SemanticError::NotSupported { msg, span } => {
                 vec![label_from(file_name, *span, *msg, Some(Color::Red))]
             }
@@ -288,7 +295,6 @@ impl PrettyError for SemanticError {
             SemanticError::InternalError { msg, span } => {
                 vec![label_from(file_name, *span, *msg, None)]
             }
-            _ => todo!(),
         }
     }
 

@@ -52,6 +52,10 @@ fn main() {
             let mut parser = CalamarsParser::new(file_id, tokens);
             let module: front::syntax::ast::Module = parser.parse_file();
 
+            for err in parser.diag() {
+                err.log_error(&file_name, &sf.src);
+            }
+
             let mut module = match HirBuilder::lower_module(&module, file_id, file_name.clone()) {
                 Ok(module) => module,
                 Err(errors) => {

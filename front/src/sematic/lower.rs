@@ -7,7 +7,10 @@ use crate::{
         error::SemanticError,
         hir::{self, Const, Expr, Symbol, default_typearena},
     },
-    syntax::{ast, span::Span},
+    syntax::{
+        ast::{self, CompoundExpression},
+        span::Span,
+    },
 };
 
 pub struct HirBuilder {
@@ -365,6 +368,13 @@ impl HirBuilder {
                     then_span: ifstm.then_span(),
                     othewise_span: ifstm.else_span(),
                 }
+            }
+            ast::Expression::Block(b) => {
+                self.insert_error(SemanticError::NotSupported {
+                    msg: "Block expressions are not yet supported",
+                    span: b.total_span(),
+                });
+                Expr::Err
             }
             otherwise => {
                 self.insert_error(SemanticError::NotSupported {

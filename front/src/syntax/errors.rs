@@ -11,6 +11,10 @@ pub enum ParsingError {
         expected: String,
         span: Span,
     },
+    NotSupported {
+        span: Span,
+        message: String,
+    },
     DelimeterNotClosed {
         expected: &'static str,
         at: Span,
@@ -28,7 +32,7 @@ impl PrettyError for ParsingError {
                 vec![label_from(
                     file_name,
                     *span,
-                    format!("Expected to find: {expected}"),
+                    format!("Expected to find: `{expected}`"),
                     Some(Color::Red),
                 )]
             }
@@ -45,6 +49,9 @@ impl PrettyError for ParsingError {
                 ),
                 label_from(file_name, *at, "No closing delimeter", Some(Color::Red)),
             ],
+            ParsingError::NotSupported { span, message } => {
+                vec![label_from(file_name, *span, message, Some(Color::Magenta))]
+            }
         }
     }
 
@@ -52,6 +59,7 @@ impl PrettyError for ParsingError {
         match self {
             ParsingError::Expected { expected, span } => None,
             ParsingError::DelimeterNotClosed { .. } => None,
+            ParsingError::NotSupported { span, message } => None,
         }
     }
 
@@ -59,6 +67,7 @@ impl PrettyError for ParsingError {
         match self {
             ParsingError::Expected { .. } => "Did not find expected token",
             ParsingError::DelimeterNotClosed { .. } => "Delimeter not closed",
+            ParsingError::NotSupported { .. } => "Use of unsupported feature.",
         }
     }
 
