@@ -17,7 +17,6 @@ const UNARY_BP: usize = 90;
 const FUN_CALL: usize = 80;
 
 // Precedence information
-#[rustfmt::kip]
 const fn precedence(b: &Token) -> Option<(usize, usize)> {
     match b {
         Token::Pow => Some((70, 70)),
@@ -795,8 +794,6 @@ impl CalamarsParser {
 
 #[cfg(test)]
 mod tests {
-    
-    
 
     use super::*;
 

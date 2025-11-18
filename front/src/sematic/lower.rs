@@ -1,6 +1,5 @@
 //! Lower AST to HIR
 
-
 use calamars_core::ids::{self, SymbolId};
 
 use crate::{

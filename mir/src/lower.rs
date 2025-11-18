@@ -1,6 +1,5 @@
 //! Lower HIR to MIR
 
-
 use calamars_core::ids::{self, ExpressionId, SymbolId, TypeId};
 use front::sematic::hir::{self, SymbolKind};
 
@@ -108,7 +107,7 @@ impl<'a> MirBuilder<'a> {
         let kind = match expression {
             // The case is handled differently, as it does not generate a new instruction, but
             // uses an old one.
-            hir::Expr::Identifier {  .. } => unreachable!("This case was handled above"),
+            hir::Expr::Identifier { .. } => unreachable!("This case was handled above"),
 
             hir::Expr::Literal { constant, .. } => VInstructionKind::Constant(match constant {
                 hir::Const::I64(i) => crate::Consts::I64(*i),
@@ -250,7 +249,6 @@ impl<'a> MirBuilder<'a> {
 #[cfg(test)]
 mod test_lower {
 
-    
     use indoc::indoc;
 
     use calamars_core::ids;

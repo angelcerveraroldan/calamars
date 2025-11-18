@@ -62,6 +62,10 @@ impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
         self.data.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn inner(&self) -> &Vec<Ty> {
         &self.data
     }
@@ -81,6 +85,10 @@ impl<Ty, Id> InternArena<Ty, Id> {
 
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
