@@ -104,7 +104,9 @@ impl PrettyError for SemanticError {
                 "Qualified types are not yet supported"
             }
             SemanticError::NotSupported { .. } => "Use of unsupported feature",
-            SemanticError::SymbolIdNotFound { .. } => "Internal error",
+            SemanticError::SymbolIdNotFound { .. } => {
+                "Internal error. Please report this as an issue in the repository."
+            }
             SemanticError::ArityError { .. } => "Wrong number of inputs found",
             SemanticError::NonCallable { .. } => "Calling non-callable",
             SemanticError::InternalError { .. } => "Internal error",
