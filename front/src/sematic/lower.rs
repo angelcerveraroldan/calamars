@@ -139,7 +139,7 @@ impl HirBuilder {
         Err(SemanticError::IdentNotFound { name, span: usage })
     }
 
-    fn type_lower(&mut self, ty: &ast::Type) -> ids::TypeId {
+    fn lower_type(&mut self, ty: &ast::Type) -> ids::TypeId {
         let ty = match ty {
             ast::Type::Error => hir::Type::Error,
             ast::Type::Unit => hir::Type::Unit,
@@ -169,14 +169,14 @@ impl HirBuilder {
             ast::Type::Func { inputs, output, .. } => {
                 let input = inputs
                     .iter()
-                    .map(|t| self.type_lower(t))
+                    .map(|t| self.lower_type(t))
                     .collect::<Vec<_>>()
                     .into_boxed_slice();
-                let output = self.type_lower(output.as_ref());
+                let output = self.lower_type(output.as_ref());
                 hir::Type::Function { input, output }
             }
             ast::Type::Array { elem_type, .. } => {
-                hir::Type::Array(self.type_lower(elem_type.as_ref()))
+                hir::Type::Array(self.lower_type(elem_type.as_ref()))
             }
         };
         self.types.intern(&ty)
@@ -229,7 +229,7 @@ impl HirBuilder {
 
     fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
-        let ty = self.type_lower(def.fntype());
+        let ty = self.lower_type(def.fntype());
         let params = self.lower_params_to_symbols(def.input_idents(), ty);
         let kind = hir::SymbolKind::FunctionUndeclared { params };
         let symbol = Symbol::new(kind, ty, name, def.name_span(), def.span());
@@ -271,7 +271,7 @@ impl HirBuilder {
     fn bind_declaration(&mut self, bind: &ast::Binding) -> ids::SymbolId {
         let str_name = bind.vname.ident().to_string();
         let name = self.identifiers.intern(&str_name);
-        let ty = self.type_lower(&bind.vtype);
+        let ty = self.lower_type(&bind.vtype);
         let kind = hir::SymbolKind::VariableUndeclared {
             mutable: bind.mutable,
         };
