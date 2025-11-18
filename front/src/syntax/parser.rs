@@ -270,6 +270,8 @@ impl CalamarsParser {
                         expected: ")",
                         at: self.zero_width_here(),
                     });
+                } else {
+                    self.advance_one();
                 }
 
                 expr
