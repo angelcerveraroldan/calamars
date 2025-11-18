@@ -268,7 +268,7 @@ impl HirBuilder {
         symbol.update_body(expression_id);
     }
 
-    fn bind_declaration(&mut self, bind: &ast::Binding) -> ids::SymbolId {
+    fn lower_binding_decl(&mut self, bind: &ast::Binding) -> ids::SymbolId {
         let str_name = bind.vname.ident().to_string();
         let name = self.identifiers.intern(&str_name);
         let ty = self.lower_type(&bind.vtype);
@@ -287,7 +287,7 @@ impl HirBuilder {
     /// decalring function b, would lead to an error.
     fn declaration(&mut self, declaration: &ast::Declaration) -> SymbolId {
         match declaration {
-            ast::Declaration::Binding(binding) => self.bind_declaration(binding),
+            ast::Declaration::Binding(binding) => self.lower_binding_decl(binding),
             ast::Declaration::Function(def) => self.func_declaration(def),
         }
     }
