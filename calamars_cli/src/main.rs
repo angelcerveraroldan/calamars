@@ -8,9 +8,7 @@ use front::{
 use ir::printer::MirPrinter;
 use std::path::PathBuf;
 
-use crate::source::SourceFile;
-
-mod source;
+use calamars_cli::source::SourceFile;
 
 #[derive(Parser, Debug)]
 #[command(
