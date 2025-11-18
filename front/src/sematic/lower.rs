@@ -94,9 +94,13 @@ impl HirBuilder {
     fn function_param_ids(
         &mut self,
         idents: &Vec<ast::Ident>,
+        ty_id: ids::TypeId,
         fn_type: &ast::Type,
     ) -> Box<[SymbolId]> {
-        let ty_id = self.type_lower(fn_type);
+        if ty_id == self.types.err_id() {
+            return [].into();
+        }
+
         let input_tys = self.types.get_unchecked(ty_id).function_input();
 
         let mut v = vec![];
@@ -218,7 +222,7 @@ impl HirBuilder {
     fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
         let ty = self.type_lower(def.fntype());
-        let params = self.function_param_ids(def.input_idents(), def.fntype());
+        let params = self.function_param_ids(def.input_idents(), ty, def.fntype());
         let kind = hir::SymbolKind::FunctionUndeclared { params };
         let symbol = Symbol::new(kind, ty, name, def.name_span(), def.span());
         self.insert_symbol(symbol)
