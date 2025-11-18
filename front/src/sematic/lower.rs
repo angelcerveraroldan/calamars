@@ -227,7 +227,7 @@ impl HirBuilder {
             .collect()
     }
 
-    fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
+    fn lower_func_decl(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
         let ty = self.lower_type(def.fntype());
         let params = self.lower_params_to_symbols(def.input_idents(), ty);
@@ -288,7 +288,7 @@ impl HirBuilder {
     fn declaration(&mut self, declaration: &ast::Declaration) -> SymbolId {
         match declaration {
             ast::Declaration::Binding(binding) => self.lower_binding_decl(binding),
-            ast::Declaration::Function(def) => self.func_declaration(def),
+            ast::Declaration::Function(def) => self.lower_func_decl(def),
         }
     }
 
