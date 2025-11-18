@@ -237,12 +237,10 @@ impl<'a> TypeHandler<'a> {
                 self.ensure_type(*lhs, lhs_type_id, int_type_id);
                 self.ensure_type(*rhs, rhs_type_id, int_type_id);
 
-                let bool_ty = self.module.types.intern(&Type::Boolean);
-
                 if lhs_type_id != int_type_id || rhs_type_id != int_type_id {
                     error_id
                 } else {
-                    bool_ty
+                    self.module.types.intern(&Type::Integer)
                 }
             }
         }

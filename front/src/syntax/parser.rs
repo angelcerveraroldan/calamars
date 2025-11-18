@@ -20,7 +20,7 @@ const FUN_CALL: usize = 80;
 const fn precedence(b: &Token) -> Option<(usize, usize)> {
     match b {
         Token::Pow => Some((70, 70)),
-        Token::Star | Token::Slash => Some((60, 61)),
+        Token::Star | Token::Slash | Token::Mod => Some((60, 61)),
         Token::Plus | Token::Minus | Token::Concat => Some((50, 51)),
         Token::GreaterEqual | Token::LessEqual => Some((40, 41)),
         Token::EqualEqual | Token::NotEqual => Some((35, 36)),
