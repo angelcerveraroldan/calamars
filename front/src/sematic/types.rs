@@ -15,6 +15,7 @@ use crate::{
 /// It should identify errors such as `val x: Int = "hello"`, and return pretty diagnostics.
 pub struct TypeHandler<'a> {
     pub module: &'a mut hir::Module,
+    /// Collection of semantic errors encountered while type checking
     pub errors: Vec<SemanticError>,
 }
 
@@ -41,6 +42,7 @@ impl<'a> TypeHandler<'a> {
         self.push_wrong_type(t, "Numerical", sp);
     }
 
+    /// Check that some expression has a correct type. Otherwise, log an error.
     fn ensure_type(&mut self, expr: ids::ExpressionId, ty_id: ids::TypeId, expected: ids::TypeId) {
         if ty_id == expected {
             return;
@@ -53,7 +55,8 @@ impl<'a> TypeHandler<'a> {
     /// errors, for example: `2 + "hello"` they will be added to the `errors` vector, and will
     /// return the typeid of the `Error` type.
     ///
-    /// TODO: Insert the typeid to a map, so that later we can check the type of an expression id
+    /// This function will also memoize each expressions type id to the `expression_types` map in
+    /// the module.
     fn type_expression(&mut self, e_id: &ids::ExpressionId) -> ids::TypeId {
         if let Some(ty) = self.module.expression_types.get(e_id) {
             return *ty;
@@ -126,6 +129,10 @@ impl<'a> TypeHandler<'a> {
         type_id
     }
 
+    /// Given some function call, check:
+    /// 1. The inputs are the correct type
+    /// 2. The number of inputs is correct (arity check)
+    /// 3. Run type checking on each of the inputs
     fn type_check_fncall(
         &mut self,
         f: &ExpressionId,
@@ -246,6 +253,8 @@ impl<'a> TypeHandler<'a> {
         }
     }
 
+    /// When declaring a function, check that the body of the function returns the type expected in
+    /// the function signature.
     pub fn type_check_function_declaration(
         &mut self,
         name_span: Span,
