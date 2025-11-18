@@ -13,6 +13,12 @@ use crate::{
     },
 };
 
+/// Lower AST to HIR in two passes:
+/// - Pass A (`declare_symbols_pass`) walks declarations, creates symbols, and fills scopes so uses can
+///   resolve regardless of order.
+/// - Pass B (`attach_body_declaration`) lowers bodies/expressions now that all symbols exist.
+///
+/// This prevents order-dependent resolution errors (e.g., calling a function declared later).
 pub struct HirBuilder {
     pub types: hir::TypeArena,
     pub const_str: hir::ConstantStringArena,
@@ -94,11 +100,10 @@ impl HirBuilder {
 
     /// Given a functions declaration detials, generate SymbolIds for the input parameters, but
     /// dont add them to the current scope.
-    fn function_param_ids(
+    fn lower_params_to_symbols(
         &mut self,
         idents: &Vec<ast::Ident>,
         ty_id: ids::TypeId,
-        fn_type: &ast::Type,
     ) -> Box<[SymbolId]> {
         if ty_id == self.types.err_id() {
             return [].into();
@@ -134,7 +139,7 @@ impl HirBuilder {
         Err(SemanticError::IdentNotFound { name, span: usage })
     }
 
-    fn type_lower(&mut self, ty: &ast::Type) -> ids::TypeId {
+    fn lower_type(&mut self, ty: &ast::Type) -> ids::TypeId {
         let ty = match ty {
             ast::Type::Error => hir::Type::Error,
             ast::Type::Unit => hir::Type::Unit,
@@ -164,22 +169,22 @@ impl HirBuilder {
             ast::Type::Func { inputs, output, .. } => {
                 let input = inputs
                     .iter()
-                    .map(|t| self.type_lower(t))
+                    .map(|t| self.lower_type(t))
                     .collect::<Vec<_>>()
                     .into_boxed_slice();
-                let output = self.type_lower(output.as_ref());
+                let output = self.lower_type(output.as_ref());
                 hir::Type::Function { input, output }
             }
             ast::Type::Array { elem_type, .. } => {
-                hir::Type::Array(self.type_lower(elem_type.as_ref()))
+                hir::Type::Array(self.lower_type(elem_type.as_ref()))
             }
         };
         self.types.intern(&ty)
     }
 
-    pub fn module(&mut self, module: &ast::Module) -> Box<[SymbolId]> {
+    pub fn lower_module_to_symbols(&mut self, module: &ast::Module) -> Box<[SymbolId]> {
         // Insert all of the symbols to the table
-        let pass_a: Box<[SymbolId]> = self.module_pass_a(module);
+        let pass_a: Box<[SymbolId]> = self.declare_symbols_pass(module);
 
         // Add bodies to the declarations
         for (dec, id) in module.items.iter().zip(&pass_a) {
@@ -207,7 +212,7 @@ impl HirBuilder {
     ///
     /// Because of this, we handle all of the declarations first without
     /// looking at the bodies.
-    fn module_pass_a(&mut self, module: &ast::Module) -> Box<[ids::SymbolId]> {
+    fn declare_symbols_pass(&mut self, module: &ast::Module) -> Box<[ids::SymbolId]> {
         for import in &module.imports {
             self.insert_error(SemanticError::NotSupported {
                 msg: "Imports are not yet supported, sorry :(",
@@ -222,10 +227,10 @@ impl HirBuilder {
             .collect()
     }
 
-    fn func_declaration(&mut self, def: &ast::FuncDec) -> SymbolId {
+    fn lower_func_decl(&mut self, def: &ast::FuncDec) -> SymbolId {
         let name = self.identifiers.intern(def.name());
-        let ty = self.type_lower(def.fntype());
-        let params = self.function_param_ids(def.input_idents(), ty, def.fntype());
+        let ty = self.lower_type(def.fntype());
+        let params = self.lower_params_to_symbols(def.input_idents(), ty);
         let kind = hir::SymbolKind::FunctionUndeclared { params };
         let symbol = Symbol::new(kind, ty, name, def.name_span(), def.span());
         self.insert_symbol(symbol)
@@ -252,7 +257,7 @@ impl HirBuilder {
             }
         }
 
-        let expression_id = self.expression(body);
+        let expression_id = self.lower_expression(body);
         if matches!(skc, hir::SymbolKind::FunctionUndeclared { .. }) {
             self.pop_scope();
         }
@@ -263,10 +268,10 @@ impl HirBuilder {
         symbol.update_body(expression_id);
     }
 
-    fn bind_declaration(&mut self, bind: &ast::Binding) -> ids::SymbolId {
+    fn lower_binding_decl(&mut self, bind: &ast::Binding) -> ids::SymbolId {
         let str_name = bind.vname.ident().to_string();
         let name = self.identifiers.intern(&str_name);
-        let ty = self.type_lower(&bind.vtype);
+        let ty = self.lower_type(&bind.vtype);
         let kind = hir::SymbolKind::VariableUndeclared {
             mutable: bind.mutable,
         };
@@ -282,15 +287,15 @@ impl HirBuilder {
     /// decalring function b, would lead to an error.
     fn declaration(&mut self, declaration: &ast::Declaration) -> SymbolId {
         match declaration {
-            ast::Declaration::Binding(binding) => self.bind_declaration(binding),
-            ast::Declaration::Function(def) => self.func_declaration(def),
+            ast::Declaration::Binding(binding) => self.lower_binding_decl(binding),
+            ast::Declaration::Function(def) => self.lower_func_decl(def),
         }
     }
 
     /// Turn an expression into an ExpressionId
     ///
     /// This does not check for the correctness of the expression, but it may return the id of Expr::Err if there was an error generating the expression
-    fn expression(&mut self, expr: &ast::Expression) -> ids::ExpressionId {
+    fn lower_expression(&mut self, expr: &ast::Expression) -> ids::ExpressionId {
         let expr = match expr {
             ast::Expression::Literal(literal) => 'literal_case: {
                 let constant = match literal.kind() {
@@ -325,8 +330,8 @@ impl HirBuilder {
                     ast::BinaryOperator::Mod => hir::BinOp::Mod,
                     _ => break 'binop_case Expr::Err,
                 };
-                let lhs = self.expression(binary_op.lhs());
-                let rhs = self.expression(binary_op.rhs());
+                let lhs = self.lower_expression(binary_op.lhs());
+                let rhs = self.lower_expression(binary_op.rhs());
                 let span = binary_op.span();
                 Expr::BinaryOperation {
                     operator,
@@ -339,10 +344,10 @@ impl HirBuilder {
                 let inputs = func_call
                     .params()
                     .iter()
-                    .map(|exp| self.expression(exp))
+                    .map(|exp| self.lower_expression(exp))
                     .collect();
 
-                let f = self.expression(func_call.callable());
+                let f = self.lower_expression(func_call.callable());
 
                 Expr::Call {
                     f,
@@ -355,9 +360,9 @@ impl HirBuilder {
                 let then = ifstm.then_expr();
                 let othr = ifstm.else_expr();
 
-                let predicate = self.expression(pred.as_ref());
-                let then = self.expression(then.as_ref());
-                let otherwise = self.expression(othr.as_ref());
+                let predicate = self.lower_expression(pred.as_ref());
+                let then = self.lower_expression(then.as_ref());
+                let otherwise = self.lower_expression(othr.as_ref());
 
                 Expr::If {
                     predicate,
@@ -387,13 +392,14 @@ impl HirBuilder {
         self.expressions.push(expr)
     }
 
+    /// Given some module, lower it and return any errors that were generated along the way
     pub fn lower_module(
         module: &ast::Module,
         id: ids::FileId,
         name: String,
     ) -> (hir::Module, Vec<SemanticError>) {
         let mut lowerer = HirBuilder::default();
-        let roots = lowerer.module(module);
+        let roots = lowerer.lower_module_to_symbols(module);
         let errs = lowerer.errors().clone();
 
         (
