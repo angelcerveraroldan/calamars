@@ -604,12 +604,10 @@ impl CalamarsParser {
     fn parse_binding(&mut self) -> ast::Binding {
         let start = self.begin_span();
 
-        let mutable = if self.next_eq(Token::Var) {
-            true
-        } else if self.next_eq(Token::Val) {
-            false
-        } else {
-            panic!("This function should only be executed if the first token is var or val");
+        let mutable = match self.next_token_ref() {
+            Token::Var => true,
+            Token::Val => false,
+            _ => panic!("This function should only be executed if the first token is var or val"),
         };
 
         self.advance_one();
