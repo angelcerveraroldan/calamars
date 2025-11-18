@@ -263,7 +263,14 @@ impl PrettyError for SemanticError {
                     Some(Color::Cyan),
                 ),
             ],
-            SemanticError::QualifiedTypeNotSupported { span } => todo!(),
+            SemanticError::QualifiedTypeNotSupported { span } => {
+                vec![label_from(
+                    file_name,
+                    *span,
+                    "Qualifed types are not yet supported! Sorry!",
+                    Some(Color::Magenta),
+                )]
+            }
             SemanticError::NotSupported { msg, span } => {
                 vec![label_from(file_name, *span, *msg, Some(Color::Red))]
             }
