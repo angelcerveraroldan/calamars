@@ -158,7 +158,7 @@ impl<'a> TypeHandler<'a> {
         span: Span,
     ) -> ids::TypeId {
         let expression_ty = self.type_expression(f);
-        // TODO: Handle error type separately here
+
         let (out_ty, in_tys) = match self.module.types.get_unchecked(expression_ty) {
             Type::Function { output, input } => (*output, input.clone()),
             otherwise => {
@@ -311,6 +311,7 @@ impl<'a> TypeHandler<'a> {
         }
     }
 
+    /// Make sure that a declarations types make sense semantically.
     pub fn type_check_declaration(&mut self, dec: ids::SymbolId) {
         let sym = self.module.symbols.get_unchecked(dec);
         match &sym.kind {
@@ -323,6 +324,8 @@ impl<'a> TypeHandler<'a> {
                 let expected_ty = sym.ty_id();
                 self.type_check_variable_declaration(sym.name_span(), *body, expected_ty);
             }
+            // Note that we are guaranteed that all symbol kinds are fully declared, as underclared
+            // functions and variables should not make it past the lowering phase.
             hir::SymbolKind::FunctionUndeclared { .. }
             | hir::SymbolKind::VariableUndeclared { .. } => {
                 panic!("Undeclared should not exist after lowering")
@@ -331,6 +334,7 @@ impl<'a> TypeHandler<'a> {
         }
     }
 
+    /// Type check all declarations in the module.
     pub fn type_check_module(&mut self) {
         self.module
             .roots
