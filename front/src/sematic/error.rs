@@ -24,8 +24,7 @@ pub enum SemanticError {
         span: Span,
     },
     /// Something is missing it's type!
-    TypeMissing,
-    TypeMissingCtx {
+    TypeMissing {
         for_identifier: Span,
     },
     QualifiedTypeNotSupported {
@@ -97,11 +96,10 @@ impl PrettyError for SemanticError {
                 "Wrong type returned"
             }
             SemanticError::TypeNotFound { .. } => "Type not found",
-            SemanticError::TypeMissingCtx { .. } => "Missing type",
+            SemanticError::TypeMissing { .. } => "Missing type",
             SemanticError::MismatchedIfBranches { .. } => {
                 "Both branches in if statement must return the same type"
             }
-            SemanticError::TypeMissing => "Type declaration missing",
             SemanticError::QualifiedTypeNotSupported { .. } => {
                 "Qualified types are not yet supported"
             }
@@ -238,7 +236,7 @@ impl PrettyError for SemanticError {
                 v.push(l);
                 v
             }
-            SemanticError::TypeMissingCtx { for_identifier } => vec![label_from(
+            SemanticError::TypeMissing { for_identifier } => vec![label_from(
                 file_name,
                 *for_identifier,
                 "Type annotation is needed",
@@ -295,7 +293,6 @@ impl PrettyError for SemanticError {
             SemanticError::InternalError { msg, span } => {
                 vec![label_from(file_name, *span, *msg, None)]
             }
-            _ => todo!(),
         }
     }
 
