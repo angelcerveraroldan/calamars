@@ -56,15 +56,12 @@ fn main() {
                 err.log_error(&file_name, &sf.src);
             }
 
-            let mut module = match HirBuilder::lower_module(&module, file_id, file_name.clone()) {
-                Ok(module) => module,
-                Err(errors) => {
-                    for err in errors {
-                        err.log_error(&file_name, &sf.src);
-                    }
-                    return;
-                }
-            };
+            let (mut module, errors) =
+                HirBuilder::lower_module(&module, file_id, file_name.clone());
+
+            for err in errors {
+                err.log_error(&file_name, &sf.src);
+            }
 
             // Type checking
             let mut type_handler = TypeHandler {

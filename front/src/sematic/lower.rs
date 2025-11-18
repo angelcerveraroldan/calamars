@@ -391,24 +391,24 @@ impl HirBuilder {
         module: &ast::Module,
         id: ids::FileId,
         name: String,
-    ) -> Result<hir::Module, Vec<SemanticError>> {
+    ) -> (hir::Module, Vec<SemanticError>) {
         let mut lowerer = HirBuilder::default();
         let roots = lowerer.module(module);
+        let errs = lowerer.errors().clone();
 
-        if !lowerer.errors().is_empty() {
-            return Err(lowerer.errors().clone());
-        }
-
-        Ok(hir::Module {
-            id,
-            name,
-            types: lowerer.types,
-            const_str: lowerer.const_str,
-            idents: lowerer.identifiers,
-            symbols: lowerer.symbols,
-            exprs: lowerer.expressions,
-            roots,
-            expression_types: hashbrown::HashMap::new(),
-        })
+        (
+            hir::Module {
+                id,
+                name,
+                types: lowerer.types,
+                const_str: lowerer.const_str,
+                idents: lowerer.identifiers,
+                symbols: lowerer.symbols,
+                exprs: lowerer.expressions,
+                roots,
+                expression_types: hashbrown::HashMap::new(),
+            },
+            errs,
+        )
     }
 }
