@@ -738,9 +738,9 @@ impl CalamarsParser {
                 | Token::String(_)
                 | Token::Char(_)
                 | Token::LBrace
-                | Token::LParen 
+                | Token::LParen
                 // Unary operators
-                | Token::Minus 
+                | Token::Minus
                 | Token::Plus
         )
     }
