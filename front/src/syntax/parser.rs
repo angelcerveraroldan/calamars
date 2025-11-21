@@ -175,6 +175,11 @@ impl CalamarsParser {
         f(next_token)
     }
 
+    /// Check if we have finished parsing all of the source tokens
+    pub fn is_finished(&self) -> bool {
+        self.next_matches(|tk| *tk == Token::EOF)
+    }
+
     fn next_eq(&self, tk: Token) -> bool {
         tk == *self.next_token_ref()
     }
@@ -434,7 +439,7 @@ impl CalamarsParser {
     }
 
     fn parse_prefix(&mut self) -> ast::Expression {
-        if self.next_matches(|t| *t == Token::Minus) {
+        if self.next_eq(Token::Minus) | self.next_eq(Token::Plus) {
             let unary_span = self.next_ref().1;
             self.advance_one();
             let expression = self.parse_expression_with_binding_power(UNARY_BP);
@@ -734,6 +739,9 @@ impl CalamarsParser {
                 | Token::Char(_)
                 | Token::LBrace
                 | Token::LParen
+                // Unary operators
+                | Token::Minus
+                | Token::Plus
         )
     }
 

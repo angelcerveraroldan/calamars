@@ -100,11 +100,11 @@ pub enum Token {
     #[regex(r"[A-Za-z_][A-Za-z0-9_]*", callback = |lex| lex.slice().to_string())]
     Ident(String),
 
-    #[regex(r"[+-]?(?&decimal)", parse_num::<i64>)]
+    #[regex(r"(?&decimal)", parse_num::<i64>)]
     #[regex(r"(?&binary)", parse_binary)] 
     Int(i64),
 
-    #[regex(r"[+-]?(?&decimal)\.(?&decimal)", parse_num::<f64>)]
+    #[regex(r"(?&decimal)\.(?&decimal)", parse_num::<f64>)]
     Float(f64),
 
     #[regex(r#"'(\\.|[^\\'])'"#, callback = |lex| {
@@ -255,9 +255,12 @@ mod test_tokens {
     fn test_number_parsing() {
         let mut lex = Token::lexer("-5_3_0 -34.0 -34 51.34444 b_11");
 
-        assert_eq!(lex.next(), Some(Ok(Token::Int(-530))));
-        assert_eq!(lex.next(), Some(Ok(Token::Float(-34.0))));
-        assert_eq!(lex.next(), Some(Ok(Token::Int(-34))));
+        assert_eq!(lex.next(), Some(Ok(Token::Minus)));
+        assert_eq!(lex.next(), Some(Ok(Token::Int(530))));
+        assert_eq!(lex.next(), Some(Ok(Token::Minus)));
+        assert_eq!(lex.next(), Some(Ok(Token::Float(34.0))));
+        assert_eq!(lex.next(), Some(Ok(Token::Minus)));
+        assert_eq!(lex.next(), Some(Ok(Token::Int(34))));
         assert_eq!(lex.next(), Some(Ok(Token::Float(51.34444))));
         assert_eq!(lex.next(), Some(Ok(Token::Int(3))))
     }
