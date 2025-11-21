@@ -255,9 +255,12 @@ mod test_tokens {
     fn test_number_parsing() {
         let mut lex = Token::lexer("-5_3_0 -34.0 -34 51.34444 b_11");
 
-        assert_eq!(lex.next(), Some(Ok(Token::Int(-530))));
-        assert_eq!(lex.next(), Some(Ok(Token::Float(-34.0))));
-        assert_eq!(lex.next(), Some(Ok(Token::Int(-34))));
+        assert_eq!(lex.next(), Some(Ok(Token::Minus)));
+        assert_eq!(lex.next(), Some(Ok(Token::Int(530))));
+        assert_eq!(lex.next(), Some(Ok(Token::Minus)));
+        assert_eq!(lex.next(), Some(Ok(Token::Float(34.0))));
+        assert_eq!(lex.next(), Some(Ok(Token::Minus)));
+        assert_eq!(lex.next(), Some(Ok(Token::Int(34))));
         assert_eq!(lex.next(), Some(Ok(Token::Float(51.34444))));
         assert_eq!(lex.next(), Some(Ok(Token::Int(3))))
     }
