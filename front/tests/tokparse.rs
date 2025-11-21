@@ -56,3 +56,33 @@ fn parse_fn_with_spaces() {
         "Expression assigned should be a binary op"
     );
 }
+
+#[test]
+fn parse_unary() {
+    let sources = ["def yyy() = -1", "def yyy() = +1"];
+    for source in sources {
+        let tokens = Token::tokens_spanned_stream(source);
+
+        let mut parser = front::syntax::parser::CalamarsParser::new(FileId::from(0), tokens);
+        let item = parser.parse_item();
+
+        assert!(parser.is_finished(), "we shuold have consumed every token");
+        println!("{:?}", parser.diag());
+        assert!(
+            parser.diag().is_empty(),
+            "There should be no errors parsing"
+        );
+
+        let f = match item {
+            Item::Declaration(Declaration::Function(fd)) => fd,
+            _ => panic!("We should have parsed a function"),
+        };
+
+        let body = f.body();
+
+        assert!(
+            matches!(body, Expression::UnaryOp(_)),
+            "Expression assigned should be a binary op"
+        );
+    }
+}
