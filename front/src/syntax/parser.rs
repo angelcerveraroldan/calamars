@@ -247,6 +247,7 @@ impl CalamarsParser {
         Some(ast::Literal::new(lit_kind, *span))
     }
 
+    /// if <expr> then <expr> else <expr>  
     fn parse_if_expr(&mut self) -> ast::Expression {
         let start = self.begin_span();
 
@@ -272,7 +273,7 @@ impl CalamarsParser {
     fn parse_block_expr(&mut self) -> ast::Expression {
         let start = self.begin_span();
         let opening_loc = self.zero_width_here();
-        self.advance_one();
+        self.need(Token::LBrace, "{");
         let mut items = vec![];
         let mut final_expr = None;
 
