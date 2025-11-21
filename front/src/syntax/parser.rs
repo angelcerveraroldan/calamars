@@ -175,6 +175,11 @@ impl CalamarsParser {
         f(next_token)
     }
 
+    /// Check if we have finished parsing all of the source tokens
+    pub fn is_finished(&self) -> bool {
+        self.next_matches(|tk| *tk == Token::EOF)
+    }
+
     fn next_eq(&self, tk: Token) -> bool {
         tk == *self.next_token_ref()
     }
