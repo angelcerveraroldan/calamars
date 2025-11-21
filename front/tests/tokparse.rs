@@ -38,9 +38,10 @@ fn parse_fn_with_spaces() {
     let mut parser = front::syntax::parser::CalamarsParser::new(FileId::from(0), tokens);
     let item = parser.parse_item();
 
+    assert!(parser.is_finished(), "we shuold have consumed every token");
     assert!(
         parser.diag().is_empty(),
-        "There shuold be no errors parsing"
+        "There should be no errors parsing"
     );
 
     let f = match item {
