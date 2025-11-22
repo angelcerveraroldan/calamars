@@ -269,6 +269,30 @@ impl<'a> TypeHandler<'a> {
         }
     }
 
+    fn type_check_block(
+        &mut self,
+        items: &[ItemId],
+        final_expr: &Option<ids::ExpressionId>,
+    ) -> ids::TypeId {
+        // Start by analysing each of the items
+        for item in items {
+            let _ = match item {
+                ItemId::Expr(expression_id) => {
+                    self.type_expression(&expression_id);
+                }
+                ItemId::Symbol(symbol_id) => {
+                    self.type_check_declaration(*symbol_id);
+                }
+            };
+        }
+
+        // If there is no final expression, then we will return the unit type
+        let unit = self.intern_ty(&Type::Unit);
+        final_expr
+            .map(|e_id| self.type_expression(&e_id))
+            .unwrap_or(unit)
+    }
+
     /// When declaring a function, check that the body of the function returns the type expected in
     /// the function signature.
     pub fn type_check_function_declaration(
