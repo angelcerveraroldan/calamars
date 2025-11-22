@@ -5,7 +5,7 @@ use calamars_core::ids::{self, SymbolId};
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, Const, Expr, Symbol, default_typearena},
+        hir::{self, Const, Expr, ItemId, Symbol, default_typearena},
     },
     syntax::{
         ast::{self, CompoundExpression},
