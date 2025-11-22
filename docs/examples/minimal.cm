@@ -7,14 +7,7 @@ def add(a: Int, b: Int): Int  = a + b
 
 def mul(a: Int, b: Int): Int = a * b
 
-def mod(a: Int, m: Int): Int = {
-		-- Calculate a mod m
-		val modulo: Int = a % m;
-		-- Maybe we do something unecessary here...
-		val nothing: Int = 0;
-		-- Now we return the value
-		modulo
-}
+def mod(a: Int, m: Int): Int = a % m
 
 -- If statements
 def is_even(a: Int): Bool = 
