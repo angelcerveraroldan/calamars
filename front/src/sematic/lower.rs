@@ -292,6 +292,37 @@ impl HirBuilder {
         }
     }
 
+    fn lower_block(&mut self, block: &ast::CompoundExpression) -> Expr {
+        // We need to start a new scope just for the block
+        self.push_scope();
+
+        let items = block
+            .items
+            .iter()
+            .map(|item| match item {
+                ast::Item::Declaration(declaration) => {
+                    let sid = self.declaration(declaration);
+                    self.attach_body_declaration(declaration, sid);
+                    ItemId::Symbol(sid)
+                }
+                ast::Item::Expression(expr) => ItemId::Expr(self.lower_expression(expr)),
+            })
+            .collect();
+
+        let final_expr = block
+            .final_expr
+            .as_ref()
+            .map(|expr| self.lower_expression(expr));
+
+        self.pop_scope();
+
+        Expr::Block {
+            items: items,
+            final_expr,
+            span: block.total_span(),
+        }
+    }
+
     /// Turn an expression into an ExpressionId
     ///
     /// This does not check for the correctness of the expression, but it may return the id of Expr::Err if there was an error generating the expression
@@ -374,13 +405,7 @@ impl HirBuilder {
                     othewise_span: ifstm.else_span(),
                 }
             }
-            ast::Expression::Block(b) => {
-                self.insert_error(SemanticError::NotSupported {
-                    msg: "Block expressions are not yet supported",
-                    span: b.total_span(),
-                });
-                Expr::Err
-            }
+            ast::Expression::Block(block) => self.lower_block(block),
             otherwise => {
                 self.insert_error(SemanticError::NotSupported {
                     msg: "Expression not yet supported",
