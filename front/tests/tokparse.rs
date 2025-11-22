@@ -86,3 +86,25 @@ fn parse_unary() {
         );
     }
 }
+
+#[test]
+fn parse_block() {
+    let source = "def foo(): Int = { var x: Int = 2;\nx }";
+    let tokens = Token::tokens_spanned_stream(source);
+    let mut parser = front::syntax::parser::CalamarsParser::new(FileId::from(0), tokens);
+    let item = parser.parse_item();
+    assert!(
+        parser.diag().is_empty(),
+        "There shuold have been no parsing errors"
+    );
+
+    let dec = match item {
+        Item::Declaration(Declaration::Function(f)) => f,
+        _ => panic!("We shuold have parsed a func declaration"),
+    };
+
+    assert!(
+        matches!(dec.body(), Expression::Block(_)),
+        "Function body shuold be a block"
+    );
+}

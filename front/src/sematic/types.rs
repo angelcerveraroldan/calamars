@@ -1,11 +1,11 @@
 //! Type checking on the HIR
 
-use calamars_core::ids::{self, ExpressionId};
+use calamars_core::ids::{self, ExpressionId, TypeId};
 
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, Type, type_id_stringify},
+        hir::{self, ItemId, Type, type_id_stringify},
     },
     syntax::span::Span,
 };
@@ -104,6 +104,11 @@ impl<'a> TypeHandler<'a> {
                 span,
             } => self.type_check_binary_ops(operator, lhs, rhs, *span),
             hir::Expr::Call { f, inputs, span } => self.type_check_fncall(f, inputs, *span),
+            hir::Expr::Block {
+                items,
+                final_expr,
+                span,
+            } => self.type_check_block(&items, final_expr),
             hir::Expr::If {
                 predicate,
                 then,
@@ -267,6 +272,30 @@ impl<'a> TypeHandler<'a> {
                 }
             }
         }
+    }
+
+    fn type_check_block(
+        &mut self,
+        items: &[ItemId],
+        final_expr: &Option<ids::ExpressionId>,
+    ) -> ids::TypeId {
+        // Start by analysing each of the items
+        for item in items {
+            let _ = match item {
+                ItemId::Expr(expression_id) => {
+                    self.type_expression(&expression_id);
+                }
+                ItemId::Symbol(symbol_id) => {
+                    self.type_check_declaration(*symbol_id);
+                }
+            };
+        }
+
+        // If there is no final expression, then we will return the unit type
+        let unit = self.intern_ty(&Type::Unit);
+        final_expr
+            .map(|e_id| self.type_expression(&e_id))
+            .unwrap_or(unit)
     }
 
     /// When declaring a function, check that the body of the function returns the type expected in
