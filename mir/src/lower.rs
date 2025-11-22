@@ -1,7 +1,7 @@
 //! Lower HIR to MIR
 
 use calamars_core::ids::{self, ExpressionId, SymbolId, TypeId};
-use front::sematic::hir::{self, SymbolKind};
+use front::sematic::hir::{self, ItemId, SymbolKind};
 
 use crate::{
     BBlock, BinaryOperator, BindingId, BlockId, Function, FunctionArena, FunctionId, VInstruct,
@@ -88,9 +88,36 @@ impl<'a> MirBuilder<'a> {
         instruct
     }
 
+    /// Emit Unit type as a constant
+    fn emit_unit(&mut self) -> ValueId {
+        self.emit(VInstructionKind::Constant(crate::Consts::Unit))
+    }
+
     fn emit_phi(&mut self, ty: ids::TypeId, incoming: Box<[(BlockId, ValueId)]>) -> ValueId {
         let kind = VInstructionKind::Phi { ty, incoming };
         self.emit(kind)
+    }
+
+    fn lower_item(&mut self, item: &ItemId) {
+        match item {
+            ItemId::Expr(expression_id) => {
+                self.lower_expression(*expression_id);
+            }
+            ItemId::Symbol(symbol_id) => {
+                let _ = self.lower_binding(*symbol_id);
+            }
+        }
+    }
+
+    fn lower_block(&mut self, items: &[ItemId], final_expr: &Option<ids::ExpressionId>) -> ValueId {
+        for item in items {
+            self.lower_item(item);
+        }
+
+        match final_expr {
+            Some(expr_id) => self.lower_expression(*expr_id),
+            None => self.emit_unit(),
+        }
     }
 
     /// Given some (value producing) expression from the HIR, turn it into a `VInstruct`, add it to
@@ -155,6 +182,11 @@ impl<'a> MirBuilder<'a> {
                     *ty,
                     Box::from([(then_block, then), (othr_block, otherwise)]),
                 );
+            }
+            hir::Expr::Block {
+                items, final_expr, ..
+            } => {
+                return self.lower_block(items, final_expr);
             }
             _ => todo!("Cannot yet handle: {:?}", expression),
         };
