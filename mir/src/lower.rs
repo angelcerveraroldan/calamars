@@ -101,7 +101,7 @@ impl<'a> MirBuilder<'a> {
     fn lower_item(&mut self, item: &ItemId) {
         match item {
             ItemId::Expr(expression_id) => {
-                self.lower_expression(*expression_id);
+                self.emit_expr_valueid(*expression_id);
             }
             ItemId::Symbol(symbol_id) => {
                 let _ = self.lower_binding(*symbol_id);
@@ -115,7 +115,7 @@ impl<'a> MirBuilder<'a> {
         }
 
         match final_expr {
-            Some(expr_id) => self.lower_expression(*expr_id),
+            Some(expr_id) => self.emit_expr_valueid(*expr_id),
             None => self.emit_unit(),
         }
     }
@@ -129,7 +129,7 @@ impl<'a> MirBuilder<'a> {
         otherwise: &ids::ExpressionId,
     ) -> ValueId {
         // Lower the predicate, and end the block in a CondBr terminator
-        let pred = self.lower_expression(*predicate);
+        let pred = self.emit_expr_valueid(*predicate);
         let then_block = self.new_block();
         let othr_block = self.new_block();
         self.term_cond_br(pred, then_block, othr_block);
@@ -138,11 +138,11 @@ impl<'a> MirBuilder<'a> {
         let joining_block = self.new_block();
 
         self.switch_to(then_block);
-        let then = self.lower_expression(*then);
+        let then = self.emit_expr_valueid(*then);
         self.term_br(joining_block);
 
         self.switch_to(othr_block);
-        let otherwise = self.lower_expression(*otherwise);
+        let otherwise = self.emit_expr_valueid(*otherwise);
         self.term_br(joining_block);
 
         self.switch_to(joining_block);
@@ -168,8 +168,8 @@ impl<'a> MirBuilder<'a> {
         lhs: &ids::ExpressionId,
         rhs: &ids::ExpressionId,
     ) -> ValueId {
-        let lhs = self.lower_expression(*lhs);
-        let rhs = self.lower_expression(*rhs);
+        let lhs = self.emit_expr_valueid(*lhs);
+        let rhs = self.emit_expr_valueid(*rhs);
         let op = operator_map(operator);
         let kind = VInstructionKind::Binary { op, lhs, rhs };
         self.emit(kind)
@@ -180,7 +180,7 @@ impl<'a> MirBuilder<'a> {
     ///
     /// In the case that the expression was just referencing an ident, just return the valueid
     /// associated with said ident.
-    fn lower_expression(&mut self, expression_id: ids::ExpressionId) -> ValueId {
+    fn emit_expr_valueid(&mut self, expression_id: ids::ExpressionId) -> ValueId {
         let expression = self.ctx.exprs.get_unchecked(expression_id);
 
         match expression {
@@ -228,7 +228,7 @@ impl<'a> MirBuilder<'a> {
             self.locals.insert(*param_id, vi);
         }
 
-        let expr = self.lower_expression(body);
+        let expr = self.emit_expr_valueid(body);
         self.term_ret(expr);
 
         let f = Function {
@@ -246,7 +246,7 @@ impl<'a> MirBuilder<'a> {
         let t = self.ctx.types.get_unchecked(s.ty_id());
         match &s.kind {
             SymbolKind::Variable { body, .. } => {
-                let assignment = self.lower_expression(*body);
+                let assignment = self.emit_expr_valueid(*body);
                 self.locals.insert(binding_id, assignment);
                 Ok(assignment.into())
             }
@@ -376,7 +376,7 @@ mod test_lower {
         let one_id = context.exprs.push(one);
 
         let mut builder = MirBuilder::new(&context);
-        let value_id = builder.lower_expression(one_id);
+        let value_id = builder.emit_expr_valueid(one_id);
 
         let block = builder.blocks.get_unchecked(builder.current_block_id);
 
@@ -395,7 +395,7 @@ mod test_lower {
         let one_id = context.exprs.push(one);
 
         let mut builder = MirBuilder::new(&context);
-        let value_id = builder.lower_expression(one_id);
+        let value_id = builder.emit_expr_valueid(one_id);
         builder.term_ret(value_id);
 
         let printer = MirPrinter::new(&builder.blocks, &builder.instructions, &builder.functions);
@@ -422,7 +422,7 @@ mod test_lower {
         let sum_id = context.exprs.push(sum);
 
         let mut builder = MirBuilder::new(&context);
-        let value_id = builder.lower_expression(sum_id);
+        let value_id = builder.emit_expr_valueid(sum_id);
 
         let block = builder.blocks.get_unchecked(builder.current_block_id);
 
@@ -490,7 +490,7 @@ mod test_lower {
         context.expression_types.insert(cond, it);
 
         let mut builder = MirBuilder::new(&context);
-        let if_lower = builder.lower_expression(cond);
+        let if_lower = builder.emit_expr_valueid(cond);
         assert_eq!(builder.blocks.len(), 4);
     }
 }
