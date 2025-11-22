@@ -1,7 +1,7 @@
 //! Lower HIR to MIR
 
 use calamars_core::ids::{self, ExpressionId, SymbolId, TypeId};
-use front::sematic::hir::{self, ItemId, SymbolKind};
+use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolKind};
 
 use crate::{
     BBlock, BinaryOperator, BindingId, BlockId, Function, FunctionArena, FunctionId, VInstruct,
@@ -101,7 +101,7 @@ impl<'a> MirBuilder<'a> {
     fn lower_item(&mut self, item: &ItemId) {
         match item {
             ItemId::Expr(expression_id) => {
-                self.lower_expression(*expression_id);
+                self.emit_expr_valueid(*expression_id);
             }
             ItemId::Symbol(symbol_id) => {
                 let _ = self.lower_binding(*symbol_id);
@@ -115,9 +115,64 @@ impl<'a> MirBuilder<'a> {
         }
 
         match final_expr {
-            Some(expr_id) => self.lower_expression(*expr_id),
+            Some(expr_id) => self.emit_expr_valueid(*expr_id),
             None => self.emit_unit(),
         }
+    }
+
+    fn emit_if_expr(
+        &mut self,
+        expr_type: ids::TypeId,
+
+        predicate: &ids::ExpressionId,
+        then: &ids::ExpressionId,
+        otherwise: &ids::ExpressionId,
+    ) -> ValueId {
+        // Lower the predicate, and end the block in a CondBr terminator
+        let pred = self.emit_expr_valueid(*predicate);
+        let then_block = self.new_block();
+        let othr_block = self.new_block();
+        self.term_cond_br(pred, then_block, othr_block);
+
+        // A block where we join the two branches into one
+        let joining_block = self.new_block();
+
+        self.switch_to(then_block);
+        let then = self.emit_expr_valueid(*then);
+        self.term_br(joining_block);
+
+        self.switch_to(othr_block);
+        let otherwise = self.emit_expr_valueid(*otherwise);
+        self.term_br(joining_block);
+
+        self.switch_to(joining_block);
+
+        return self.emit_phi(
+            expr_type,
+            Box::from([(then_block, then), (othr_block, otherwise)]),
+        );
+    }
+
+    fn emit_literal(&mut self, constant: &Const) -> ValueId {
+        let kind = VInstructionKind::Constant(match constant {
+            hir::Const::I64(i) => crate::Consts::I64(*i),
+            hir::Const::Bool(b) => crate::Consts::Bool(*b),
+            hir::Const::String(sid) => crate::Consts::String(*sid),
+        });
+        self.emit(kind)
+    }
+
+    fn emit_binop(
+        &mut self,
+        operator: &BinOp,
+        lhs: &ids::ExpressionId,
+        rhs: &ids::ExpressionId,
+    ) -> ValueId {
+        let lhs = self.emit_expr_valueid(*lhs);
+        let rhs = self.emit_expr_valueid(*rhs);
+        let op = operator_map(operator);
+        let kind = VInstructionKind::Binary { op, lhs, rhs };
+        self.emit(kind)
     }
 
     /// Given some (value producing) expression from the HIR, turn it into a `VInstruct`, add it to
@@ -125,73 +180,33 @@ impl<'a> MirBuilder<'a> {
     ///
     /// In the case that the expression was just referencing an ident, just return the valueid
     /// associated with said ident.
-    fn lower_expression(&mut self, expression_id: ids::ExpressionId) -> ValueId {
+    fn emit_expr_valueid(&mut self, expression_id: ids::ExpressionId) -> ValueId {
         let expression = self.ctx.exprs.get_unchecked(expression_id);
-        if let hir::Expr::Identifier { id, .. } = expression {
-            return *self.locals.get(id).unwrap();
-        }
 
-        let kind = match expression {
+        match expression {
             // The case is handled differently, as it does not generate a new instruction, but
             // uses an old one.
-            hir::Expr::Identifier { .. } => unreachable!("This case was handled above"),
-
-            hir::Expr::Literal { constant, .. } => VInstructionKind::Constant(match constant {
-                hir::Const::I64(i) => crate::Consts::I64(*i),
-                hir::Const::Bool(b) => crate::Consts::Bool(*b),
-                hir::Const::String(sid) => crate::Consts::String(*sid),
-            }),
+            hir::Expr::Identifier { id, .. } => *self.locals.get(id).unwrap(),
+            hir::Expr::Literal { constant, .. } => self.emit_literal(constant),
             hir::Expr::BinaryOperation {
-                operator,
-                lhs,
-                rhs,
-                span,
-            } => {
-                let lhs = self.lower_expression(*lhs);
-                let rhs = self.lower_expression(*rhs);
-                let op = operator_map(operator);
-                VInstructionKind::Binary { op, lhs, rhs }
-            }
+                operator, lhs, rhs, ..
+            } => self.emit_binop(operator, lhs, rhs),
             hir::Expr::If {
                 predicate,
                 then,
                 otherwise,
                 ..
-            } => {
-                // Lower the predicate, and end the block in a CondBr terminator
-                let pred = self.lower_expression(*predicate);
-                let then_block = self.new_block();
-                let othr_block = self.new_block();
-                self.term_cond_br(pred, then_block, othr_block);
-
-                // A block where we join the two branches into one
-                let joining_block = self.new_block();
-
-                self.switch_to(then_block);
-                let then = self.lower_expression(*then);
-                self.term_br(joining_block);
-
-                self.switch_to(othr_block);
-                let otherwise = self.lower_expression(*otherwise);
-                self.term_br(joining_block);
-
-                self.switch_to(joining_block);
-
-                let ty = self.ctx.expression_types.get(&expression_id).unwrap();
-                return self.emit_phi(
-                    *ty,
-                    Box::from([(then_block, then), (othr_block, otherwise)]),
-                );
-            }
+            } => self.emit_if_expr(
+                *self.ctx.expression_types.get(&expression_id).unwrap(),
+                predicate,
+                then,
+                otherwise,
+            ),
             hir::Expr::Block {
                 items, final_expr, ..
-            } => {
-                return self.lower_block(items, final_expr);
-            }
+            } => self.lower_block(items, final_expr),
             _ => todo!("Cannot yet handle: {:?}", expression),
-        };
-
-        self.emit(kind)
+        }
     }
 
     fn lower_function(
@@ -213,7 +228,7 @@ impl<'a> MirBuilder<'a> {
             self.locals.insert(*param_id, vi);
         }
 
-        let expr = self.lower_expression(body);
+        let expr = self.emit_expr_valueid(body);
         self.term_ret(expr);
 
         let f = Function {
@@ -231,7 +246,7 @@ impl<'a> MirBuilder<'a> {
         let t = self.ctx.types.get_unchecked(s.ty_id());
         match &s.kind {
             SymbolKind::Variable { body, .. } => {
-                let assignment = self.lower_expression(*body);
+                let assignment = self.emit_expr_valueid(*body);
                 self.locals.insert(binding_id, assignment);
                 Ok(assignment.into())
             }
@@ -361,7 +376,7 @@ mod test_lower {
         let one_id = context.exprs.push(one);
 
         let mut builder = MirBuilder::new(&context);
-        let value_id = builder.lower_expression(one_id);
+        let value_id = builder.emit_expr_valueid(one_id);
 
         let block = builder.blocks.get_unchecked(builder.current_block_id);
 
@@ -380,7 +395,7 @@ mod test_lower {
         let one_id = context.exprs.push(one);
 
         let mut builder = MirBuilder::new(&context);
-        let value_id = builder.lower_expression(one_id);
+        let value_id = builder.emit_expr_valueid(one_id);
         builder.term_ret(value_id);
 
         let printer = MirPrinter::new(&builder.blocks, &builder.instructions, &builder.functions);
@@ -407,7 +422,7 @@ mod test_lower {
         let sum_id = context.exprs.push(sum);
 
         let mut builder = MirBuilder::new(&context);
-        let value_id = builder.lower_expression(sum_id);
+        let value_id = builder.emit_expr_valueid(sum_id);
 
         let block = builder.blocks.get_unchecked(builder.current_block_id);
 
@@ -475,7 +490,7 @@ mod test_lower {
         context.expression_types.insert(cond, it);
 
         let mut builder = MirBuilder::new(&context);
-        let if_lower = builder.lower_expression(cond);
+        let if_lower = builder.emit_expr_valueid(cond);
         assert_eq!(builder.blocks.len(), 4);
     }
 }
