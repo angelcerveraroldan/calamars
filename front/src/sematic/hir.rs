@@ -30,6 +30,13 @@ pub type ExpressionArena = calamars_core::Arena<Expr, ids::ExpressionId>;
 pub type SymbolArena = calamars_core::UncheckedArena<Symbol, ids::SymbolId>;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum ItemId {
+    Expr(ids::ExpressionId),
+    // A val, var, or def
+    Symbol(ids::SymbolId),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
     /// Among other things, this is used for when we expected a type, but found ClType::None
     ///
@@ -151,6 +158,11 @@ pub enum Expr {
         then_span: Span,
         othewise_span: Span,
     },
+    Block {
+        items: Box<[ItemId]>,
+        final_expr: Option<ids::ExpressionId>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -161,6 +173,7 @@ impl Expr {
             | Expr::If { span, .. }
             | Expr::Identifier { span, .. }
             | Expr::BinaryOperation { span, .. }
+            | Expr::Block { span, .. }
             | Expr::Call { span, .. } => Some(*span),
         }
     }
