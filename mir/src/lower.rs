@@ -98,16 +98,20 @@ impl<'a> MirBuilder<'a> {
         self.emit(kind)
     }
 
+    fn lower_item(&mut self, item: &ItemId) {
+        match item {
+            ItemId::Expr(expression_id) => {
+                self.lower_expression(*expression_id);
+            }
+            ItemId::Symbol(symbol_id) => {
+                let _ = self.lower_binding(*symbol_id);
+            }
+        }
+    }
+
     fn lower_block(&mut self, items: &[ItemId], final_expr: &Option<ids::ExpressionId>) -> ValueId {
         for item in items {
-            match item {
-                ItemId::Expr(expression_id) => {
-                    self.lower_expression(*expression_id);
-                }
-                ItemId::Symbol(symbol_id) => {
-                    let _ = self.lower_binding(*symbol_id);
-                }
-            }
+            self.lower_item(item);
         }
 
         match final_expr {
