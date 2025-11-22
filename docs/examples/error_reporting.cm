@@ -13,7 +13,13 @@ def bad_arity(): Int = add(1, a, 3)
 def ident_not_found(): Int = add(1, a)
 
 -- 4) Redeclaration
-def add(a: Int, b: Int): Int = a * b
+def add(a: Int, b: Int): Int = {
+		-- We can overshadow parent scope
+		val a: Int = a+1;
+		-- Error when we overshadow something in the current scope
+		val a: Int = a;
+		a * b
+}
 
 -- 5.1) Non-boolean in if predicate
 -- 5.2) Different return types in if branches
