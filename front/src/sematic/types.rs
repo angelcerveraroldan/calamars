@@ -1,11 +1,11 @@
 //! Type checking on the HIR
 
-use calamars_core::ids::{self, ExpressionId};
+use calamars_core::ids::{self, ExpressionId, TypeId};
 
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, Type, type_id_stringify},
+        hir::{self, ItemId, Type, type_id_stringify},
     },
     syntax::span::Span,
 };
@@ -104,6 +104,11 @@ impl<'a> TypeHandler<'a> {
                 span,
             } => self.type_check_binary_ops(operator, lhs, rhs, *span),
             hir::Expr::Call { f, inputs, span } => self.type_check_fncall(f, inputs, *span),
+            hir::Expr::Block {
+                items,
+                final_expr,
+                span,
+            } => self.type_check_block(&items, final_expr),
             hir::Expr::If {
                 predicate,
                 then,
