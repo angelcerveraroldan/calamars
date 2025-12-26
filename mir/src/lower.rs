@@ -222,9 +222,15 @@ impl<'a> MirBuilder<'a> {
         let entry = self.new_block();
         self.current_block_id = entry;
 
+        let mut p: Vec<ValueId> = Vec::with_capacity(params.len());
         for (i, param_id) in params.iter().enumerate() {
-            let vk = VInstructionKind::Parameter { index: i as u8 };
+            let symbol = self.ctx.symbols.get_unchecked(*param_id);
+            let vk = VInstructionKind::Parameter {
+                index: i as u16,
+                ty: symbol.ty_id(),
+            };
             let vi = self.emit(vk);
+            p.push(vi);
             self.locals.insert(*param_id, vi);
         }
 
@@ -234,6 +240,7 @@ impl<'a> MirBuilder<'a> {
         let f = Function {
             name,
             return_ty,
+            params: p,
             entry,
             blocks: self.working_blocks.clone(),
         };

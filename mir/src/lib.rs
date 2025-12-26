@@ -198,7 +198,8 @@ pub enum VInstructionKind {
     },
 
     Parameter {
-        index: u8,
+        index: u16,
+        ty: ids::TypeId,
     },
 }
 
@@ -241,17 +242,11 @@ pub enum Origin {
 /// A [Basic Block](https://en.wikipedia.org/wiki/Basic_block)
 #[derive(Debug, Default)]
 pub struct BBlock {
-    params: Vec<(ValueId, ids::TypeId)>,
     instructs: Vec<ValueId>,
     finally: Option<Terminator>,
 }
 
 impl BBlock {
-    pub fn with_param(&mut self, value: ValueId, ty: ids::TypeId) -> &mut BBlock {
-        self.params.push((value, ty));
-        self
-    }
-
     pub fn with_term(&mut self, term: Terminator) -> &mut BBlock {
         debug_assert!(self.finally.is_none(), "Cannot double-assign a temrinator");
 
@@ -266,11 +261,17 @@ impl BBlock {
 }
 
 pub struct Function {
-    name: ids::IdentId,
-    return_ty: ids::TypeId,
-    /// The input parameters are the output params of this block
-    entry: BlockId,
-    blocks: Vec<BlockId>,
+    pub name: ids::IdentId,
+    pub return_ty: ids::TypeId,
+    pub params: Vec<ValueId>,
+    pub entry: BlockId,
+    pub blocks: Vec<BlockId>,
+}
+
+impl Function {
+    pub fn arity(&self) -> u16 {
+        self.params.len() as u16
+    }
 }
 
 pub struct Module {

@@ -106,7 +106,7 @@ impl<'a> MirPrinter<'a> {
 
                 format!("phi ty#{} [{}]", ty.inner_id(), cs)
             }
-            VInstructionKind::Parameter { index } => {
+            VInstructionKind::Parameter { index, .. } => {
                 format!("param #{index}")
             }
         }
