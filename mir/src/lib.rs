@@ -74,6 +74,12 @@ impl calamars_core::Identifier for BlockId {
 #[derive(Copy, Debug, Clone)]
 pub struct ValueId(usize);
 
+impl ValueId {
+    pub fn inner(&self) -> usize {
+        self.0
+    }
+}
+
 impl From<usize> for ValueId {
     fn from(value: usize) -> Self {
         Self(value)
@@ -207,8 +213,8 @@ pub enum VInstructionKind {
 ///
 /// Reference: https://releases.llvm.org/18.1.4/docs/LangRef.html#instruction-reference
 pub struct VInstruct {
-    dst: Option<ValueId>,
-    kind: VInstructionKind,
+    pub dst: Option<ValueId>,
+    pub kind: VInstructionKind,
 }
 
 /// Every basic block will end with a terminator instruction.
@@ -242,8 +248,8 @@ pub enum Origin {
 /// A [Basic Block](https://en.wikipedia.org/wiki/Basic_block)
 #[derive(Debug, Default)]
 pub struct BBlock {
-    instructs: Vec<ValueId>,
-    finally: Option<Terminator>,
+    pub instructs: Vec<ValueId>,
+    pub finally: Option<Terminator>,
 }
 
 impl BBlock {
