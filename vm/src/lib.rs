@@ -14,7 +14,7 @@ pub enum VmError {
 pub type Register = usize;
 pub type VmRes<A> = Result<A, VmError>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub enum Value {
     Integer(i64),
@@ -46,7 +46,20 @@ pub enum Bytecode {
 
 pub struct VmFunction {
     name: ids::IdentId,
+    arity: u16,
+    register_count: u16,
     bytecode: Vec<Bytecode>,
+}
+
+impl VmFunction {
+    pub fn new(name: ids::IdentId, arity: u16, nreg: u16) -> Self {
+        VmFunction {
+            name,
+            arity,
+            register_count: nreg,
+            bytecode: Vec::new(),
+        }
+    }
 }
 
 struct Lowerer<'a> {
@@ -126,11 +139,6 @@ impl<'a> Lowerer<'a> {
             .ok_or(VmError::InternalBlockIdNotFound)?;
 
         let bytecode = self.lower_block(entry_block)?;
-
-        Ok(VmFunction {
-            name: fun.name,
-            bytecode,
-        })
+        todo!()
     }
 }
-
