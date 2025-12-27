@@ -17,28 +17,6 @@ pub mod printer;
 use calamars_core::ids;
 use front::syntax::span::Span;
 
-pub type InstructionArena = calamars_core::UncheckedArena<VInstruct, ValueId>;
-pub type BlockArena = calamars_core::UncheckedArena<BBlock, BlockId>;
-pub type FunctionArena = calamars_core::UncheckedArena<Function, FunctionId>;
-
-#[derive(Copy, Debug, Clone)]
-pub enum BindingId {
-    Function(FunctionId),
-    Variable(ValueId),
-}
-
-impl From<FunctionId> for BindingId {
-    fn from(value: FunctionId) -> Self {
-        Self::Function(value)
-    }
-}
-
-impl From<ValueId> for BindingId {
-    fn from(value: ValueId) -> Self {
-        Self::Variable(value)
-    }
-}
-
 #[derive(Copy, Debug, Clone)]
 pub struct FunctionId(usize);
 
@@ -54,7 +32,9 @@ impl calamars_core::Identifier for FunctionId {
     }
 }
 
-/// An identifier for a `BBlock`
+/// A local identifier for a `BBlock`
+///
+/// BlockId(0) is the first block of the working function
 #[derive(Copy, Debug, Clone)]
 pub struct BlockId(usize);
 
@@ -71,6 +51,9 @@ impl calamars_core::Identifier for BlockId {
 }
 
 /// Identifier for an SSA value
+///
+/// This identifier is local, that is to say ValueId(0) is the first instruction in the wokring
+/// function.
 #[derive(Copy, Debug, Clone)]
 pub struct ValueId(usize);
 
@@ -206,8 +189,8 @@ pub enum VInstructionKind {
 /// A single value producing instruction.
 ///
 /// Reference: https://releases.llvm.org/18.1.4/docs/LangRef.html#instruction-reference
+#[derive(Debug)]
 pub struct VInstruct {
-    dst: Option<ValueId>,
     kind: VInstructionKind,
 }
 
@@ -263,9 +246,11 @@ impl BBlock {
 pub struct Function {
     pub name: ids::IdentId,
     pub return_ty: ids::TypeId,
-    pub params: Vec<ValueId>,
-    pub entry: BlockId,
-    pub blocks: Vec<BlockId>,
+
+    pub params: Vec<VInstruct>,
+
+    pub instructions: Vec<VInstruct>,
+    pub blocks: Vec<BBlock>,
 }
 
 impl Function {
@@ -275,7 +260,5 @@ impl Function {
 }
 
 pub struct Module {
-    pub functions: FunctionArena,
-    pub blocks: BlockArena,
-    pub values: InstructionArena,
+    pub functions: Vec<Function>,
 }
