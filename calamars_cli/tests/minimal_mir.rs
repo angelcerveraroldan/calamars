@@ -6,7 +6,7 @@ use front::{
     sematic::{lower::HirBuilder, types::TypeHandler},
     syntax::parser::CalamarsParser,
 };
-use ir::lower::MirBuilder;
+use ir::lower::FunctionBuilder;
 
 #[test]
 /// A simple end to end test that checks that we can lower `minimal.cm` in the `docs/examples`
@@ -52,13 +52,29 @@ fn minimal_program_parses_types_and_lowers_to_mir() {
     );
 
     // Lower HIR -> MIR
-    let mut mir_builder = MirBuilder::new(&hir_module);
-    mir_builder
-        .lower_module()
-        .expect("MIR lowering produced errors");
+    let mut mir_builder = FunctionBuilder::new(&hir_module);
+    let mut functions = vec![];
+
+    for symbolid in &hir_module.roots {
+        let symbol = hir_module.symbols.get_unchecked(*symbolid);
+        let name = symbol.ident_id();
+        let return_ty = symbol.ty_id();
+
+        let (params, body) =
+            if let front::sematic::hir::SymbolKind::Function { params, body } = &symbol.kind {
+                (params, body)
+            } else {
+                continue;
+            };
+
+        match mir_builder.lower(name, return_ty, params, *body) {
+            Ok(fun) => functions.push(fun),
+            Err(err) => panic!("Failed to lower a function: {:?}", err),
+        }
+    }
 
     assert!(
-        !mir_builder.functions().inner().is_empty(),
+        !functions.is_empty(),
         "Expected at least one lowered function"
     );
 }
