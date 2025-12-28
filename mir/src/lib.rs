@@ -238,6 +238,10 @@ impl BBlock {
     }
 
     pub fn with_instruct(&mut self, instruct: ValueId) -> &mut BBlock {
+        debug_assert!(
+            self.finally.is_none(),
+            "Cannot add instructions after terminator"
+        );
         self.instructs.push(instruct);
         self
     }
@@ -246,8 +250,7 @@ impl BBlock {
 pub struct Function {
     pub name: ids::IdentId,
     pub return_ty: ids::TypeId,
-
-    pub params: Vec<VInstruct>,
+    pub params: Vec<ValueId>,
 
     pub instructions: Vec<VInstruct>,
     pub blocks: Vec<BBlock>,

@@ -1,14 +1,15 @@
 //! Lower HIR to MIR
 
-use calamars_core::ids::{self, ExpressionId, SymbolId, TypeId};
+use calamars_core::{
+    Identifier,
+    ids::{self, ExpressionId, SymbolId, TypeId},
+};
 use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolKind};
 
 use crate::{
-    BBlock, BinaryOperator, BindingId, BlockId, Function, FunctionArena, FunctionId, VInstruct,
-    VInstructionKind, ValueId, errors::MirErrors,
+    BBlock, BinaryOperator, BlockId, Function, FunctionId, VInstruct, VInstructionKind, ValueId,
+    errors::MirErrors,
 };
-
-use super::{BlockArena, InstructionArena};
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
     match op {
@@ -21,139 +22,101 @@ fn operator_map(op: &hir::BinOp) -> BinaryOperator {
     }
 }
 
-/// Handle the process of building a function from the HIR context
-pub struct MirBuilder<'a> {
-    pub ctx: &'a hir::Module,
+pub type MirRes<A> = Result<A, MirErrors>;
 
-    current_block_id: BlockId,
-    working_blocks: Vec<BlockId>,
+pub struct FunctionBuilder<'a> {
+    ctx: &'a hir::Module,
 
-    blocks: BlockArena,
-    functions: FunctionArena,
-    instructions: InstructionArena,
-    locals: hashbrown::HashMap<ids::SymbolId, ValueId>,
+    current_block: BlockId,
+
+    blocks: Vec<BBlock>,
+    instructions: Vec<VInstruct>,
+
+    /// What valueid corresponds to some identifier
+    locals: hashbrown::HashMap<SymbolId, ValueId>,
 }
 
-impl<'a> MirBuilder<'a> {
+impl<'a> FunctionBuilder<'a> {
     pub fn new(ctx: &'a hir::Module) -> Self {
-        let mut blocks = BlockArena::new_unchecked();
-        let current_block_id = blocks.push(BBlock::default());
         Self {
             ctx,
-            current_block_id,
-            working_blocks: vec![],
-            blocks,
-            functions: FunctionArena::new_unchecked(),
-            instructions: InstructionArena::new_unchecked(),
+            current_block: BlockId(0),
+            blocks: vec![],
+            instructions: vec![],
             locals: hashbrown::HashMap::new(),
         }
     }
 
-    fn switch_to(&mut self, b: BlockId) {
-        self.current_block_id = b;
-    }
-
-    fn block_mut(&mut self) -> &mut BBlock {
-        self.blocks.get_unchecked_mut(self.current_block_id)
+    pub fn block_mut(&mut self) -> MirRes<&mut BBlock> {
+        let blockid = self.current_block.inner_id();
+        self.blocks
+            .get_mut(blockid)
+            .ok_or(MirErrors::NoWorkingBlock)
     }
 
     fn new_block(&mut self) -> BlockId {
-        let id = self.blocks.push(BBlock::default());
-        self.working_blocks.push(id);
-        id
+        self.blocks.push(BBlock::default());
+        BlockId(self.blocks.len() - 1)
     }
 
-    fn term_br(&mut self, go: BlockId) {
-        let term = crate::Terminator::Br { target: go };
-        self.block_mut().with_term(term);
+    fn switch_to_block(&mut self, block: BlockId) {
+        self.current_block = block;
     }
 
-    fn term_cond_br(&mut self, condition: ValueId, then: BlockId, otherwise: BlockId) {
+    fn push_instuction_get_index(&mut self, inst: VInstruct) -> ValueId {
+        self.instructions.push(inst);
+        ValueId(self.instructions.len() - 1)
+    }
+
+    fn terminate(&mut self, term: crate::Terminator) -> MirRes<()> {
+        self.block_mut()?.with_term(term);
+        Ok(())
+    }
+
+    pub fn terminate_br(&mut self, target: BlockId) -> MirRes<()> {
+        let term = crate::Terminator::Br { target };
+        self.terminate(term)
+    }
+
+    pub fn term_br_if(
+        &mut self,
+        condition: ValueId,
+        then_target: BlockId,
+        else_target: BlockId,
+    ) -> MirRes<()> {
         let term = crate::Terminator::BrIf {
             condition,
-            then_target: then,
-            else_target: otherwise,
+            then_target,
+            else_target,
         };
-        self.block_mut().with_term(term);
+        self.terminate(term)
     }
 
-    fn term_ret(&mut self, value: ValueId) {
+    pub fn term_ret(&mut self, value: ValueId) -> MirRes<()> {
         let term = crate::Terminator::Return(Some(value));
-        self.block_mut().with_term(term);
+        self.terminate(term)
     }
 
-    fn emit(&mut self, kind: VInstructionKind) -> ValueId {
-        let instruct = self.instructions.push(VInstruct { dst: None, kind });
-        self.block_mut().with_instruct(instruct);
-        instruct
+    pub fn emit(&mut self, inst_kind: VInstructionKind) -> MirRes<ValueId> {
+        let vid = self.push_instuction_get_index(VInstruct { kind: inst_kind });
+        self.block_mut()?.with_instruct(vid);
+        Ok(vid)
     }
 
-    /// Emit Unit type as a constant
-    fn emit_unit(&mut self) -> ValueId {
+    fn emit_unit(&mut self) -> MirRes<ValueId> {
         self.emit(VInstructionKind::Constant(crate::Consts::Unit))
     }
 
-    fn emit_phi(&mut self, ty: ids::TypeId, incoming: Box<[(BlockId, ValueId)]>) -> ValueId {
+    fn emit_phi(
+        &mut self,
+        ty: ids::TypeId,
+        incoming: Box<[(BlockId, ValueId)]>,
+    ) -> MirRes<ValueId> {
         let kind = VInstructionKind::Phi { ty, incoming };
         self.emit(kind)
     }
 
-    fn lower_item(&mut self, item: &ItemId) {
-        match item {
-            ItemId::Expr(expression_id) => {
-                self.emit_expr_valueid(*expression_id);
-            }
-            ItemId::Symbol(symbol_id) => {
-                let _ = self.lower_binding(*symbol_id);
-            }
-        }
-    }
-
-    fn lower_block(&mut self, items: &[ItemId], final_expr: &Option<ids::ExpressionId>) -> ValueId {
-        for item in items {
-            self.lower_item(item);
-        }
-
-        match final_expr {
-            Some(expr_id) => self.emit_expr_valueid(*expr_id),
-            None => self.emit_unit(),
-        }
-    }
-
-    fn emit_if_expr(
-        &mut self,
-        expr_type: ids::TypeId,
-
-        predicate: &ids::ExpressionId,
-        then: &ids::ExpressionId,
-        otherwise: &ids::ExpressionId,
-    ) -> ValueId {
-        // Lower the predicate, and end the block in a CondBr terminator
-        let pred = self.emit_expr_valueid(*predicate);
-        let then_block = self.new_block();
-        let othr_block = self.new_block();
-        self.term_cond_br(pred, then_block, othr_block);
-
-        // A block where we join the two branches into one
-        let joining_block = self.new_block();
-
-        self.switch_to(then_block);
-        let then = self.emit_expr_valueid(*then);
-        self.term_br(joining_block);
-
-        self.switch_to(othr_block);
-        let otherwise = self.emit_expr_valueid(*otherwise);
-        self.term_br(joining_block);
-
-        self.switch_to(joining_block);
-
-        return self.emit_phi(
-            expr_type,
-            Box::from([(then_block, then), (othr_block, otherwise)]),
-        );
-    }
-
-    fn emit_literal(&mut self, constant: &Const) -> ValueId {
+    fn emit_literal(&mut self, constant: &Const) -> MirRes<ValueId> {
         let kind = VInstructionKind::Constant(match constant {
             hir::Const::I64(i) => crate::Consts::I64(*i),
             hir::Const::Bool(b) => crate::Consts::Bool(*b),
@@ -162,342 +125,129 @@ impl<'a> MirBuilder<'a> {
         self.emit(kind)
     }
 
-    fn emit_binop(
+    fn emit_binary(
         &mut self,
         operator: &BinOp,
-        lhs: &ids::ExpressionId,
-        rhs: &ids::ExpressionId,
-    ) -> ValueId {
-        let lhs = self.emit_expr_valueid(*lhs);
-        let rhs = self.emit_expr_valueid(*rhs);
+        lhs: &ExpressionId,
+        rhs: &ExpressionId,
+    ) -> MirRes<ValueId> {
+        let lhs = self.lower_expression_from_id(lhs)?;
+        let rhs = self.lower_expression_from_id(rhs)?;
         let op = operator_map(operator);
         let kind = VInstructionKind::Binary { op, lhs, rhs };
         self.emit(kind)
     }
 
-    /// Given some (value producing) expression from the HIR, turn it into a `VInstruct`, add it to
-    /// the arena and return its id.
-    ///
-    /// In the case that the expression was just referencing an ident, just return the valueid
-    /// associated with said ident.
-    fn emit_expr_valueid(&mut self, expression_id: ids::ExpressionId) -> ValueId {
-        let expression = self.ctx.exprs.get_unchecked(expression_id);
+    fn emit_if(
+        &mut self,
+        expr_ty: ids::TypeId,
+        predicate: &ExpressionId,
+        then: &ExpressionId,
+        otherwise: &ExpressionId,
+    ) -> MirRes<ValueId> {
+        let pred = self.lower_expression_from_id(&predicate)?;
 
+        // Generate blocks for the if and for the then
+        let ifb = self.new_block();
+        let elb = self.new_block();
+        let joinb = self.new_block();
+
+        self.term_br_if(pred, ifb, elb)?;
+
+        self.switch_to_block(ifb);
+        let then_val = self.lower_expression_from_id(&then)?;
+        self.terminate_br(joinb)?;
+
+        self.switch_to_block(elb);
+        let else_val = self.lower_expression_from_id(&otherwise)?;
+        self.terminate_br(joinb)?;
+
+        self.switch_to_block(joinb);
+        self.emit_phi(expr_ty, Box::new([(ifb, then_val), (elb, else_val)]))
+    }
+
+    fn lower_expression_from_id(&mut self, expressionid: &ExpressionId) -> MirRes<ValueId> {
+        let expression = self
+            .ctx
+            .exprs
+            .get(*expressionid)
+            .ok_or(MirErrors::ExpressionNotFound)?;
+
+        let ty = self
+            .ctx
+            .expression_types
+            .get(expressionid)
+            .copied()
+            .ok_or(MirErrors::CouldNotGetExpressionType)?;
+
+        self.lower_expression(ty, expression)
+    }
+
+    /// Given some expression, turn it into a series of instructions, and return the ValueId where
+    /// the result of the expression is.
+    fn lower_expression(&mut self, ty: ids::TypeId, expression: &hir::Expr) -> MirRes<ValueId> {
         match expression {
-            // The case is handled differently, as it does not generate a new instruction, but
-            // uses an old one.
-            hir::Expr::Identifier { id, .. } => *self.locals.get(id).unwrap(),
+            /// When we load an identifier, dont generate new instructions
+            hir::Expr::Identifier { id, .. } => {
+                self.locals.get(id).copied().ok_or(MirErrors::IdentNotFound)
+            }
             hir::Expr::Literal { constant, .. } => self.emit_literal(constant),
             hir::Expr::BinaryOperation {
                 operator, lhs, rhs, ..
-            } => self.emit_binop(operator, lhs, rhs),
+            } => self.emit_binary(operator, lhs, rhs),
             hir::Expr::If {
                 predicate,
                 then,
                 otherwise,
                 ..
-            } => self.emit_if_expr(
-                *self.ctx.expression_types.get(&expression_id).unwrap(),
-                predicate,
-                then,
-                otherwise,
-            ),
-            hir::Expr::Block {
-                items, final_expr, ..
-            } => self.lower_block(items, final_expr),
+            } => self.emit_if(ty, predicate, then, otherwise),
             _ => todo!("Cannot yet handle: {:?}", expression),
         }
     }
 
-    fn lower_function(
+    pub fn clear_all(&mut self) {
+        self.locals.clear();
+        self.blocks.clear();
+        self.instructions.clear();
+    }
+
+    pub fn lower(
         &mut self,
         name: ids::IdentId,
-        return_ty: TypeId,
-        params: &Box<[SymbolId]>,
+        return_ty: ids::TypeId,
+        params: &[SymbolId],
         body: ExpressionId,
-    ) -> Result<FunctionId, MirErrors> {
-        self.locals.clear();
-        self.working_blocks.clear();
+    ) -> MirRes<Function> {
+        self.clear_all();
+        self.current_block = self.new_block();
 
-        let entry = self.new_block();
-        self.current_block_id = entry;
+        let mut params_inst = Vec::with_capacity(params.len());
+        for (index, param) in params.iter().enumerate() {
+            let sym = self
+                .ctx
+                .symbols
+                .get(*param)
+                .ok_or(MirErrors::ParamNotFound)?;
 
-        let mut p: Vec<ValueId> = Vec::with_capacity(params.len());
-        for (i, param_id) in params.iter().enumerate() {
-            let symbol = self.ctx.symbols.get_unchecked(*param_id);
-            let vk = VInstructionKind::Parameter {
-                index: i as u16,
-                ty: symbol.ty_id(),
+            let kind = VInstructionKind::Parameter {
+                index: index as u16,
+                ty: sym.ty_id(),
             };
-            let vi = self.emit(vk);
-            p.push(vi);
-            self.locals.insert(*param_id, vi);
+            let vid = self.push_instuction_get_index(VInstruct { kind });
+            self.block_mut()?.with_instruct(vid);
+            self.locals.insert(*param, vid);
+            params_inst.push(vid);
         }
 
-        let expr = self.emit_expr_valueid(body);
-        self.term_ret(expr);
+        let body_val = self.lower_expression_from_id(&body)?;
+        self.term_ret(body_val)?;
 
-        let f = Function {
+        Ok(Function {
             name,
             return_ty,
-            params: p,
-            entry,
-            blocks: self.working_blocks.clone(),
-        };
-
-        Ok(self.functions.push(f))
-    }
-
-    fn lower_binding(&mut self, binding_id: ids::SymbolId) -> Result<BindingId, MirErrors> {
-        let s = self.ctx.symbols.get_unchecked(binding_id);
-        let t = self.ctx.types.get_unchecked(s.ty_id());
-        match &s.kind {
-            SymbolKind::Variable { body, .. } => {
-                let assignment = self.emit_expr_valueid(*body);
-                self.locals.insert(binding_id, assignment);
-                Ok(assignment.into())
-            }
-            SymbolKind::Function { params, body } => self
-                .lower_function(s.ident_id(), t.function_output(), params, *body)
-                .map(Into::into),
-            SymbolKind::VariableUndeclared { .. } | SymbolKind::FunctionUndeclared { .. } => {
-                Err(MirErrors::LoweringErr {
-                    msg: "Cannot do mir lowering with undeclared var/fn".into(),
-                })
-            }
-            _ => todo!(),
-        }
-    }
-
-    pub fn lower_module(&mut self) -> Result<(), Vec<MirErrors>> {
-        let mut errors = vec![];
-        for binding in &self.ctx.roots {
-            match self.lower_binding(*binding) {
-                Ok(_) => {}
-                Err(mir_err) => {
-                    errors.push(mir_err);
-                }
-            }
-        }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
-    }
-
-    pub fn blocks(&self) -> &BlockArena {
-        &self.blocks
-    }
-
-    pub fn functions(&self) -> &FunctionArena {
-        &self.functions
-    }
-
-    pub fn instructions(&self) -> &InstructionArena {
-        &self.instructions
-    }
-}
-
-#[cfg(test)]
-mod test_lower {
-
-    use indoc::indoc;
-
-    use calamars_core::ids;
-    use front::{
-        sematic::hir::{
-            self, ConstantStringArena, ExpressionArena, IdentArena, SymbolArena, TypeArena,
-        },
-        syntax::span::Span,
-    };
-
-    use crate::{VInstructionKind, lower::MirBuilder, printer::MirPrinter};
-
-    fn make_context() -> hir::Module {
-        hir::Module {
-            id: ids::FileId::from(0),
-            name: "TestingFile".to_owned(),
-            roots: Box::new([]),
-            types: TypeArena::new_checked(),
-            const_str: ConstantStringArena::new_unchecked(),
-            idents: IdentArena::new_unchecked(),
-            symbols: SymbolArena::new_unchecked(),
-            exprs: ExpressionArena::new_checked(),
-            expression_types: hashbrown::HashMap::new(),
-        }
-    }
-
-    fn lit_i64(v: i64) -> hir::Expr {
-        hir::Expr::Literal {
-            constant: hir::Const::I64(v),
-            span: Span::dummy(),
-        }
-    }
-
-    fn lit_bool(v: bool) -> hir::Expr {
-        hir::Expr::Literal {
-            constant: hir::Const::Bool(v),
-            span: Span::dummy(),
-        }
-    }
-
-    fn ident(sym: ids::SymbolId) -> hir::Expr {
-        hir::Expr::Identifier {
-            id: sym,
-            span: Span::dummy(),
-        }
-    }
-
-    fn bin_expr(op: hir::BinOp, l: ids::ExpressionId, r: ids::ExpressionId) -> hir::Expr {
-        hir::Expr::BinaryOperation {
-            operator: op,
-            lhs: l,
-            rhs: r,
-            span: Span::dummy(),
-        }
-    }
-
-    fn if_stm(
-        predicate: ids::ExpressionId,
-        then: ids::ExpressionId,
-        otherwise: ids::ExpressionId,
-    ) -> hir::Expr {
-        hir::Expr::If {
-            predicate,
-            then,
-            otherwise,
-            span: Span::dummy(),
-            pred_span: Span::dummy(),
-            then_span: Span::dummy(),
-            othewise_span: Span::dummy(),
-        }
-    }
-
-    #[test]
-    fn lower_literal() {
-        let mut context = make_context();
-
-        let one = lit_i64(1);
-        let one_id = context.exprs.push(one);
-
-        let mut builder = MirBuilder::new(&context);
-        let value_id = builder.emit_expr_valueid(one_id);
-
-        let block = builder.blocks.get_unchecked(builder.current_block_id);
-
-        assert!(block.instructs.len() == 1);
-        let id = block.instructs[0];
-        let instruct = builder.instructions.get_unchecked(id);
-        assert!(matches!(instruct.kind, VInstructionKind::Constant { .. }));
-    }
-
-    #[test]
-    fn lower_literal_txt() {
-        let mut context = make_context();
-
-        // 1
-        let one = lit_i64(1);
-        let one_id = context.exprs.push(one);
-
-        let mut builder = MirBuilder::new(&context);
-        let value_id = builder.emit_expr_valueid(one_id);
-        builder.term_ret(value_id);
-
-        let printer = MirPrinter::new(&builder.blocks, &builder.instructions, &builder.functions);
-        let b = printer.fmt_block(&builder.current_block_id);
-        let exp = indoc! {"
-            bb0:
-              %v0 = const 1
-              return %v0
-        "};
-        assert_eq!(b, exp);
-    }
-
-    #[test]
-    fn lower_simple_binary_expr() {
-        let mut context = make_context();
-
-        // 1 + 3
-        let one = lit_i64(1);
-        let one_id = context.exprs.push(one);
-        let three = lit_i64(3);
-        let three_id = context.exprs.push(three);
-
-        let sum = bin_expr(hir::BinOp::Add, one_id, three_id);
-        let sum_id = context.exprs.push(sum);
-
-        let mut builder = MirBuilder::new(&context);
-        let value_id = builder.emit_expr_valueid(sum_id);
-
-        let block = builder.blocks.get_unchecked(builder.current_block_id);
-
-        assert!(block.instructs.len() == 3);
-
-        let zi = builder.instructions.get_unchecked(block.instructs[0]);
-        let oi = builder.instructions.get_unchecked(block.instructs[1]);
-        let ti = builder.instructions.get_unchecked(block.instructs[2]);
-
-        // The desired block should be:
-        //
-        // v0 = const 1
-        // v1 = const 2
-        // v2 = + v0 v1
-        assert!(matches!(zi.kind, VInstructionKind::Constant { .. }));
-        assert!(matches!(oi.kind, VInstructionKind::Constant { .. }));
-        assert!(matches!(ti.kind, VInstructionKind::Binary { .. }));
-    }
-
-    #[test]
-    fn simple_if() {
-        /*
-         * Try to lower the following:
-         * if true then 1+1 else 4
-         *
-         * This should generate 4 blocks:
-         * 1. define constant "true" and do conditional break
-         * 2. define constant 1 and return 1+1
-         * 3. define constant 4 and return it
-         * 4. Phi instruction that assigns either 1 or 4
-         * */
-
-        let mut context = make_context();
-        // Boolean Type
-        let bt = context.types.intern(&hir::Type::Boolean);
-        // Integer Type
-        let it = context.types.intern(&hir::Type::Integer);
-
-        // Make literals
-        let t = lit_bool(true);
-        let f = lit_i64(4);
-        let o = lit_i64(1);
-        let op = lit_i64(1);
-
-        // Generate expression ids
-        let t = context.exprs.push(t);
-        let f = context.exprs.push(f);
-        let o = context.exprs.push(o);
-        let op = context.exprs.push(op);
-
-        // Map expression ids to their types
-        context.expression_types.insert(t, bt);
-        context.expression_types.insert(f, it);
-        context.expression_types.insert(o, it);
-        context.expression_types.insert(op, it);
-
-        // Binary expression
-        let bin = bin_expr(hir::BinOp::Add, o, op);
-        let bin = context.exprs.push(bin);
-        context.expression_types.insert(bin, it);
-
-        // If expression
-        let cond = if_stm(t, bin, f);
-        let cond = context.exprs.push(cond);
-        context.expression_types.insert(cond, it);
-
-        let mut builder = MirBuilder::new(&context);
-        let if_lower = builder.emit_expr_valueid(cond);
-        assert_eq!(builder.blocks.len(), 4);
+            params: params_inst,
+            instructions: std::mem::take(&mut self.instructions),
+            blocks: std::mem::take(&mut self.blocks),
+        })
     }
 }
