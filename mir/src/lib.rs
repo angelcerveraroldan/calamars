@@ -197,7 +197,7 @@ pub enum VInstructionKind {
 /// Reference: https://releases.llvm.org/18.1.4/docs/LangRef.html#instruction-reference
 #[derive(Debug)]
 pub struct VInstruct {
-    kind: VInstructionKind,
+    pub kind: VInstructionKind,
 }
 
 /// Every basic block will end with a terminator instruction.
