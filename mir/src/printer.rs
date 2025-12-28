@@ -3,28 +3,17 @@ use calamars_core::Identifier;
 use std::fmt::Write;
 
 use crate::{
-    BinaryOperator, BitwiseBinaryOperator, BlockArena, BlockId, Callee, Consts, Function,
-    FunctionArena, FunctionId, InstructionArena, Terminator, UnaryOperator, VInstructionKind,
-    ValueId,
+    BinaryOperator, BitwiseBinaryOperator, BlockId, Callee, Consts, Function, FunctionId,
+    Terminator, UnaryOperator, VInstructionKind, ValueId,
 };
 
 pub struct MirPrinter<'a> {
-    pub blocks: &'a super::BlockArena,
-    pub insts: &'a super::InstructionArena,
-    pub functions: &'a super::FunctionArena,
+    functions: &'a [Function],
 }
 
 impl<'a> MirPrinter<'a> {
-    pub fn new(
-        blocks: &'a BlockArena,
-        insts: &'a InstructionArena,
-        functions: &'a FunctionArena,
-    ) -> Self {
-        Self {
-            blocks,
-            insts,
-            functions,
-        }
+    pub fn new(functions: &'a [Function]) -> Self {
+        Self { functions }
     }
 
     #[inline]
@@ -135,13 +124,13 @@ impl<'a> MirPrinter<'a> {
         }
     }
 
-    pub fn fmt_block(&self, b: &BlockId) -> String {
+    pub fn fmt_block(&self, func: &Function, b: &BlockId) -> String {
         let mut s = String::new();
         let _ = writeln!(s, "{}:", self.bb(*b));
 
-        let block = self.blocks.get_unchecked(*b);
+        let block = func.blocks.get(b.inner_id()).unwrap();
         for inst in &block.instructs {
-            let val = self.insts.get_unchecked(*inst);
+            let val = func.instructions.get(inst.inner_id()).unwrap();
             let rhs = self.fmt_vinst(&val.kind);
             let _ = writeln!(s, "  {} = {}", self.v(*inst), rhs);
         }
@@ -152,7 +141,7 @@ impl<'a> MirPrinter<'a> {
     }
 
     pub fn fmt_function_id(&self, fid: FunctionId) -> String {
-        let f = self.functions.get_unchecked(fid);
+        let f = self.functions.get(fid.inner_id()).unwrap();
         self.fmt_function(f)
     }
 
@@ -161,8 +150,8 @@ impl<'a> MirPrinter<'a> {
 
         let _ = writeln!(s, "func @{} {{", f.name.inner());
 
-        for bid in &f.blocks {
-            s.push_str(&self.fmt_block(bid));
+        for (bid, _) in f.blocks.iter().enumerate() {
+            s.push_str(&self.fmt_block(f, &BlockId(bid)));
         }
 
         let _ = writeln!(s, "}}");
@@ -171,7 +160,7 @@ impl<'a> MirPrinter<'a> {
 
     pub fn fmt_all_functions(&self) -> String {
         let mut out = String::new();
-        for f in self.functions.inner() {
+        for f in self.functions {
             out.push_str(&self.fmt_function(f));
             out.push('\n');
         }

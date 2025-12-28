@@ -76,22 +76,31 @@ fn main() {
             }
 
             // Lower to HIR
-            let mut mir_builder = ir::lower::MirBuilder::new(&module);
-            match mir_builder.lower_module() {
-                Ok(_) => {}
-                Err(errs) => {
-                    for err in errs {
-                        println!("{err:?}");
-                    }
+            let mut mir_builder = ir::lower::FunctionBuilder::new(&module);
+            let mut funcs = Vec::new();
+            for symbol_id in &module.roots {
+                let symbol = module.symbols.get_unchecked(*symbol_id);
+                let name = symbol.ident_id();
+                let return_ty = symbol.ty_id();
+
+                let (params, body) = if let front::sematic::hir::SymbolKind::Function {
+                    params,
+                    body,
+                } = &symbol.kind
+                {
+                    (params, body)
+                } else {
+                    continue;
+                };
+
+                match mir_builder.lower(name, return_ty, params, *body) {
+                    Ok(fun) => funcs.push(fun),
+                    Err(_) => continue,
                 }
             }
 
             // Print all the functions!
-            let printer = MirPrinter::new(
-                mir_builder.blocks(),
-                mir_builder.instructions(),
-                mir_builder.functions(),
-            );
+            let printer = MirPrinter::new(&funcs);
             let s = printer.fmt_all_functions();
             println!("{s}");
         }
