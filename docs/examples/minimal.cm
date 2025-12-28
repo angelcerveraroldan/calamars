@@ -7,10 +7,12 @@ def add(a: Int, b: Int): Int  = a + b
 
 def mul(a: Int, b: Int): Int = a * b
 
+--*
 def mod(a: Int, m: Int): Int = {
 		-- Return a modulo m
 		a % m
 }
+*--
 
 -- If statements
 def is_even(a: Int): Bool = 
