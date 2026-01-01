@@ -82,12 +82,12 @@ pub struct VmFunction {
 }
 
 impl VmFunction {
-    pub fn new(name: ids::IdentId, arity: u16, nreg: u16) -> Self {
+    pub fn new(name: ids::IdentId, arity: u16, nreg: u16, bytecode: Vec<Bytecode>) -> Self {
         VmFunction {
             name,
             arity,
             register_count: nreg,
-            bytecode: Vec::new(),
+            bytecode,
         }
     }
 
@@ -196,15 +196,27 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_block(&self, instruction_pool: &Vec<ir::VInstruct>, block: &ir::BBlock) -> VmRes<()> {
+    fn lower_block(
+        &self,
+        instruction_pool: &Vec<ir::VInstruct>,
+        block: &ir::BBlock,
+    ) -> VmRes<Vec<Bytecode>> {
+        let mut instructions = Vec::new();
         for inst_id in &block.instructs {
             let instruction = instruction_pool
                 .get(inst_id.inner_id())
                 .ok_or(VmError::InternalInstructionNotFound)?;
             let destination = self.register_dest(*inst_id);
-            self.lower_inst(instruction, destination)?;
+            let mut bytecode = self.lower_inst(instruction, destination)?;
+            instructions.append(&mut bytecode);
         }
-        Ok(())
+
+        if let Some(term) = &block.finally {
+            let mut term_bytecode = self.lower_terminator(term)?;
+            instructions.append(&mut term_bytecode);
+        }
+
+        Ok(instructions)
     }
 
     fn lower_function_byid(&self, funcid: &ir::FunctionId) -> VmRes<VmFunction> {
@@ -222,8 +234,13 @@ impl<'a> Lowerer<'a> {
             return Err(VmError::NotYetImplemented);
         }
         let entry_block = fun.blocks.first().ok_or(VmError::InternalBlockIdNotFound)?;
-        self.lower_block(&fun.instructions, entry_block)?;
-        let fun = VmFunction::new(fun.name, fun.arity(), fun.instructions.len() as u16);
+        let bytecode = self.lower_block(&fun.instructions, entry_block)?;
+        let fun = VmFunction::new(
+            fun.name,
+            fun.arity(),
+            fun.instructions.len() as u16,
+            bytecode,
+        );
         Ok(fun)
     }
 }
