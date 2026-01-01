@@ -140,7 +140,7 @@ impl VmFunctionRunner {
         }
     }
 
-    pub fn run_bytecode(&mut self, bytecode: &Bytecode) -> VmRes<Option<Value>> {
+    fn run_bytecode(&mut self, bytecode: &Bytecode) -> VmRes<Option<Value>> {
         match bytecode {
             // Side effects
             Bytecode::ConstI64(register, i) => self
@@ -154,6 +154,18 @@ impl VmFunctionRunner {
             }),
             _ => todo!("not yet implemented"),
         }
+    }
+
+    fn run_function(&mut self) -> VmRes<Value> {
+        while self.instruction_count < self.bytecode.len() {
+            let bc = &self.bytecode[self.instruction_count].clone();
+            self.instruction_count += 1;
+            if let Some(value) = self.run_bytecode(bc)? {
+                return Ok(value);
+            }
+        }
+        // Functions must return something, for now.
+        Err(VmError::NotYetImplemented)
     }
 }
 
