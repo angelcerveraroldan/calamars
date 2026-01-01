@@ -1,5 +1,6 @@
-use calamars_core::ids;
-use ir::{BinaryOperator, Consts};
+use calamars_core::{Identifier, ids};
+
+use ir::{BinaryOperator, Consts, ValueId};
 
 pub enum VmError {
     NotYetImplemented,
@@ -11,7 +12,7 @@ pub enum VmError {
     InternalValueIdNotFound,
 }
 
-pub type Register = usize;
+pub struct Register(usize);
 pub type VmRes<A> = Result<A, VmError>;
 
 #[derive(Debug, Clone, Copy)]
@@ -67,16 +68,23 @@ struct Lowerer<'a> {
 }
 
 impl<'a> Lowerer<'a> {
-    fn lower_inst(&self, instruction: &ir::VInstruct) -> VmRes<Vec<Bytecode>> {
-        let destination = instruction.dst.ok_or(VmError::DestinationIsNeeded)?.inner();
+    fn register_dest(&self, vid: ValueId) -> Register {
+        Register(vid.inner_id())
+    }
+
+    fn lower_inst(
+        &self,
+        instruction: &ir::VInstruct,
+        destination: Register,
+    ) -> VmRes<Vec<Bytecode>> {
         match &instruction.kind {
             ir::VInstructionKind::Constant(Consts::I64(val)) => {
                 Ok(vec![Bytecode::ConstI64(destination, *val)])
             }
             ir::VInstructionKind::Binary { op, lhs, rhs } if matches!(op, BinaryOperator::Add) => {
                 Ok(vec![Bytecode::Add {
-                    a: lhs.inner(),
-                    b: rhs.inner(),
+                    a: self.register_dest(*lhs),
+                    b: self.register_dest(*rhs),
                     to: destination,
                 }])
             }
@@ -87,33 +95,10 @@ impl<'a> Lowerer<'a> {
     fn lower_terminator(&self, term: &ir::Terminator) -> VmRes<Vec<Bytecode>> {
         match term {
             ir::Terminator::Return(ret_valueid) => ret_valueid
-                .map(|dst| vec![Bytecode::Ret(dst.inner())])
+                .map(|vid| vec![Bytecode::Ret(self.register_dest(vid))])
                 // Cannot return nothing yet
                 .ok_or(VmError::NotYetImplemented),
             _ => Err(VmError::NotYetImplemented),
-        }
-    }
-
-    fn lower_block(&self, block: &ir::BBlock) -> VmRes<Vec<Bytecode>> {
-        let mut v = vec![];
-
-        for value_id in &block.instructs {
-            let instruct = self
-                .ctx
-                .values
-                .get(*value_id)
-                .ok_or(VmError::InternalValueIdNotFound)?;
-
-            let mut byte = self.lower_inst(instruct)?;
-            v.append(&mut byte);
-        }
-
-        if let Some(term) = &block.finally {
-            let mut tins = self.lower_terminator(term)?;
-            v.append(&mut tins);
-            Ok(v)
-        } else {
-            Err(VmError::MissingTerminator)
         }
     }
 
@@ -121,7 +106,7 @@ impl<'a> Lowerer<'a> {
         let f = self
             .ctx
             .functions
-            .get(*funcid)
+            .get(funcid.inner_id())
             .ok_or(VmError::InternalFunctionIdNotFound)?;
 
         self.lower_function(f)
@@ -131,14 +116,7 @@ impl<'a> Lowerer<'a> {
         if fun.blocks.len() != 1 {
             return Err(VmError::NotYetImplemented);
         }
-
-        let entry_block = self
-            .ctx
-            .blocks
-            .get(fun.entry)
-            .ok_or(VmError::InternalBlockIdNotFound)?;
-
-        let bytecode = self.lower_block(entry_block)?;
+        let entry_block = fun.blocks.first().ok_or(VmError::InternalBlockIdNotFound)?;
         todo!()
     }
 }
