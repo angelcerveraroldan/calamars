@@ -15,6 +15,7 @@ pub enum VmError {
 
     CannotReadFromEmpyRegister,
     RegisterNotFound,
+    MainFunctionNotFound,
 
     // Internal errors, these should not occur unless some invariant is broken
     InternalFunctionIdNotFound,
@@ -148,24 +149,20 @@ impl VmFunctionRunner {
                 .map(|_| None),
             Bytecode::Add { a, b, to } => self.run_add(to, a, b).map(|_| None),
             // Returns
-            Bytecode::Ret(register) => self.get_register(register).map(|ptr| {
-                println!("{:?}", ptr);
-                Some(ptr.clone())
-            }),
-            _ => todo!("not yet implemented"),
+            Bytecode::Ret(register) => self.get_register(register).map(|ptr| Some(ptr.clone())),
         }
     }
 
     fn run_function(&mut self) -> VmRes<Value> {
         while self.instruction_count < self.bytecode.len() {
-            let bc = &self.bytecode[self.instruction_count].clone();
+            let bc = self.bytecode[self.instruction_count].clone();
             self.instruction_count += 1;
-            if let Some(value) = self.run_bytecode(bc)? {
+            if let Some(value) = self.run_bytecode(&bc)? {
                 return Ok(value);
             }
         }
         // Functions must return something, for now.
-        Err(VmError::NotYetImplemented)
+        Err(VmError::MissingTerminator)
     }
 }
 
@@ -254,5 +251,16 @@ impl<'a> Lowerer<'a> {
             bytecode,
         );
         Ok(fun)
+    }
+
+    pub fn run_module(&self) -> VmRes<Value> {
+        let fun = self
+            .ctx
+            .functions
+            .first()
+            .ok_or(VmError::MainFunctionNotFound)?;
+        let fun = self.lower_function(fun)?;
+        let mut runner = fun.runner();
+        runner.run_function()
     }
 }
