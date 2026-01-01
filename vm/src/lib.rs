@@ -13,14 +13,20 @@ pub enum VmError {
     DestinationIsNeeded,
     MissingTerminator,
 
+    CannotReadFromEmpyRegister,
+    RegisterNotFound,
+
     // Internal errors, these should not occur unless some invariant is broken
     InternalFunctionIdNotFound,
     InternalBlockIdNotFound,
     InternalValueIdNotFound,
     InternalInstructionNotFound,
+    WrongType,
 }
 
+#[derive(Clone, Debug)]
 pub struct Register(usize);
+
 pub type VmRes<A> = Result<A, VmError>;
 
 #[derive(Debug, Clone, Copy)]
@@ -29,8 +35,19 @@ pub type VmRes<A> = Result<A, VmError>;
 ///
 /// Later this will also contain pointers to potentially heap allocated values.
 pub enum Value {
+    Empty,
+
     Integer(i64),
     Boolean(bool),
+}
+
+impl Value {
+    fn is_empty(&self) -> bool {
+        matches!(self, Value::Empty)
+    }
+    fn is_full(&self) -> bool {
+        !matches!(self, Value::Empty)
+    }
 }
 
 pub struct VirtualMachine {
@@ -44,6 +61,7 @@ impl VirtualMachine {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum Bytecode {
     /// Save an integer to some register
     ConstI64(Register, i64),
@@ -70,6 +88,71 @@ impl VmFunction {
             arity,
             register_count: nreg,
             bytecode: Vec::new(),
+        }
+    }
+
+    fn runner(&self) -> VmFunctionRunner {
+        // Opitimization:
+        // - Dont malloc every time, instead re use registers from other functions
+        // - Use pointers, dont clone
+        VmFunctionRunner {
+            registers: vec![Value::Empty; self.register_count as usize],
+            bytecode: self.bytecode.clone(),
+            instruction_count: 0,
+        }
+    }
+}
+
+pub struct VmFunctionRunner {
+    registers: Vec<Value>,
+    bytecode: Vec<Bytecode>,
+
+    instruction_count: usize,
+}
+
+impl VmFunctionRunner {
+    fn get_register(&self, reg: &Register) -> VmRes<&Value> {
+        self.registers.get(reg.0).ok_or(VmError::RegisterNotFound)
+    }
+
+    fn get_register_mut(&mut self, reg: &Register) -> VmRes<&mut Value> {
+        self.registers
+            .get_mut(reg.0)
+            .ok_or(VmError::RegisterNotFound)
+    }
+
+    fn run_set_const(&mut self, to: &Register, value: Value) -> VmRes<()> {
+        let reg = self.get_register_mut(to)?;
+        *reg = value;
+        Ok(())
+    }
+
+    fn run_add(&mut self, to: &Register, lhs: &Register, rhs: &Register) -> VmRes<()> {
+        let lhs = self.get_register(lhs)?;
+        let rhs = self.get_register(rhs)?;
+
+        match (lhs, rhs) {
+            (Value::Integer(li), Value::Integer(ri)) => {
+                self.run_set_const(to, Value::Integer(*li + *ri))
+            }
+            // This should be unreachable ? Double check, and optimize for that.
+            _ => Err(VmError::WrongType),
+        }
+    }
+
+    pub fn run_bytecode(&mut self, bytecode: &Bytecode) -> VmRes<Option<Value>> {
+        match bytecode {
+            // Side effects
+            Bytecode::ConstI64(register, i) => self
+                .run_set_const(register, Value::Integer(*i))
+                .map(|_| None),
+            Bytecode::Add { a, b, to } => self.run_add(to, a, b).map(|_| None),
+            // Returns
+            Bytecode::Ret(register) => self.get_register(register).map(|ptr| {
+                println!("{:?}", ptr);
+                Some(ptr.clone())
+            }),
+            _ => todo!("not yet implemented"),
         }
     }
 }
