@@ -1,3 +1,9 @@
+//! A virtual machine to run Calamars
+//!
+//! For now, this file is meant to "just sort of work", and thus it is VERY inneficient. Once the
+//! project reaches a state where the front end is semi-stable, and a stdlib exists, much
+//! optimization needs to be done here.
+
 use calamars_core::{Identifier, ids};
 
 use ir::{BinaryOperator, Consts, ValueId};
@@ -7,6 +13,7 @@ pub enum VmError {
     DestinationIsNeeded,
     MissingTerminator,
 
+    // Internal errors, these should not occur unless some invariant is broken
     InternalFunctionIdNotFound,
     InternalBlockIdNotFound,
     InternalValueIdNotFound,
@@ -18,6 +25,9 @@ pub type VmRes<A> = Result<A, VmError>;
 
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
+/// A non-heap value
+///
+/// Later this will also contain pointers to potentially heap allocated values.
 pub enum Value {
     Integer(i64),
     Boolean(bool),
@@ -29,7 +39,7 @@ pub struct VirtualMachine {
 }
 
 impl VirtualMachine {
-    fn execude_instruction(&mut self, inst: Bytecode) -> VmRes<()> {
+    fn execute_instruction(&mut self, inst: Bytecode) -> VmRes<()> {
         Ok(())
     }
 }
@@ -108,7 +118,7 @@ impl<'a> Lowerer<'a> {
             let instruction = instruction_pool
                 .get(inst_id.inner_id())
                 .ok_or(VmError::InternalInstructionNotFound)?;
-            let destination = Register(inst_id.inner_id());
+            let destination = self.register_dest(*inst_id);
             self.lower_inst(instruction, destination)?;
         }
         Ok(())
