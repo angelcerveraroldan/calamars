@@ -10,6 +10,7 @@ pub enum VmError {
     InternalFunctionIdNotFound,
     InternalBlockIdNotFound,
     InternalValueIdNotFound,
+    InternalInstructionNotFound,
 }
 
 pub struct Register(usize);
@@ -102,6 +103,17 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn lower_block(&self, instruction_pool: &Vec<ir::VInstruct>, block: &ir::BBlock) -> VmRes<()> {
+        for inst_id in &block.instructs {
+            let instruction = instruction_pool
+                .get(inst_id.inner_id())
+                .ok_or(VmError::InternalInstructionNotFound)?;
+            let destination = Register(inst_id.inner_id());
+            self.lower_inst(instruction, destination)?;
+        }
+        Ok(())
+    }
+
     fn lower_function_byid(&self, funcid: &ir::FunctionId) -> VmRes<VmFunction> {
         let f = self
             .ctx
@@ -117,6 +129,8 @@ impl<'a> Lowerer<'a> {
             return Err(VmError::NotYetImplemented);
         }
         let entry_block = fun.blocks.first().ok_or(VmError::InternalBlockIdNotFound)?;
-        todo!()
+        self.lower_block(&fun.instructions, entry_block)?;
+        let fun = VmFunction::new(fun.name, fun.arity(), fun.instructions.len() as u16);
+        Ok(fun)
     }
 }
