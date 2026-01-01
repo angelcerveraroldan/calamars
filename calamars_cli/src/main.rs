@@ -103,6 +103,11 @@ fn main() {
             let printer = MirPrinter::new(&funcs);
             let s = printer.fmt_all_functions();
             println!("{s}");
+
+            // Run the program
+            let irmodule = ir::Module { functions: funcs };
+            let vmlower = vm::Lowerer::new(&irmodule);
+            println!("{:?}", vmlower.run_module());
         }
     }
 }

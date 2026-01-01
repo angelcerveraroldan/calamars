@@ -122,6 +122,7 @@ dependencies = [
  "hashbrown",
  "ir",
  "logos",
+ "vm",
 ]
 
 [[package]]

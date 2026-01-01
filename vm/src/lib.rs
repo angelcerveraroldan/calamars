@@ -8,6 +8,7 @@ use calamars_core::{Identifier, ids};
 
 use ir::{BinaryOperator, Consts, ValueId};
 
+#[derive(Clone, Debug)]
 pub enum VmError {
     NotYetImplemented,
     DestinationIsNeeded,
@@ -166,11 +167,15 @@ impl VmFunctionRunner {
     }
 }
 
-struct Lowerer<'a> {
+pub struct Lowerer<'a> {
     ctx: &'a ir::Module,
 }
 
 impl<'a> Lowerer<'a> {
+    pub fn new(ctx: &'a ir::Module) -> Self {
+        Self { ctx }
+    }
+
     fn register_dest(&self, vid: ValueId) -> Register {
         Register(vid.inner_id())
     }
