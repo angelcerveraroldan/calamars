@@ -1,1 +1,4 @@
-def add(): Int = if 1==2 then 1 + 1 else 2 + 1
+def add(): Int = 
+	if 1 != 1 
+	then 1 * 2 * 2 * 3 
+	else 15 / 2
