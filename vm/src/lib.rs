@@ -28,6 +28,8 @@ pub enum VmError {
     InternalValueIdNotFound,
     InternalInstructionNotFound,
     WrongType,
+    CannotCallPhiOnFirstBlock,
+    PhiFailedDidNotFindLastBranch,
 }
 
 #[derive(Clone, Debug)]
@@ -91,6 +93,9 @@ pub enum Bytecode {
     /// Jump to a different bytecode
     Br(BlockId),
     BrIf(Register, BlockId, BlockId),
+
+    Phi(Register, Box<[(BlockId, Register)]>),
+
     /// Return the value in some register
     Ret(Register),
 }
@@ -126,6 +131,8 @@ impl VmFunction {
         // - Dont malloc every time, instead re use registers from other functions
         // - Use pointers, dont clone
         VmFunctionRunner {
+            current_block: BlockId::from(0),
+            last_block: None,
             registers: vec![Value::Empty; self.register_count as usize],
             bytecode: self.bytecode.clone(),
             instruction_count: 0,
@@ -138,6 +145,12 @@ pub struct VmFunctionRunner {
     registers: Vec<Value>,
     bytecode: Vec<Bytecode>,
 
+    /// What was the block prior to this one - None if we are in the 0th block
+    last_block: Option<BlockId>,
+    current_block: BlockId,
+    /// A mapping from block number to first bytecode in that block
+    ///
+    /// Used for jumping between blocks
     block_ind: Vec<usize>,
     instruction_count: usize,
 }
@@ -151,6 +164,22 @@ impl VmFunctionRunner {
         self.registers
             .get_mut(reg.0)
             .ok_or(VmError::RegisterNotFound)
+    }
+
+    fn jump_block(&mut self, to: BlockId) -> VmRes<()> {
+        let inner = to.inner_id();
+        self.last_block = Some(self.current_block);
+        self.current_block = to;
+        self.instruction_count = self
+            .block_ind
+            .get(inner)
+            .copied()
+            .ok_or(VmError::InternalBlockIdNotFound)?;
+        Ok(())
+    }
+
+    fn next_inst(&mut self) {
+        self.instruction_count += 1;
     }
 
     fn run_set_const(&mut self, to: &Register, value: Value) -> VmRes<()> {
@@ -204,6 +233,19 @@ impl VmFunctionRunner {
         }
     }
 
+    fn run_phi(&mut self, to: &Register, branches: &Box<[(BlockId, Register)]>) -> VmRes<()> {
+        let last = self.last_block.ok_or(VmError::CannotCallPhiOnFirstBlock)?;
+        for (b, r) in branches {
+            if *b == last {
+                let val = self.get_register(r)?.clone();
+                let to = self.get_register_mut(to)?;
+                *to = val;
+                return Ok(());
+            }
+        }
+        Err(VmError::PhiFailedDidNotFindLastBranch)
+    }
+
     fn run_bytecode(&mut self, bytecode: &Bytecode) -> VmRes<Option<Value>> {
         match bytecode {
             // Side effects
@@ -217,6 +259,7 @@ impl VmFunctionRunner {
             Bytecode::Ret(register) => self.get_register(register).map(|ptr| Some(ptr.clone())),
             Bytecode::Br(instruction) => Ok(None),
             Bytecode::BrIf(cond, then, otherwise) => Ok(None),
+            Bytecode::Phi(to, branches) => self.run_phi(to, branches).map(|_| None),
         }
     }
 
@@ -226,14 +269,14 @@ impl VmFunctionRunner {
             if let Some(value) = self.run_bytecode(&bc)? {
                 return Ok(value);
             }
-            self.instruction_count = match bc {
-                Bytecode::Br(to) => self.block_ind[to.inner_id()],
+            match bc {
+                Bytecode::Br(to) => self.jump_block(to)?,
                 Bytecode::BrIf(cond, then, otherwise) => match self.get_register(&cond)? {
-                    Value::Boolean(true) => self.block_ind[then.inner_id()],
-                    Value::Boolean(false) => self.block_ind[otherwise.inner_id()],
+                    Value::Boolean(true) => self.jump_block(then)?,
+                    Value::Boolean(false) => self.jump_block(otherwise)?,
                     _ => return Err(VmError::WrongType),
                 },
-                _ => self.instruction_count + 1,
+                _ => self.next_inst(),
             };
         }
         // Functions must return something, for now.
@@ -293,6 +336,18 @@ impl<'a> Lowerer<'a> {
                     b: self.register_dest(*rhs),
                     to: destination,
                 }])
+            }
+            ir::VInstructionKind::Phi { ty, incoming } => {
+                let branches = incoming
+                    .clone()
+                    .into_iter()
+                    .map(|(x, y)| (x, self.register_dest(y)))
+                    .collect::<Vec<_>>();
+
+                Ok(vec![Bytecode::Phi(
+                    destination,
+                    branches.into_boxed_slice(),
+                )])
             }
             inst => Err(VmError::NotYetImplemented(format!(
                 "Instruction not supported: {:?}",
