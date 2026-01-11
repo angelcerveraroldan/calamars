@@ -19,6 +19,11 @@ fn operator_map(op: &hir::BinOp) -> BinaryOperator {
         hir::BinOp::Div => BinaryOperator::Div,
         hir::BinOp::Mod => BinaryOperator::Modulo,
         hir::BinOp::EqEq => BinaryOperator::EqEq,
+        hir::BinOp::NotEqual => BinaryOperator::NotEqual,
+        BinOp::Greater => BinaryOperator::Greater,
+        BinOp::Geq => BinaryOperator::Geq,
+        BinOp::Less => BinaryOperator::Lesser,
+        BinOp::Leq => BinaryOperator::Leq,
     }
 }
 
