@@ -70,25 +70,33 @@ impl VirtualMachine {
 }
 
 #[derive(Clone, Debug)]
+pub struct BinaryByteInfo {
+    pub a: Register,
+    pub b: Register,
+    pub to: Register,
+}
+
+impl BinaryByteInfo {
+    fn new(a: Register, b: Register, to: Register) -> Self {
+        Self { a, b, to }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Bytecode {
     /// Save an integer to some register
     ConstI64(Register, i64),
-    EqEq {
-        a: Register,
-        b: Register,
-        to: Register,
-    },
-    NotEqual {
-        a: Register,
-        b: Register,
-        to: Register,
-    },
-    Add {
-        a: Register,
-        b: Register,
-        /// Where to save the new value. This may be the same as a or b in the case of mutation.
-        to: Register,
-    },
+    EqEq(BinaryByteInfo),
+    NotEqual(BinaryByteInfo),
+    Add(BinaryByteInfo),
+    Sub(BinaryByteInfo),
+    Lesser(BinaryByteInfo),
+    Greater(BinaryByteInfo),
+    Geq(BinaryByteInfo),
+    Leq(BinaryByteInfo),
+    Times(BinaryByteInfo),
+    Div(BinaryByteInfo),
+    Modulo(BinaryByteInfo),
 
     /// Jump to a different bytecode
     Br(BlockId),
@@ -132,7 +140,7 @@ impl VmFunction {
         // - Use pointers, dont clone
         VmFunctionRunner {
             current_block: BlockId::from(0),
-            last_block: None,
+            last_blocks: Vec::new(),
             registers: vec![Value::Empty; self.register_count as usize],
             bytecode: self.bytecode.clone(),
             instruction_count: 0,
@@ -146,7 +154,7 @@ pub struct VmFunctionRunner {
     bytecode: Vec<Bytecode>,
 
     /// What was the block prior to this one - None if we are in the 0th block
-    last_block: Option<BlockId>,
+    last_blocks: Vec<BlockId>,
     current_block: BlockId,
     /// A mapping from block number to first bytecode in that block
     ///
@@ -168,7 +176,7 @@ impl VmFunctionRunner {
 
     fn jump_block(&mut self, to: BlockId) -> VmRes<()> {
         let inner = to.inner_id();
-        self.last_block = Some(self.current_block);
+        self.last_blocks.push(self.current_block);
         self.current_block = to;
         self.instruction_count = self
             .block_ind
@@ -188,13 +196,19 @@ impl VmFunctionRunner {
         Ok(())
     }
 
-    fn run_add(&mut self, to: &Register, lhs: &Register, rhs: &Register) -> VmRes<()> {
+    fn run_numeric(
+        &mut self,
+        to: &Register,
+        lhs: &Register,
+        rhs: &Register,
+        f: fn(&i64, &i64) -> i64,
+    ) -> VmRes<()> {
         let lhs = self.get_register(lhs)?;
         let rhs = self.get_register(rhs)?;
 
         match (lhs, rhs) {
             (Value::Integer(li), Value::Integer(ri)) => {
-                self.run_set_const(to, Value::Integer(*li + *ri))
+                self.run_set_const(to, Value::Integer(f(li, ri)))
             }
             // This should be unreachable ? Double check, and optimize for that.
             _ => Err(VmError::WrongType),
@@ -234,7 +248,13 @@ impl VmFunctionRunner {
     }
 
     fn run_phi(&mut self, to: &Register, branches: &Box<[(BlockId, Register)]>) -> VmRes<()> {
-        let last = self.last_block.ok_or(VmError::CannotCallPhiOnFirstBlock)?;
+        println!("{:?}", self.last_blocks);
+
+        let last = self
+            .last_blocks
+            .pop()
+            .ok_or(VmError::CannotCallPhiOnFirstBlock)?;
+
         for (b, r) in branches {
             if *b == last {
                 let val = self.get_register(r)?.clone();
@@ -243,23 +263,41 @@ impl VmFunctionRunner {
                 return Ok(());
             }
         }
+
         Err(VmError::PhiFailedDidNotFindLastBranch)
     }
 
     fn run_bytecode(&mut self, bytecode: &Bytecode) -> VmRes<Option<Value>> {
         match bytecode {
-            // Side effects
             Bytecode::ConstI64(register, i) => self
                 .run_set_const(register, Value::Integer(*i))
                 .map(|_| None),
-            Bytecode::Add { a, b, to } => self.run_add(to, a, b).map(|_| None),
-            Bytecode::EqEq { a, b, to } => self.run_eqeq(to, a, b).map(|_| None),
-            Bytecode::NotEqual { a, b, to } => self.run_neq(to, a, b).map(|_| None),
-            // Returns
+            Bytecode::Add(BinaryByteInfo { a, b, to }) => {
+                self.run_numeric(to, a, b, |x, y| *x + *y).map(|_| None)
+            }
+            Bytecode::Sub(BinaryByteInfo { a, b, to }) => {
+                self.run_numeric(to, a, b, |x, y| *x - *y).map(|_| None)
+            }
+            Bytecode::Modulo(BinaryByteInfo { a, b, to }) => {
+                self.run_numeric(to, a, b, |x, y| *x % *y).map(|_| None)
+            }
+            Bytecode::Times(BinaryByteInfo { a, b, to }) => {
+                self.run_numeric(to, a, b, |x, y| *x * *y).map(|_| None)
+            }
+            Bytecode::Div(BinaryByteInfo { a, b, to }) => {
+                self.run_numeric(to, a, b, |x, y| *x / *y).map(|_| None)
+            }
+            Bytecode::EqEq(BinaryByteInfo { a, b, to }) => self.run_eqeq(to, a, b).map(|_| None),
+            Bytecode::NotEqual(BinaryByteInfo { a, b, to }) => self.run_neq(to, a, b).map(|_| None),
             Bytecode::Ret(register) => self.get_register(register).map(|ptr| Some(ptr.clone())),
             Bytecode::Br(instruction) => Ok(None),
             Bytecode::BrIf(cond, then, otherwise) => Ok(None),
             Bytecode::Phi(to, branches) => self.run_phi(to, branches).map(|_| None),
+            _ => {
+                return Err(VmError::NotYetImplemented(
+                    "This binary op is not yet supported".to_string(),
+                ));
+            }
         }
     }
 
@@ -305,6 +343,35 @@ impl<'a> Lowerer<'a> {
         Register(vid.inner_id())
     }
 
+    fn lower_binary(
+        &self,
+        op: &BinaryOperator,
+        lhs: &ValueId,
+        rhs: &ValueId,
+
+        to: Register,
+    ) -> VmRes<Vec<Bytecode>> {
+        let a = self.register_dest(*lhs);
+        let b = self.register_dest(*rhs);
+        let bbi = BinaryByteInfo { a, b, to };
+
+        let r = match op {
+            BinaryOperator::Add => Bytecode::Add(bbi),
+            BinaryOperator::EqEq => Bytecode::EqEq(bbi),
+            BinaryOperator::NotEqual => Bytecode::NotEqual(bbi),
+            BinaryOperator::Lesser => Bytecode::Lesser(bbi),
+            BinaryOperator::Leq => Bytecode::Leq(bbi),
+            BinaryOperator::Greater => Bytecode::Greater(bbi),
+            BinaryOperator::Geq => Bytecode::Geq(bbi),
+            BinaryOperator::Sub => Bytecode::Sub(bbi),
+            BinaryOperator::Times => Bytecode::Times(bbi),
+            BinaryOperator::Div => Bytecode::Div(bbi),
+            BinaryOperator::Modulo => Bytecode::Modulo(bbi),
+        };
+
+        Ok(vec![r])
+    }
+
     fn lower_inst(
         &self,
         instruction: &ir::VInstruct,
@@ -314,28 +381,8 @@ impl<'a> Lowerer<'a> {
             ir::VInstructionKind::Constant(Consts::I64(val)) => {
                 Ok(vec![Bytecode::ConstI64(destination, *val)])
             }
-            ir::VInstructionKind::Binary { op, lhs, rhs } if matches!(op, BinaryOperator::Add) => {
-                Ok(vec![Bytecode::Add {
-                    a: self.register_dest(*lhs),
-                    b: self.register_dest(*rhs),
-                    to: destination,
-                }])
-            }
-            ir::VInstructionKind::Binary { op, lhs, rhs } if matches!(op, BinaryOperator::EqEq) => {
-                Ok(vec![Bytecode::EqEq {
-                    a: self.register_dest(*lhs),
-                    b: self.register_dest(*rhs),
-                    to: destination,
-                }])
-            }
-            ir::VInstructionKind::Binary { op, lhs, rhs }
-                if matches!(op, BinaryOperator::NotEqual) =>
-            {
-                Ok(vec![Bytecode::NotEqual {
-                    a: self.register_dest(*lhs),
-                    b: self.register_dest(*rhs),
-                    to: destination,
-                }])
+            ir::VInstructionKind::Binary { op, lhs, rhs } => {
+                self.lower_binary(op, lhs, rhs, destination)
             }
             ir::VInstructionKind::Phi { ty, incoming } => {
                 let branches = incoming
