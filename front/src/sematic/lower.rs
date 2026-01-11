@@ -358,7 +358,13 @@ impl HirBuilder {
                     ast::BinaryOperator::Times => hir::BinOp::Mult,
                     ast::BinaryOperator::Div => hir::BinOp::Div,
                     ast::BinaryOperator::EqEq => hir::BinOp::EqEq,
+                    ast::BinaryOperator::NotEqual => hir::BinOp::NotEqual,
                     ast::BinaryOperator::Mod => hir::BinOp::Mod,
+                    ast::BinaryOperator::Greater => hir::BinOp::Greater,
+                    ast::BinaryOperator::Geq => hir::BinOp::Geq,
+                    ast::BinaryOperator::Less => hir::BinOp::Less,
+                    ast::BinaryOperator::Leq => hir::BinOp::Leq,
+
                     _ => break 'binop_case Expr::Err,
                 };
                 let lhs = self.lower_expression(binary_op.lhs());

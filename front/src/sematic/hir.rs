@@ -120,6 +120,11 @@ pub enum BinOp {
     Mod,
 
     EqEq,
+    NotEqual,
+    Greater,
+    Geq,
+    Less,
+    Leq,
 }
 
 #[derive(Debug, PartialEq, Clone)]

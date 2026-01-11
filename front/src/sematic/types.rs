@@ -243,7 +243,7 @@ impl<'a> TypeHandler<'a> {
                 // Both floats, or one float, then we cast to float
                 float_type_id
             }
-            hir::BinOp::EqEq => {
+            hir::BinOp::EqEq | hir::BinOp::NotEqual => {
                 if lhs_type_id == self.err_id() || rhs_type_id == self.err_id() {
                     return self.err_id();
                 }
@@ -270,6 +270,11 @@ impl<'a> TypeHandler<'a> {
                 } else {
                     self.intern_ty(&Type::Integer)
                 }
+            }
+            hir::BinOp::Greater | hir::BinOp::Geq | hir::BinOp::Less | hir::BinOp::Leq => {
+                self.ensure_numeric(*lhs, lhs_type_id);
+                self.ensure_numeric(*rhs, rhs_type_id);
+                self.intern_ty(&Type::Boolean)
             }
         }
     }
