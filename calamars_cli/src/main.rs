@@ -106,7 +106,7 @@ fn main() {
 
             // Run the program
             let irmodule = ir::Module { functions: funcs };
-            let vmlower = vm::Lowerer::new(&irmodule);
+            let mut vmlower = vm::Lowerer::new(&irmodule);
             println!("{:?}", vmlower.run_module());
         }
     }

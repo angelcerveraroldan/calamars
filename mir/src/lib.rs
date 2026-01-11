@@ -35,7 +35,7 @@ impl calamars_core::Identifier for FunctionId {
 /// A local identifier for a `BBlock`
 ///
 /// BlockId(0) is the first block of the working function
-#[derive(Copy, Debug, Clone)]
+#[derive(Copy, Debug, PartialEq, Eq, Clone)]
 pub struct BlockId(usize);
 
 impl From<usize> for BlockId {
