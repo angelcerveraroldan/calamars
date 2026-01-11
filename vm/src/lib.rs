@@ -4,13 +4,17 @@
 //! project reaches a state where the front end is semi-stable, and a stdlib exists, much
 //! optimization needs to be done here.
 
+use std::{collections::HashMap, fmt::format};
+
 use calamars_core::{Identifier, ids};
 
-use ir::{BinaryOperator, Consts, ValueId};
+use ir::{BinaryOperator, BlockId, Consts, ValueId};
+
+type BytecodeId = usize;
 
 #[derive(Clone, Debug)]
 pub enum VmError {
-    NotYetImplemented,
+    NotYetImplemented(String),
     DestinationIsNeeded,
     MissingTerminator,
 
@@ -67,12 +71,27 @@ impl VirtualMachine {
 pub enum Bytecode {
     /// Save an integer to some register
     ConstI64(Register, i64),
+    EqEq {
+        a: Register,
+        b: Register,
+        to: Register,
+    },
+    NotEqual {
+        a: Register,
+        b: Register,
+        to: Register,
+    },
     Add {
         a: Register,
         b: Register,
         /// Where to save the new value. This may be the same as a or b in the case of mutation.
         to: Register,
     },
+
+    /// Jump to a different bytecode
+    Br(BlockId),
+    BrIf(Register, BlockId, BlockId),
+    /// Return the value in some register
     Ret(Register),
 }
 
@@ -80,16 +99,25 @@ pub struct VmFunction {
     name: ids::IdentId,
     arity: u16,
     register_count: u16,
+
+    block_ind: Vec<usize>,
     bytecode: Vec<Bytecode>,
 }
 
 impl VmFunction {
-    pub fn new(name: ids::IdentId, arity: u16, nreg: u16, bytecode: Vec<Bytecode>) -> Self {
+    pub fn new(
+        name: ids::IdentId,
+        arity: u16,
+        nreg: u16,
+        bytecode: Vec<Bytecode>,
+        block_ind: Vec<usize>,
+    ) -> Self {
         VmFunction {
             name,
             arity,
             register_count: nreg,
             bytecode,
+            block_ind,
         }
     }
 
@@ -101,6 +129,7 @@ impl VmFunction {
             registers: vec![Value::Empty; self.register_count as usize],
             bytecode: self.bytecode.clone(),
             instruction_count: 0,
+            block_ind: self.block_ind.clone(),
         }
     }
 }
@@ -109,6 +138,7 @@ pub struct VmFunctionRunner {
     registers: Vec<Value>,
     bytecode: Vec<Bytecode>,
 
+    block_ind: Vec<usize>,
     instruction_count: usize,
 }
 
@@ -142,6 +172,38 @@ impl VmFunctionRunner {
         }
     }
 
+    fn run_eqeq(&mut self, to: &Register, lhs: &Register, rhs: &Register) -> VmRes<()> {
+        let lhs = self.get_register(lhs)?;
+        let rhs = self.get_register(rhs)?;
+
+        match (lhs, rhs) {
+            (Value::Integer(li), Value::Integer(ri)) => {
+                self.run_set_const(to, Value::Boolean(li == ri))
+            }
+            (Value::Boolean(li), Value::Boolean(ri)) => {
+                self.run_set_const(to, Value::Boolean(li == ri))
+            }
+            // This should be unreachable ? Double check, and optimize for that.
+            _ => Err(VmError::WrongType),
+        }
+    }
+
+    fn run_neq(&mut self, to: &Register, lhs: &Register, rhs: &Register) -> VmRes<()> {
+        let lhs = self.get_register(lhs)?;
+        let rhs = self.get_register(rhs)?;
+
+        match (lhs, rhs) {
+            (Value::Integer(li), Value::Integer(ri)) => {
+                self.run_set_const(to, Value::Boolean(li != ri))
+            }
+            (Value::Boolean(li), Value::Boolean(ri)) => {
+                self.run_set_const(to, Value::Boolean(li != ri))
+            }
+            // This should be unreachable ? Double check, and optimize for that.
+            _ => Err(VmError::WrongType),
+        }
+    }
+
     fn run_bytecode(&mut self, bytecode: &Bytecode) -> VmRes<Option<Value>> {
         match bytecode {
             // Side effects
@@ -149,31 +211,51 @@ impl VmFunctionRunner {
                 .run_set_const(register, Value::Integer(*i))
                 .map(|_| None),
             Bytecode::Add { a, b, to } => self.run_add(to, a, b).map(|_| None),
+            Bytecode::EqEq { a, b, to } => self.run_eqeq(to, a, b).map(|_| None),
+            Bytecode::NotEqual { a, b, to } => self.run_neq(to, a, b).map(|_| None),
             // Returns
             Bytecode::Ret(register) => self.get_register(register).map(|ptr| Some(ptr.clone())),
+            Bytecode::Br(instruction) => Ok(None),
+            Bytecode::BrIf(cond, then, otherwise) => Ok(None),
         }
     }
 
     fn run_function(&mut self) -> VmRes<Value> {
         while self.instruction_count < self.bytecode.len() {
             let bc = self.bytecode[self.instruction_count].clone();
-            self.instruction_count += 1;
             if let Some(value) = self.run_bytecode(&bc)? {
                 return Ok(value);
             }
+            self.instruction_count = match bc {
+                Bytecode::Br(to) => self.block_ind[to.inner_id()],
+                Bytecode::BrIf(cond, then, otherwise) => match self.get_register(&cond)? {
+                    Value::Boolean(true) => self.block_ind[then.inner_id()],
+                    Value::Boolean(false) => self.block_ind[otherwise.inner_id()],
+                    _ => return Err(VmError::WrongType),
+                },
+                _ => self.instruction_count + 1,
+            };
         }
         // Functions must return something, for now.
         Err(VmError::MissingTerminator)
     }
 }
 
+/// Lower a function from mir to Bytecode
 pub struct Lowerer<'a> {
     ctx: &'a ir::Module,
+    /// Block -> Index in bytecode for first instruction
+    ///
+    /// Used for block jumps
+    blocks_toid: Vec<usize>,
 }
 
 impl<'a> Lowerer<'a> {
     pub fn new(ctx: &'a ir::Module) -> Self {
-        Self { ctx }
+        Self {
+            ctx,
+            blocks_toid: Vec::new(),
+        }
     }
 
     fn register_dest(&self, vid: ValueId) -> Register {
@@ -196,7 +278,26 @@ impl<'a> Lowerer<'a> {
                     to: destination,
                 }])
             }
-            _ => Err(VmError::NotYetImplemented),
+            ir::VInstructionKind::Binary { op, lhs, rhs } if matches!(op, BinaryOperator::EqEq) => {
+                Ok(vec![Bytecode::EqEq {
+                    a: self.register_dest(*lhs),
+                    b: self.register_dest(*rhs),
+                    to: destination,
+                }])
+            }
+            ir::VInstructionKind::Binary { op, lhs, rhs }
+                if matches!(op, BinaryOperator::NotEqual) =>
+            {
+                Ok(vec![Bytecode::NotEqual {
+                    a: self.register_dest(*lhs),
+                    b: self.register_dest(*rhs),
+                    to: destination,
+                }])
+            }
+            inst => Err(VmError::NotYetImplemented(format!(
+                "Instruction not supported: {:?}",
+                inst
+            ))),
         }
     }
 
@@ -205,8 +306,23 @@ impl<'a> Lowerer<'a> {
             ir::Terminator::Return(ret_valueid) => ret_valueid
                 .map(|vid| vec![Bytecode::Ret(self.register_dest(vid))])
                 // Cannot return nothing yet
-                .ok_or(VmError::NotYetImplemented),
-            _ => Err(VmError::NotYetImplemented),
+                .ok_or(VmError::NotYetImplemented(
+                    "Cannot return nothing".to_string(),
+                )),
+            ir::Terminator::Br { target } => Ok(vec![Bytecode::Br(*target)]),
+            ir::Terminator::BrIf {
+                condition,
+                then_target,
+                else_target,
+            } => Ok(vec![Bytecode::BrIf(
+                self.register_dest(*condition),
+                *then_target,
+                *else_target,
+            )]),
+            terminator => Err(VmError::NotYetImplemented(format!(
+                "Terminator not supported: {:?}",
+                terminator
+            ))),
         }
     }
 
@@ -233,7 +349,7 @@ impl<'a> Lowerer<'a> {
         Ok(instructions)
     }
 
-    fn lower_function_byid(&self, funcid: &ir::FunctionId) -> VmRes<VmFunction> {
+    fn lower_function_byid(&mut self, funcid: &ir::FunctionId) -> VmRes<VmFunction> {
         let f = self
             .ctx
             .functions
@@ -243,22 +359,31 @@ impl<'a> Lowerer<'a> {
         self.lower_function(f)
     }
 
-    fn lower_function(&self, fun: &ir::Function) -> VmRes<VmFunction> {
-        if fun.blocks.len() != 1 {
-            return Err(VmError::NotYetImplemented);
+    fn lower_function(&mut self, fun: &ir::Function) -> VmRes<VmFunction> {
+        // let entry_block = fun.blocks.first().ok_or(VmError::InternalBlockIdNotFound)?;
+        // let bytecode = self.lower_block(&fun.instructions, entry_block)?;
+        let mut bytecode = vec![];
+        self.blocks_toid.reserve(fun.blocks.len());
+        for (id, block) in fun.blocks.iter().enumerate() {
+            let mut block_bytecode = self.lower_block(&fun.instructions, block)?;
+            self.blocks_toid.push(bytecode.len());
+            bytecode.append(&mut block_bytecode);
         }
-        let entry_block = fun.blocks.first().ok_or(VmError::InternalBlockIdNotFound)?;
-        let bytecode = self.lower_block(&fun.instructions, entry_block)?;
         let fun = VmFunction::new(
             fun.name,
             fun.arity(),
             fun.instructions.len() as u16,
             bytecode,
+            self.blocks_toid.clone(),
         );
         Ok(fun)
     }
 
-    pub fn run_module(&self) -> VmRes<Value> {
+    /// A temporary function, just for testing.
+    ///
+    /// For now we assume that the file has a single function, and run it. When support for
+    /// function calls is added, we will call the `main` function here.
+    pub fn run_module(&mut self) -> VmRes<Value> {
         let fun = self
             .ctx
             .functions
