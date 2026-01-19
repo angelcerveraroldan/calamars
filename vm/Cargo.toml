@@ -1,0 +1,8 @@
+[package]
+name = "vm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+calamars_core = { path="../calamars_core" }
+ir = { path = "../mir" }

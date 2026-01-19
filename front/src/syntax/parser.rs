@@ -22,7 +22,7 @@ const fn precedence(b: &Token) -> Option<(usize, usize)> {
         Token::Pow => Some((70, 70)),
         Token::Star | Token::Slash | Token::Mod => Some((60, 61)),
         Token::Plus | Token::Minus | Token::Concat => Some((50, 51)),
-        Token::GreaterEqual | Token::LessEqual => Some((40, 41)),
+        Token::GreaterEqual | Token::LessEqual | Token::Greater | Token::Less => Some((40, 41)),
         Token::EqualEqual | Token::NotEqual => Some((35, 36)),
         Token::And => Some((30, 31)),
         Token::Xor => Some((25, 26)),
@@ -892,6 +892,33 @@ mod tests {
 
         assert!(p.diag.is_empty(), "should parse without diagnostics");
         assert!(e == expected);
+    }
+
+    #[test]
+    fn expr_comp_greater() {
+        // 1 > 2
+        let tokens = toks(&[
+            (Token::Int(1), (0, 1)),
+            (Token::Greater, (2, 3)),
+            (Token::Int(2), (4, 5)),
+            (Token::EOF, (6, 6)),
+        ]);
+        let (p, e) = parse_expr_from_tokens(tokens);
+
+        let comp = ast::Expression::BinaryOp(ast::BinaryOp::new(
+            ast::BinaryOperator::Greater,
+            Box::new(ast::Expression::Literal(ast::Literal::new(
+                ast::LiteralKind::Integer(1),
+                Span::from(0..1),
+            ))),
+            Box::new(ast::Expression::Literal(ast::Literal::new(
+                ast::LiteralKind::Integer(2),
+                Span::from(4..5),
+            ))),
+            Span::from(0..5),
+        ));
+        assert!(p.diag.is_empty(), "should parse without diagnostics");
+        assert_eq!(e, comp);
     }
 
     #[test]
