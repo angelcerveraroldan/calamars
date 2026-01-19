@@ -102,13 +102,13 @@ impl<'a> FunctionBuilder<'a> {
         self.terminate(term)
     }
 
-    pub fn emit(&mut self, inst_kind: VInstructionKind) -> MirRes<ValueId> {
+    pub fn emit(&mut self, inst_kind: VInstructionKind) -> MirRes<(ValueId, BlockId)> {
         let vid = self.push_instuction_get_index(VInstruct { kind: inst_kind });
         self.block_mut()?.with_instruct(vid);
-        Ok(vid)
+        Ok((vid, self.current_block))
     }
 
-    fn emit_unit(&mut self) -> MirRes<ValueId> {
+    fn emit_unit(&mut self) -> MirRes<(ValueId, BlockId)> {
         self.emit(VInstructionKind::Constant(crate::Consts::Unit))
     }
 
@@ -116,12 +116,12 @@ impl<'a> FunctionBuilder<'a> {
         &mut self,
         ty: ids::TypeId,
         incoming: Box<[(BlockId, ValueId)]>,
-    ) -> MirRes<ValueId> {
+    ) -> MirRes<(ValueId, BlockId)> {
         let kind = VInstructionKind::Phi { ty, incoming };
         self.emit(kind)
     }
 
-    fn emit_literal(&mut self, constant: &Const) -> MirRes<ValueId> {
+    fn emit_literal(&mut self, constant: &Const) -> MirRes<(ValueId, BlockId)> {
         let kind = VInstructionKind::Constant(match constant {
             hir::Const::I64(i) => crate::Consts::I64(*i),
             hir::Const::Bool(b) => crate::Consts::Bool(*b),
@@ -135,9 +135,9 @@ impl<'a> FunctionBuilder<'a> {
         operator: &BinOp,
         lhs: &ExpressionId,
         rhs: &ExpressionId,
-    ) -> MirRes<ValueId> {
-        let lhs = self.lower_expression_from_id(lhs)?;
-        let rhs = self.lower_expression_from_id(rhs)?;
+    ) -> MirRes<(ValueId, BlockId)> {
+        let (lhs, _) = self.lower_expression_from_id(lhs)?;
+        let (rhs, _) = self.lower_expression_from_id(rhs)?;
         let op = operator_map(operator);
         let kind = VInstructionKind::Binary { op, lhs, rhs };
         self.emit(kind)
@@ -149,8 +149,8 @@ impl<'a> FunctionBuilder<'a> {
         predicate: &ExpressionId,
         then: &ExpressionId,
         otherwise: &ExpressionId,
-    ) -> MirRes<ValueId> {
-        let pred = self.lower_expression_from_id(&predicate)?;
+    ) -> MirRes<(ValueId, BlockId)> {
+        let (pred, _) = self.lower_expression_from_id(&predicate)?;
 
         // Generate blocks for the if and for the then
         let ifb = self.new_block();
@@ -160,18 +160,22 @@ impl<'a> FunctionBuilder<'a> {
         self.term_br_if(pred, ifb, elb)?;
 
         self.switch_to_block(ifb);
-        let then_val = self.lower_expression_from_id(&then)?;
+        let (then_vid, then_block) = self.lower_expression_from_id(&then)?;
         self.terminate_br(joinb)?;
 
         self.switch_to_block(elb);
-        let else_val = self.lower_expression_from_id(&otherwise)?;
+        let (otherwise_vid, otherwise_block) = self.lower_expression_from_id(&otherwise)?;
         self.terminate_br(joinb)?;
 
         self.switch_to_block(joinb);
-        self.emit_phi(expr_ty, Box::new([(ifb, then_val), (elb, else_val)]))
+        let pairs = [(then_block, then_vid), (otherwise_block, otherwise_vid)];
+        self.emit_phi(expr_ty, Box::new(pairs))
     }
 
-    fn lower_expression_from_id(&mut self, expressionid: &ExpressionId) -> MirRes<ValueId> {
+    fn lower_expression_from_id(
+        &mut self,
+        expressionid: &ExpressionId,
+    ) -> MirRes<(ValueId, BlockId)> {
         let expression = self
             .ctx
             .exprs
@@ -190,11 +194,20 @@ impl<'a> FunctionBuilder<'a> {
 
     /// Given some expression, turn it into a series of instructions, and return the ValueId where
     /// the result of the expression is.
-    fn lower_expression(&mut self, ty: ids::TypeId, expression: &hir::Expr) -> MirRes<ValueId> {
+    fn lower_expression(
+        &mut self,
+        ty: ids::TypeId,
+        expression: &hir::Expr,
+    ) -> MirRes<(ValueId, BlockId)> {
         match expression {
-            /// When we load an identifier, dont generate new instructions
+            // When we load an identifier, dont generate new instructions
             hir::Expr::Identifier { id, .. } => {
-                self.locals.get(id).copied().ok_or(MirErrors::IdentNotFound)
+                let vid = self
+                    .locals
+                    .get(id)
+                    .copied()
+                    .ok_or(MirErrors::IdentNotFound)?;
+                Ok((vid, self.current_block))
             }
             hir::Expr::Literal { constant, .. } => self.emit_literal(constant),
             hir::Expr::BinaryOperation {
@@ -244,7 +257,7 @@ impl<'a> FunctionBuilder<'a> {
             params_inst.push(vid);
         }
 
-        let body_val = self.lower_expression_from_id(&body)?;
+        let (body_val, _) = self.lower_expression_from_id(&body)?;
         self.term_ret(body_val)?;
 
         Ok(Function {
