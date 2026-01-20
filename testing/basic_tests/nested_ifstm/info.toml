@@ -1,0 +1,6 @@
+[test]
+name = "nested-ifs"
+description = "Nested if statements shuold work"
+
+parser = "pass"
+mir = "pass"

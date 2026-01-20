@@ -1,0 +1,6 @@
+[test]
+name = "block-starting-with-ifstm"
+description = "Nested if statements shuold work"
+
+parser = "ignore"
+mir = "ignore"
