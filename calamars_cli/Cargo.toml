@@ -13,3 +13,6 @@ ariadne = "0.6.0"
 clap = "4.5.51"
 logos = "0.15.1"
 hashbrown = "0.16.0"
+
+[dev-dependencies]
+toml = "0.8.20"

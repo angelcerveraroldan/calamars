@@ -26,9 +26,13 @@ struct Cli {
 enum Command {
     /// Build a Calamars project / file
     Build {
-        /// Emit MIR instead of (or before) other outputs
+        /// Emit MIR
+        #[arg(long, alias = "mir")]
+        emit_mir: bool,
+
+        /// Run the program on the VM
         #[arg(long)]
-        mir: bool,
+        run_vm: bool,
 
         /// Path to the source file or project root
         #[arg(value_name = "SOURCE_PATH")]
@@ -40,7 +44,11 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Build { mir, path } => {
+        Command::Build {
+            emit_mir,
+            run_vm,
+            path,
+        } => {
             let sf = SourceFile::try_from((0, path)).expect("Failed to read source file");
             let tokens = sf.as_spanned_token_stream();
 
@@ -50,15 +58,21 @@ fn main() {
             let mut parser = CalamarsParser::new(file_id, tokens);
             let module: front::syntax::ast::Module = parser.parse_file();
 
-            for err in parser.diag() {
-                err.log_error(&file_name, &sf.src);
+            if !parser.diag().is_empty() {
+                for err in parser.diag() {
+                    err.log_error(&file_name, &sf.src);
+                }
+                std::process::exit(1);
             }
 
             let (mut module, errors) =
                 HirBuilder::lower_module(&module, file_id, file_name.clone());
 
-            for err in errors {
-                err.log_error(&file_name, &sf.src);
+            if !errors.is_empty() {
+                for err in errors {
+                    err.log_error(&file_name, &sf.src);
+                }
+                std::process::exit(1);
             }
 
             // Type checking
@@ -72,10 +86,10 @@ fn main() {
                 for err in type_handler.errors {
                     err.log_error(&file_name, &sf.src);
                 }
-                return;
+                std::process::exit(1);
             }
 
-            // Lower to HIR
+            // Lower to MIR
             let mut mir_builder = ir::lower::FunctionBuilder::new(&module);
             let mut funcs = Vec::new();
             for symbol_id in &module.roots {
@@ -99,15 +113,17 @@ fn main() {
                 }
             }
 
-            // Print all the functions!
-            let printer = MirPrinter::new(&funcs);
-            let s = printer.fmt_all_functions();
-            println!("{s}");
+            if emit_mir {
+                let printer = MirPrinter::new(&funcs);
+                let s = printer.fmt_all_functions();
+                println!("{s}");
+            }
 
-            // Run the program
-            let irmodule = ir::Module { functions: funcs };
-            let mut vmlower = vm::Lowerer::new(&irmodule);
-            println!("{:?}", vmlower.run_module());
+            if run_vm {
+                let irmodule = ir::Module { functions: funcs };
+                let mut vmlower = vm::Lowerer::new(&irmodule);
+                println!("{:?}", vmlower.run_module());
+            }
         }
     }
 }

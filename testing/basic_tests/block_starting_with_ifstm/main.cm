@@ -1,0 +1,2 @@
+def main(): Int = { if 2 > 2 then 2 else 3 }
+
