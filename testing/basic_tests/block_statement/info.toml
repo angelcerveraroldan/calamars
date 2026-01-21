@@ -1,0 +1,6 @@
+[test]
+name = "simple-block-stm"
+description = "A dead simplle block statement"
+
+parser = "pass"
+mir = "pass"
