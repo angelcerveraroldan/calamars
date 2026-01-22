@@ -1,0 +1,12 @@
+def add(x: Int, y: Int): Int = 
+    x + y
+
+def equals(x: Int, y: Int): Bool =
+    if x == y then true else false
+
+def main(): Int = {
+    val y: Int = 3;
+    val a: Int = add(2, y);
+    val res: Int = if equals(y, a) then 2 else 3;
+    res
+}

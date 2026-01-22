@@ -1,0 +1,6 @@
+[test]
+name = "function_call"
+description = "Functions that call each other - non recursive"
+
+parser = "pass"
+mir = "pass"
