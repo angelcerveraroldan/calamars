@@ -1,0 +1,6 @@
+[test]
+name = "block-vars-stm"
+description = "A simple function that uses variables and a block"
+
+parser = "pass"
+mir = "pass"

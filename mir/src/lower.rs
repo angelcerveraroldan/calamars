@@ -172,6 +172,38 @@ impl<'a> FunctionBuilder<'a> {
         self.emit_phi(expr_ty, Box::new(pairs))
     }
 
+    fn emit_block(
+        &mut self,
+        _expr_ty: ids::TypeId,
+        items: &Box<[ItemId]>,
+        expr: &Option<ids::ExpressionId>,
+    ) -> MirRes<(ValueId, BlockId)> {
+        // Todo: How do we lower the items ... ?
+        for i in items {
+            match i {
+                ItemId::Expr(expression_id) => {
+                    self.lower_expression_from_id(expression_id)?;
+                }
+                ItemId::Symbol(symbol_id) => {
+                    let x = self.ctx.symbols.get_unchecked(*symbol_id).kind.clone();
+                    if let SymbolKind::Variable { body, .. } = x {
+                        let (v, _) = self.lower_expression_from_id(&body)?;
+                        self.locals.insert(*symbol_id, v);
+                    } else {
+                        panic!("Only variables are supported in non-return block items");
+                    }
+                }
+            }
+        }
+
+        // Return the position of the last block
+        if let Some(eid) = *expr {
+            self.lower_expression_from_id(&eid)
+        } else {
+            self.emit_unit()
+        }
+    }
+
     fn lower_expression_from_id(
         &mut self,
         expressionid: &ExpressionId,
@@ -219,6 +251,9 @@ impl<'a> FunctionBuilder<'a> {
                 otherwise,
                 ..
             } => self.emit_if(ty, predicate, then, otherwise),
+            hir::Expr::Block {
+                items, final_expr, ..
+            } => self.emit_block(ty, items, final_expr),
             _ => todo!("Cannot yet handle: {:?}", expression),
         }
     }
