@@ -454,8 +454,8 @@ impl<'a> Lowerer<'a> {
     fn lower_function_byid(&mut self, funcid: &ir::FunctionId) -> VmRes<VmFunction> {
         let f = self
             .ctx
-            .functions
-            .get(funcid.inner_id())
+            .function_arena
+            .get(*funcid)
             .ok_or(VmError::InternalFunctionIdNotFound)?;
 
         self.lower_function(f)
@@ -488,7 +488,8 @@ impl<'a> Lowerer<'a> {
     pub fn run_module(&mut self) -> VmRes<Value> {
         let fun = self
             .ctx
-            .functions
+            .function_arena
+            .inner()
             .first()
             .ok_or(VmError::MainFunctionNotFound)?;
         let fun = self.lower_function(fun)?;
