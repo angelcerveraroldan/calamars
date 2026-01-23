@@ -4,8 +4,6 @@
 //! project reaches a state where the front end is semi-stable, and a stdlib exists, much
 //! optimization needs to be done here.
 
-use std::{collections::HashMap, fmt::format};
-
 use calamars_core::{Identifier, ids};
 
 use ir::{BinaryOperator, BlockId, Consts, ValueId};
