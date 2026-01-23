@@ -11,7 +11,7 @@ Calamars is an experimental programming language that’s still very much in dev
 
 # Usage
 
-Today the CLI parses Calamars source to AST, lowers to HIR, type-checks, and prints MIR. There is no native codegen/backend yet (but it is coming soon!).
+Today the CLI parses Calamars source to AST, lowers to HIR, type-checks, and prints MIR. There is a basic VM that can be used to run some calamars files, see the `testing/` directory for examples.
 
 ## Quickstart
 
@@ -65,11 +65,11 @@ Currently working:
 - Mir lowerer
 - Mir to text
 - Pretty diagnostics
+- Run some basic functions with a VM
 
 Things that I want to work on soon, but are not yet implemented:
-- Codegen / backend (This is top-priority, of course! Likely, cranelift will be used for this)
+- Compile down to a binary (For now, a VM is supported, later something like cranelift will be used for this)
 - Imports / modules (Currently, we just support one file, need to think about how to handle many files)
-- Some expressions (For example, blocks are not yet supported, this should also come really soon, top priority!)
 
 # Syntax Highlighting
 
