@@ -100,7 +100,13 @@ fn main() {
 
             if run_vm {
                 let mut vmlower = vm::Lowerer::new(&irmodule);
-                println!("{:?}", vmlower.run_module());
+                let vm = vmlower.finish().map_err(|err| {
+                    format!(
+                        "Failed to lower from MIR to VM Bytecode with error: {:?}",
+                        err
+                    )
+                }).unwrap();
+                vm.run_module();
             }
         }
     }
