@@ -6,7 +6,7 @@
 
 use calamars_core::{Identifier, ids};
 
-use ir::{BinaryOperator, BlockId, Consts, ValueId};
+use ir::{BinaryOperator, BlockId, Consts, FunctionId, Module, ValueId, lower::MirRes};
 
 type BytecodeId = usize;
 
@@ -28,6 +28,7 @@ pub enum VmError {
     WrongType,
     CannotCallPhiOnFirstBlock,
     PhiFailedDidNotFindLastBranch,
+    MainFunctionMustReturnInt,
 }
 
 #[derive(Clone, Debug)]
@@ -57,13 +58,31 @@ impl Value {
 }
 
 pub struct VirtualMachine {
-    values: Vec<Value>,
-    types: Vec<ids::TypeId>,
+    functions: Vec<VmFunction>,
+    entry_point: FunctionId,
 }
 
 impl VirtualMachine {
-    fn execute_instruction(&mut self, inst: Bytecode) -> VmRes<()> {
-        Ok(())
+    pub fn new(functions: Vec<VmFunction>, entry_point: FunctionId) -> Self {
+        Self {
+            functions,
+            entry_point,
+        }
+    }
+
+    pub fn run_function(&self, fid: FunctionId) -> VmRes<Value> {
+        self.functions[fid.inner_id()].runner().run_function(self)
+    }
+
+    pub fn run_module(&self) -> VmRes<()> {
+        let entry = self.entry_point;
+        let entry_out = self.run_function(entry)?;
+        match entry_out {
+            Value::Integer(sysout) => {
+                std::process::exit(sysout as i32);
+            }
+            _ => Err(VmError::MainFunctionMustReturnInt),
+        }
     }
 }
 
@@ -101,6 +120,7 @@ pub enum Bytecode {
     BrIf(Register, BlockId, BlockId),
 
     Phi(Register, Box<[(BlockId, Register)]>),
+    Call(ir::FunctionId, Box<[ValueId]>, Register),
 
     /// Return the value in some register
     Ret(Register),
@@ -108,6 +128,7 @@ pub enum Bytecode {
 
 pub struct VmFunction {
     name: ids::IdentId,
+    fid: FunctionId,
     arity: u16,
     register_count: u16,
 
@@ -118,6 +139,7 @@ pub struct VmFunction {
 impl VmFunction {
     pub fn new(
         name: ids::IdentId,
+        fid: FunctionId,
         arity: u16,
         nreg: u16,
         bytecode: Vec<Bytecode>,
@@ -125,6 +147,7 @@ impl VmFunction {
     ) -> Self {
         VmFunction {
             name,
+            fid,
             arity,
             register_count: nreg,
             bytecode,
@@ -246,8 +269,6 @@ impl VmFunctionRunner {
     }
 
     fn run_phi(&mut self, to: &Register, branches: &Box<[(BlockId, Register)]>) -> VmRes<()> {
-        println!("{:?}", self.last_blocks);
-
         let last = self
             .last_blocks
             .pop()
@@ -265,7 +286,7 @@ impl VmFunctionRunner {
         Err(VmError::PhiFailedDidNotFindLastBranch)
     }
 
-    fn run_bytecode(&mut self, bytecode: &Bytecode) -> VmRes<Option<Value>> {
+    fn run_bytecode(&mut self, bytecode: &Bytecode, vm: &VirtualMachine) -> VmRes<Option<Value>> {
         match bytecode {
             Bytecode::ConstI64(register, i) => self
                 .run_set_const(register, Value::Integer(*i))
@@ -287,6 +308,11 @@ impl VmFunctionRunner {
             }
             Bytecode::EqEq(BinaryByteInfo { a, b, to }) => self.run_eqeq(to, a, b).map(|_| None),
             Bytecode::NotEqual(BinaryByteInfo { a, b, to }) => self.run_neq(to, a, b).map(|_| None),
+            Bytecode::Call(fid, _params, to) => {
+                let value = vm.run_function(*fid)?;
+                self.run_set_const(to, value)?;
+                Ok(None)
+            }
             Bytecode::Ret(register) => self.get_register(register).map(|ptr| Some(ptr.clone())),
             Bytecode::Br(instruction) => Ok(None),
             Bytecode::BrIf(cond, then, otherwise) => Ok(None),
@@ -299,10 +325,10 @@ impl VmFunctionRunner {
         }
     }
 
-    fn run_function(&mut self) -> VmRes<Value> {
+    fn run_function(&mut self, vm: &VirtualMachine) -> VmRes<Value> {
         while self.instruction_count < self.bytecode.len() {
             let bc = self.bytecode[self.instruction_count].clone();
-            if let Some(value) = self.run_bytecode(&bc)? {
+            if let Some(value) = self.run_bytecode(&bc, vm)? {
                 return Ok(value);
             }
             match bc {
@@ -394,6 +420,14 @@ impl<'a> Lowerer<'a> {
                     branches.into_boxed_slice(),
                 )])
             }
+            ir::VInstructionKind::Call {
+                callee: ir::Callee::Function(fid),
+                args,
+                return_ty,
+            } => {
+                let fncall = Bytecode::Call(*fid, args.clone().into(), destination);
+                Ok(vec![fncall])
+            }
             inst => Err(VmError::NotYetImplemented(format!(
                 "Instruction not supported: {:?}",
                 inst
@@ -419,10 +453,6 @@ impl<'a> Lowerer<'a> {
                 *then_target,
                 *else_target,
             )]),
-            terminator => Err(VmError::NotYetImplemented(format!(
-                "Terminator not supported: {:?}",
-                terminator
-            ))),
         }
     }
 
@@ -449,28 +479,19 @@ impl<'a> Lowerer<'a> {
         Ok(instructions)
     }
 
-    fn lower_function_byid(&mut self, funcid: &ir::FunctionId) -> VmRes<VmFunction> {
-        let f = self
-            .ctx
-            .function_arena
-            .get(*funcid)
-            .ok_or(VmError::InternalFunctionIdNotFound)?;
-
-        self.lower_function(f)
-    }
-
-    fn lower_function(&mut self, fun: &ir::Function) -> VmRes<VmFunction> {
+    fn lower_function(&mut self, fun: &ir::Function, fid: FunctionId) -> VmRes<VmFunction> {
         // let entry_block = fun.blocks.first().ok_or(VmError::InternalBlockIdNotFound)?;
         // let bytecode = self.lower_block(&fun.instructions, entry_block)?;
         let mut bytecode = vec![];
         self.blocks_toid.reserve(fun.blocks.len());
-        for (id, block) in fun.blocks.iter().enumerate() {
+        for (_, block) in fun.blocks.iter().enumerate() {
             let mut block_bytecode = self.lower_block(&fun.instructions, block)?;
             self.blocks_toid.push(bytecode.len());
             bytecode.append(&mut block_bytecode);
         }
         let fun = VmFunction::new(
             fun.name,
+            fid,
             fun.arity(),
             fun.instructions.len() as u16,
             bytecode,
@@ -479,19 +500,24 @@ impl<'a> Lowerer<'a> {
         Ok(fun)
     }
 
+    pub fn lower_module(&mut self) -> VmRes<Vec<VmFunction>> {
+        let mut functions = vec![];
+        for (fid, func) in self.ctx.function_arena.inner().iter().enumerate() {
+            let func = self.lower_function(func, fid.into())?;
+            functions.push(func);
+        }
+        Ok(functions)
+    }
+
     /// A temporary function, just for testing.
     ///
     /// For now we assume that the file has a single function, and run it. When support for
     /// function calls is added, we will call the `main` function here.
-    pub fn run_module(&mut self) -> VmRes<Value> {
-        let fun = self
-            .ctx
-            .function_arena
-            .inner()
-            .first()
-            .ok_or(VmError::MainFunctionNotFound)?;
-        let fun = self.lower_function(fun)?;
-        let mut runner = fun.runner();
-        runner.run_function()
+    pub fn finish(&mut self) -> VmRes<VirtualMachine> {
+        let functions = self.lower_module()?;
+        Ok(VirtualMachine {
+            functions,
+            entry_point: FunctionId::from(0),
+        })
     }
 }
