@@ -70,16 +70,20 @@ impl VirtualMachine {
         }
     }
 
-    pub fn run_function(&self, fid: FunctionId) -> VmRes<Value> {
-        self.functions[fid.inner_id()].runner().run_function(self)
+    pub fn run_function(&self, fid: FunctionId, inputs: Vec<Value>) -> VmRes<Value> {
+        self.functions[fid.inner_id()]
+            .runner(inputs)
+            .run_function(self)
     }
 
     pub fn run_module(&self) -> VmRes<()> {
         let entry = self.entry_point;
-        let entry_out = self.run_function(entry)?;
+        let entry_out = self.run_function(entry, vec![])?;
         match entry_out {
             Value::Integer(sysout) => {
-                std::process::exit(sysout as i32);
+                // std::process::exit(sysout as i32);
+		println!("Exited with: {}", sysout);
+		Ok(())
             }
             _ => Err(VmError::MainFunctionMustReturnInt),
         }
@@ -126,6 +130,7 @@ pub enum Bytecode {
     Ret(Register),
 }
 
+#[derive(Debug)]
 pub struct VmFunction {
     name: ids::IdentId,
     fid: FunctionId,
@@ -155,21 +160,25 @@ impl VmFunction {
         }
     }
 
-    fn runner(&self) -> VmFunctionRunner {
+    fn runner(&self, mut inputs: Vec<Value>) -> VmFunctionRunner {
         // Opitimization:
         // - Dont malloc every time, instead re use registers from other functions
         // - Use pointers, dont clone
-        VmFunctionRunner {
+        let padding = vec![Value::Empty; self.register_count as usize - inputs.len()];
+        inputs.extend(padding);
+        let runner = VmFunctionRunner {
             current_block: BlockId::from(0),
             last_blocks: Vec::new(),
-            registers: vec![Value::Empty; self.register_count as usize],
+            registers: inputs,
             bytecode: self.bytecode.clone(),
             instruction_count: 0,
             block_ind: self.block_ind.clone(),
-        }
+        };
+        runner
     }
 }
 
+#[derive(Debug)]
 pub struct VmFunctionRunner {
     registers: Vec<Value>,
     bytecode: Vec<Bytecode>,
@@ -308,8 +317,14 @@ impl VmFunctionRunner {
             }
             Bytecode::EqEq(BinaryByteInfo { a, b, to }) => self.run_eqeq(to, a, b).map(|_| None),
             Bytecode::NotEqual(BinaryByteInfo { a, b, to }) => self.run_neq(to, a, b).map(|_| None),
-            Bytecode::Call(fid, _params, to) => {
-                let value = vm.run_function(*fid)?;
+            // Fixme: For now we are cloning, but here we need to implement some semantic rules as to how
+            // values are moved. This is just a "for now" sort of thing.
+            Bytecode::Call(fid, params, to) => {
+                let params = params
+                    .iter()
+                    .map(|vid| self.registers.get(vid.inner_id()).unwrap().clone())
+                    .collect();
+                let value = vm.run_function(*fid, params)?;
                 self.run_set_const(to, value)?;
                 Ok(None)
             }
@@ -349,18 +364,11 @@ impl VmFunctionRunner {
 /// Lower a function from mir to Bytecode
 pub struct Lowerer<'a> {
     ctx: &'a ir::Module,
-    /// Block -> Index in bytecode for first instruction
-    ///
-    /// Used for block jumps
-    blocks_toid: Vec<usize>,
 }
 
 impl<'a> Lowerer<'a> {
     pub fn new(ctx: &'a ir::Module) -> Self {
-        Self {
-            ctx,
-            blocks_toid: Vec::new(),
-        }
+        Self { ctx }
     }
 
     fn register_dest(&self, vid: ValueId) -> Register {
@@ -428,6 +436,12 @@ impl<'a> Lowerer<'a> {
                 let fncall = Bytecode::Call(*fid, args.clone().into(), destination);
                 Ok(vec![fncall])
             }
+            ir::VInstructionKind::Parameter { index, ty } => {
+                // Do we really have to do anything here ?
+                //
+                // I think this is just all in startup
+                Ok(vec![])
+            }
             inst => Err(VmError::NotYetImplemented(format!(
                 "Instruction not supported: {:?}",
                 inst
@@ -483,10 +497,10 @@ impl<'a> Lowerer<'a> {
         // let entry_block = fun.blocks.first().ok_or(VmError::InternalBlockIdNotFound)?;
         // let bytecode = self.lower_block(&fun.instructions, entry_block)?;
         let mut bytecode = vec![];
-        self.blocks_toid.reserve(fun.blocks.len());
+        let mut blocks_toid = Vec::with_capacity(fun.blocks.len());
         for (_, block) in fun.blocks.iter().enumerate() {
             let mut block_bytecode = self.lower_block(&fun.instructions, block)?;
-            self.blocks_toid.push(bytecode.len());
+            blocks_toid.push(bytecode.len());
             bytecode.append(&mut block_bytecode);
         }
         let fun = VmFunction::new(
@@ -495,7 +509,7 @@ impl<'a> Lowerer<'a> {
             fun.arity(),
             fun.instructions.len() as u16,
             bytecode,
-            self.blocks_toid.clone(),
+            blocks_toid,
         );
         Ok(fun)
     }
