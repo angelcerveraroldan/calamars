@@ -107,6 +107,7 @@ impl BinaryByteInfo {
 pub enum Bytecode {
     /// Save an integer to some register
     ConstI64(Register, i64),
+    ConstBool(Register, bool),
     EqEq(BinaryByteInfo),
     NotEqual(BinaryByteInfo),
     Add(BinaryByteInfo),
@@ -412,6 +413,9 @@ impl<'a> Lowerer<'a> {
         match &instruction.kind {
             ir::VInstructionKind::Constant(Consts::I64(val)) => {
                 Ok(vec![Bytecode::ConstI64(destination, *val)])
+            }
+            ir::VInstructionKind::Constant(Consts::Bool(val)) => {
+                Ok(vec![Bytecode::ConstBool(destination, *val)])
             }
             ir::VInstructionKind::Binary { op, lhs, rhs } => {
                 self.lower_binary(op, lhs, rhs, destination)
