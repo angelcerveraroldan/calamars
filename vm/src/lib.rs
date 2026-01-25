@@ -414,7 +414,7 @@ impl<'a> Lowerer<'a> {
             ir::VInstructionKind::Constant(Consts::I64(val)) => {
                 Ok(vec![Bytecode::ConstI64(destination, *val)])
             }
-	    ir::VInstructionKind::Constant(Consts::Bool(val)) => {
+            ir::VInstructionKind::Constant(Consts::Bool(val)) => {
                 Ok(vec![Bytecode::ConstBool(destination, *val)])
             }
             ir::VInstructionKind::Binary { op, lhs, rhs } => {
