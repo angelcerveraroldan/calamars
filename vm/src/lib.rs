@@ -82,8 +82,8 @@ impl VirtualMachine {
         match entry_out {
             Value::Integer(sysout) => {
                 // std::process::exit(sysout as i32);
-		println!("Exited with: {}", sysout);
-		Ok(())
+                println!("Exited with: {}", sysout);
+                Ok(())
             }
             _ => Err(VmError::MainFunctionMustReturnInt),
         }
