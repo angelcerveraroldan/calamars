@@ -142,6 +142,9 @@ pub enum BinaryOperator {
     Geq,
     Lesser,
     Leq,
+    And,
+    Or,
+    Xor,
 }
 
 /// Bitwise Binary operators.

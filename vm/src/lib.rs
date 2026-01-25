@@ -119,7 +119,9 @@ pub enum Bytecode {
     Times(BinaryByteInfo),
     Div(BinaryByteInfo),
     Modulo(BinaryByteInfo),
-
+    And(BinaryByteInfo),
+    Or(BinaryByteInfo),
+    Xor(BinaryByteInfo),
     /// Jump to a different bytecode
     Br(BlockId),
     BrIf(Register, BlockId, BlockId),
@@ -295,9 +297,55 @@ impl VmFunctionRunner {
 
         Err(VmError::PhiFailedDidNotFindLastBranch)
     }
+    fn run_binary_bitop(
+        &mut self,
+        bytecode: &Bytecode,
+        lhs: i64,
+        rhs: i64,
+        to: &Register,
+    ) -> VmRes<()> {
+        let f: fn(i64, i64) -> i64 = match bytecode {
+            Bytecode::And(_) => |a, b| a & b,
+            Bytecode::Or(_) => |a, b| a | b,
+            Bytecode::Xor(_) => |a, b| a ^ b,
+            _ => unreachable!("This function will only be executed for bit ops"),
+        };
+        self.run_set_const(to, Value::Integer(f(lhs, rhs)))
+    }
+
+    fn run_log_op(
+        &mut self,
+        bytecode: &Bytecode,
+        lhs: bool,
+        rhs: bool,
+        to: &Register,
+    ) -> VmRes<()> {
+        let f: fn(bool, bool) -> bool = match bytecode {
+            Bytecode::And(_) => |a, b| a && b,
+            Bytecode::Or(_) => |a, b| a || b,
+            Bytecode::Xor(_) => |a, b| a ^ b,
+            _ => unreachable!("This function will only be executed for bit ops"),
+        };
+        self.run_set_const(to, Value::Boolean(f(lhs, rhs)))
+    }
 
     fn run_bytecode(&mut self, bytecode: &Bytecode, vm: &VirtualMachine) -> VmRes<Option<Value>> {
         match bytecode {
+            Bytecode::And(BinaryByteInfo { a, b, to })
+            | Bytecode::Or(BinaryByteInfo { a, b, to })
+            | Bytecode::Xor(BinaryByteInfo { a, b, to }) => {
+                let lhs = self.get_register(a)?;
+                let rhs = self.get_register(b)?;
+                match (lhs, rhs) {
+                    (Value::Integer(lhs), Value::Integer(rhs)) => {
+                        self.run_binary_bitop(bytecode, *lhs, *rhs, to).map(|_| None)
+                    }
+                    (Value::Boolean(lhs), Value::Boolean(rhs)) => {
+                        self.run_log_op(bytecode, *lhs, *rhs, to).map(|_| None)
+                    }
+                    _ => Err(VmError::WrongType),
+                }
+            }
             Bytecode::ConstI64(register, i) => self
                 .run_set_const(register, Value::Integer(*i))
                 .map(|_| None),
@@ -400,6 +448,9 @@ impl<'a> Lowerer<'a> {
             BinaryOperator::Times => Bytecode::Times(bbi),
             BinaryOperator::Div => Bytecode::Div(bbi),
             BinaryOperator::Modulo => Bytecode::Modulo(bbi),
+            BinaryOperator::And => Bytecode::And(bbi),
+            BinaryOperator::Or => Bytecode::Or(bbi),
+            BinaryOperator::Xor => Bytecode::Xor(bbi),
         };
 
         Ok(vec![r])

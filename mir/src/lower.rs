@@ -1,4 +1,5 @@
 //! Lower HIR to MIR
+//! p
 
 use calamars_core::{
     Identifier, UncheckedArena,
@@ -20,10 +21,13 @@ fn operator_map(op: &hir::BinOp) -> BinaryOperator {
         hir::BinOp::Mod => BinaryOperator::Modulo,
         hir::BinOp::EqEq => BinaryOperator::EqEq,
         hir::BinOp::NotEqual => BinaryOperator::NotEqual,
-        BinOp::Greater => BinaryOperator::Greater,
-        BinOp::Geq => BinaryOperator::Geq,
-        BinOp::Less => BinaryOperator::Lesser,
-        BinOp::Leq => BinaryOperator::Leq,
+        hir::BinOp::Greater => BinaryOperator::Greater,
+        hir::BinOp::Geq => BinaryOperator::Geq,
+        hir::BinOp::Less => BinaryOperator::Lesser,
+        hir::BinOp::Leq => BinaryOperator::Leq,
+        hir::BinOp::And => BinaryOperator::And,
+        hir::BinOp::Or => BinaryOperator::Or,
+        hir::BinOp::Xor => BinaryOperator::Xor,
     }
 }
 

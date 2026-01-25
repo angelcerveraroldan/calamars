@@ -222,7 +222,6 @@ impl<'a> TypeHandler<'a> {
         let float_type_id = *self.module.types.resolve_unchecked(&Type::Float);
 
         match op {
-            // Both numerical
             hir::BinOp::Add | hir::BinOp::Sub | hir::BinOp::Mult | hir::BinOp::Div => {
                 self.ensure_numeric(*lhs, lhs_type_id);
                 self.ensure_numeric(*rhs, rhs_type_id);
@@ -260,7 +259,6 @@ impl<'a> TypeHandler<'a> {
 
                 self.intern_ty(&Type::Boolean)
             }
-            // Both integers
             hir::BinOp::Mod => {
                 self.ensure_type(*lhs, lhs_type_id, int_type_id);
                 self.ensure_type(*rhs, rhs_type_id, int_type_id);
@@ -275,6 +273,20 @@ impl<'a> TypeHandler<'a> {
                 self.ensure_numeric(*lhs, lhs_type_id);
                 self.ensure_numeric(*rhs, rhs_type_id);
                 self.intern_ty(&Type::Boolean)
+            }
+            hir::BinOp::And | hir::BinOp::Or | hir::BinOp::Xor => {
+                if self.match_type(lhs_type_id, &Type::Integer)
+                    && self.match_type(rhs_type_id, &Type::Integer)
+                {
+                    self.intern_ty(&Type::Integer)
+                } else if self.match_type(lhs_type_id, &Type::Boolean)
+                    && self.match_type(rhs_type_id, &Type::Boolean)
+                {
+                    self.intern_ty(&Type::Boolean)
+                } else {
+                    // FIXME: Show an error here
+                    error_id
+                }
             }
         }
     }
