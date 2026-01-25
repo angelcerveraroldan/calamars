@@ -89,40 +89,27 @@ fn main() {
                 std::process::exit(1);
             }
 
-            // Lower to MIR
-            let mut mir_builder = ir::lower::FunctionBuilder::new(&module);
-            let mut funcs = Vec::new();
-            for symbol_id in &module.roots {
-                let symbol = module.symbols.get_unchecked(*symbol_id);
-                let name = symbol.ident_id();
-                let return_ty = symbol.ty_id();
-
-                let (params, body) = if let front::sematic::hir::SymbolKind::Function {
-                    params,
-                    body,
-                } = &symbol.kind
-                {
-                    (params, body)
-                } else {
-                    continue;
-                };
-
-                match mir_builder.lower(name, return_ty, params, *body) {
-                    Ok(fun) => funcs.push(fun),
-                    Err(_) => continue,
-                }
-            }
+            let mut mir_builder = ir::lower::ModuleBuilder::new(&module);
+            mir_builder.lower_entire_module().expect("lowering failed");
+            let irmodule = mir_builder.finish();
 
             if emit_mir {
-                let printer = MirPrinter::new(&funcs);
-                let s = printer.fmt_all_functions();
-                println!("{s}");
+                let printer = MirPrinter::new(irmodule.function_arena.inner());
+                println!("{}", printer.fmt_all_functions());
             }
 
             if run_vm {
-                let irmodule = ir::Module { functions: funcs };
                 let mut vmlower = vm::Lowerer::new(&irmodule);
-                println!("{:?}", vmlower.run_module());
+                let vm = vmlower
+                    .finish()
+                    .map_err(|err| {
+                        format!(
+                            "Failed to lower from MIR to VM Bytecode with error: {:?}",
+                            err
+                        )
+                    })
+                    .unwrap();
+                vm.run_module();
             }
         }
     }

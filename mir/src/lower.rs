@@ -1,14 +1,14 @@
 //! Lower HIR to MIR
 
 use calamars_core::{
-    Identifier,
+    Identifier, UncheckedArena,
     ids::{self, ExpressionId, SymbolId, TypeId},
 };
 use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolKind};
 
 use crate::{
-    BBlock, BinaryOperator, BlockId, Function, FunctionId, VInstruct, VInstructionKind, ValueId,
-    errors::MirErrors,
+    BBlock, BinaryOperator, BlockId, Function, FunctionId, Module, VInstruct, VInstructionKind,
+    ValueId, errors::MirErrors,
 };
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
@@ -39,16 +39,22 @@ pub struct FunctionBuilder<'a> {
 
     /// What valueid corresponds to some identifier
     locals: hashbrown::HashMap<SymbolId, ValueId>,
+
+    function_map: &'a hashbrown::HashMap<ids::IdentId, FunctionId>,
 }
 
 impl<'a> FunctionBuilder<'a> {
-    pub fn new(ctx: &'a hir::Module) -> Self {
+    pub fn new(
+        ctx: &'a hir::Module,
+        function_map: &'a hashbrown::HashMap<ids::IdentId, FunctionId>,
+    ) -> Self {
         Self {
             ctx,
             current_block: BlockId(0),
             blocks: vec![],
             instructions: vec![],
             locals: hashbrown::HashMap::new(),
+            function_map,
         }
     }
 
@@ -254,6 +260,35 @@ impl<'a> FunctionBuilder<'a> {
             hir::Expr::Block {
                 items, final_expr, ..
             } => self.emit_block(ty, items, final_expr),
+            hir::Expr::Call { f, inputs, .. } => {
+                let return_ty = *self
+                    .ctx
+                    .expression_types
+                    .get(f)
+                    .expect("function expression should have had a type ...");
+
+                let fn_symbolid = match self.ctx.exprs.get_unchecked(*f) {
+                    hir::Expr::Identifier { id, .. } => id,
+                    _ => todo!(),
+                };
+
+                let fn_symbol = self.ctx.symbols.get_unchecked(*fn_symbolid);
+                let fn_ident = fn_symbol.ident_id();
+                let fn_id = self.function_map.get(&fn_ident).expect("Did not lower fn");
+                let callee = crate::Callee::Function(*fn_id);
+
+                let mut args = Vec::with_capacity(inputs.len());
+                for i in inputs.iter() {
+                    let (v, _) = self.lower_expression_from_id(i)?;
+                    args.push(v);
+                }
+
+                self.emit(VInstructionKind::Call {
+                    callee,
+                    args,
+                    return_ty,
+                })
+            }
             _ => todo!("Cannot yet handle: {:?}", expression),
         }
     }
@@ -270,6 +305,7 @@ impl<'a> FunctionBuilder<'a> {
         return_ty: ids::TypeId,
         params: &[SymbolId],
         body: ExpressionId,
+        id: FunctionId,
     ) -> MirRes<Function> {
         self.clear_all();
         self.current_block = self.new_block();
@@ -301,6 +337,78 @@ impl<'a> FunctionBuilder<'a> {
             params: params_inst,
             instructions: std::mem::take(&mut self.instructions),
             blocks: std::mem::take(&mut self.blocks),
+            id,
         })
+    }
+}
+
+pub struct ModuleBuilder<'a> {
+    ctx: &'a hir::Module,
+    functions: UncheckedArena<Function, FunctionId>,
+
+    // internal values for building
+    function_map: hashbrown::HashMap<ids::IdentId, FunctionId>,
+}
+
+impl<'a> ModuleBuilder<'a> {
+    pub fn new(ctx: &'a hir::Module) -> Self {
+        Self {
+            ctx,
+            functions: UncheckedArena::new_unchecked(),
+            function_map: hashbrown::HashMap::new(),
+        }
+    }
+
+    /// Generate the functionids before we starts lowering, so that you dont need
+    /// to define before use.
+    pub fn handle_headers(&mut self) {
+        for symbol_id in &self.ctx.roots {
+            let symbol = self.ctx.symbols.get_unchecked(*symbol_id);
+            if matches!(symbol.kind, SymbolKind::Function { .. }) {
+                let id = FunctionId::from(self.function_map.len());
+                self.function_map.insert(symbol.ident_id(), id);
+            }
+        }
+    }
+
+    pub fn lower_entire_module(&mut self) -> MirRes<()> {
+        self.handle_headers();
+
+        for symbol_id in &self.ctx.roots {
+            let symbol = self.ctx.symbols.get_unchecked(*symbol_id);
+            let name = symbol.ident_id();
+            let return_ty = symbol.ty_id();
+
+            let (params, body) = match &symbol.kind {
+                SymbolKind::Function { params, body } => (params, body),
+                _ => continue,
+            };
+
+            let id = *self.function_map.get(&name).expect("Function id missing");
+            let mut builder = FunctionBuilder::new(self.ctx, &self.function_map);
+            let func = builder.lower(name, return_ty, params, *body, id)?;
+            self.functions.push(func);
+        }
+        Ok(())
+    }
+
+    /// Lower a function and return its id in the arena
+    pub fn lower_function(
+        &mut self,
+        name: ids::IdentId,
+        return_ty: ids::TypeId,
+        params: &[SymbolId],
+        body: ExpressionId,
+    ) -> MirRes<FunctionId> {
+        let id = FunctionId::from(self.functions.len());
+        let mut builder = FunctionBuilder::new(&self.ctx, &self.function_map);
+        let lower = builder.lower(name, return_ty, params, body, id)?;
+        self.functions.push(lower);
+        Ok(id)
+    }
+
+    /// Generate a final module
+    pub fn finish(self) -> Module {
+        Module::new(self.functions)
     }
 }

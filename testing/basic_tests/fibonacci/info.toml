@@ -1,0 +1,6 @@
+[test]
+name = "fibonacci"
+description = "Simple fibonacci example"
+
+parser = "pass"
+mir = "pass"

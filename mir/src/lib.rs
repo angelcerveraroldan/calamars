@@ -14,7 +14,7 @@ pub mod errors;
 pub mod lower;
 pub mod printer;
 
-use calamars_core::ids;
+use calamars_core::{Arena, UncheckedArena, ids};
 use front::syntax::span::Span;
 
 #[derive(Copy, Debug, Clone)]
@@ -82,7 +82,7 @@ pub struct DataId(usize);
 #[derive(Debug)]
 pub enum Callee {
     /// Call a function with a given function id. These are functions defined in the same language
-    Function(ids::SymbolId),
+    Function(FunctionId),
     /// Externed functions
     Extern(String),
 }
@@ -255,6 +255,7 @@ impl BBlock {
 
 pub struct Function {
     pub name: ids::IdentId,
+    pub id: FunctionId,
     pub return_ty: ids::TypeId,
     pub params: Vec<ValueId>,
 
@@ -269,5 +270,11 @@ impl Function {
 }
 
 pub struct Module {
-    pub functions: Vec<Function>,
+    pub function_arena: UncheckedArena<Function, FunctionId>,
+}
+
+impl Module {
+    pub fn new(function_arena: UncheckedArena<Function, FunctionId>) -> Self {
+        Self { function_arena }
+    }
 }
