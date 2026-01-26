@@ -337,9 +337,9 @@ impl VmFunctionRunner {
                 let lhs = self.get_register(a)?;
                 let rhs = self.get_register(b)?;
                 match (lhs, rhs) {
-                    (Value::Integer(lhs), Value::Integer(rhs)) => {
-                        self.run_binary_bitop(bytecode, *lhs, *rhs, to).map(|_| None)
-                    }
+                    (Value::Integer(lhs), Value::Integer(rhs)) => self
+                        .run_binary_bitop(bytecode, *lhs, *rhs, to)
+                        .map(|_| None),
                     (Value::Boolean(lhs), Value::Boolean(rhs)) => {
                         self.run_log_op(bytecode, *lhs, *rhs, to).map(|_| None)
                     }

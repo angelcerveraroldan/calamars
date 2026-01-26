@@ -33,8 +33,8 @@ const fn precedence(b: &Token) -> Option<(usize, usize)> {
 
 const fn binary_op_from_token(token: &Token) -> Option<ast::BinaryOperator> {
     match token {
-	Token::Or => Some(ast::BinaryOperator::Or),
-	Token::And => Some(ast::BinaryOperator::And),
+        Token::Or => Some(ast::BinaryOperator::Or),
+        Token::And => Some(ast::BinaryOperator::And),
         Token::Xor => Some(ast::BinaryOperator::Xor),
         Token::EqualEqual => Some(ast::BinaryOperator::EqEq),
         Token::NotEqual => Some(ast::BinaryOperator::NotEqual),
