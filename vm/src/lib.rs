@@ -171,7 +171,7 @@ impl VmFunction {
         inputs.extend(padding);
         let runner = VmFunctionRunner {
             current_block: BlockId::from(0),
-            last_blocks: Vec::new(),
+            last_blocks: None,
             registers: inputs,
             bytecode: self.bytecode.clone(),
             instruction_count: 0,
@@ -187,7 +187,7 @@ pub struct VmFunctionRunner {
     bytecode: Vec<Bytecode>,
 
     /// What was the block prior to this one - None if we are in the 0th block
-    last_blocks: Vec<BlockId>,
+    last_blocks: Option<BlockId>,
     current_block: BlockId,
     /// A mapping from block number to first bytecode in that block
     ///
@@ -209,7 +209,7 @@ impl VmFunctionRunner {
 
     fn jump_block(&mut self, to: BlockId) -> VmRes<()> {
         let inner = to.inner_id();
-        self.last_blocks.push(self.current_block);
+        self.last_blocks = Some(self.current_block);
         self.current_block = to;
         self.instruction_count = self
             .block_ind
@@ -281,10 +281,7 @@ impl VmFunctionRunner {
     }
 
     fn run_phi(&mut self, to: &Register, branches: &Box<[(BlockId, Register)]>) -> VmRes<()> {
-        let last = self
-            .last_blocks
-            .pop()
-            .ok_or(VmError::CannotCallPhiOnFirstBlock)?;
+        let last = self.last_blocks.ok_or(VmError::CannotCallPhiOnFirstBlock)?;
 
         for (b, r) in branches {
             if *b == last {
@@ -297,6 +294,7 @@ impl VmFunctionRunner {
 
         Err(VmError::PhiFailedDidNotFindLastBranch)
     }
+
     fn run_binary_bitop(
         &mut self,
         bytecode: &Bytecode,
