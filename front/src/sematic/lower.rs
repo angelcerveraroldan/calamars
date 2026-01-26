@@ -364,7 +364,9 @@ impl HirBuilder {
                     ast::BinaryOperator::Geq => hir::BinOp::Geq,
                     ast::BinaryOperator::Less => hir::BinOp::Less,
                     ast::BinaryOperator::Leq => hir::BinOp::Leq,
-
+                    ast::BinaryOperator::Or => hir::BinOp::Or,
+                    ast::BinaryOperator::Xor => hir::BinOp::Xor,
+                    ast::BinaryOperator::And => hir::BinOp::And,
                     _ => break 'binop_case Expr::Err,
                 };
                 let lhs = self.lower_expression(binary_op.lhs());

@@ -59,6 +59,9 @@ impl<'a> MirPrinter<'a> {
                     BinaryOperator::Geq => ">=",
                     BinaryOperator::Lesser => "<",
                     BinaryOperator::Leq => "<=",
+                    BinaryOperator::And => "and",
+                    BinaryOperator::Or => "or",
+                    BinaryOperator::Xor => "xor",
                 };
                 format!("{} {} {}", self.v(*lhs), op_s, self.v(*rhs))
             }

@@ -1,0 +1,21 @@
+def main(): Int =
+    bench(20000, 123456789, 0)
+
+def bench(n: Int, x: Int, acc: Int): Int =
+    if n == 0 then acc
+    else {
+        val x1: Int = lcg(x);
+        val a: Int  = x1;
+        val x2: Int = lcg(x1);
+        val b: Int  = x2;
+        val g: Int  = gcd(a, b);
+        bench(n - 1, x2, acc + g)
+    }
+
+def lcg(x: Int): Int =
+    (1103515245 * x + 12345) % 2147483647
+
+def gcd(a: Int, b: Int): Int =
+    if b == 0 then a
+    else gcd(b, a % b)
+
