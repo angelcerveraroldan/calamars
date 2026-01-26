@@ -39,6 +39,7 @@ reference the follwing table:
 |----------|-------------------------------|
 | feat     | A new feature                 |
 | fix      | Fix a bug or something else   |
+| impr     | Improvements                  | 
 | docs     | Add documentation             |
 | refactor | Reorganization                |
 | test     | Add new tests                 |
