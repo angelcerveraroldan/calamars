@@ -170,33 +170,36 @@ impl VmFunction {
         let padding = vec![Value::Empty; self.register_count as usize - inputs.len()];
         inputs.extend(padding);
         let runner = VmFunctionRunner {
+            function: &self,
             current_block: BlockId::from(0),
             last_blocks: None,
             registers: inputs,
-            bytecode: self.bytecode.clone(),
             instruction_count: 0,
-            block_ind: self.block_ind.clone(),
         };
         runner
     }
 }
 
 #[derive(Debug)]
-pub struct VmFunctionRunner {
+pub struct VmFunctionRunner<'a> {
+    function: &'a VmFunction,
     registers: Vec<Value>,
-    bytecode: Vec<Bytecode>,
 
     /// What was the block prior to this one - None if we are in the 0th block
     last_blocks: Option<BlockId>,
     current_block: BlockId,
-    /// A mapping from block number to first bytecode in that block
-    ///
-    /// Used for jumping between blocks
-    block_ind: Vec<usize>,
     instruction_count: usize,
 }
 
-impl VmFunctionRunner {
+impl<'a> VmFunctionRunner<'a> {
+    fn bytecode(&self) -> &Vec<Bytecode> {
+        &self.function.bytecode
+    }
+
+    fn block_ind(&self) -> &Vec<usize> {
+        &self.function.block_ind
+    }
+
     fn get_register(&self, reg: &Register) -> VmRes<&Value> {
         self.registers.get(reg.0).ok_or(VmError::RegisterNotFound)
     }
@@ -212,7 +215,7 @@ impl VmFunctionRunner {
         self.last_blocks = Some(self.current_block);
         self.current_block = to;
         self.instruction_count = self
-            .block_ind
+            .block_ind()
             .get(inner)
             .copied()
             .ok_or(VmError::InternalBlockIdNotFound)?;
@@ -388,8 +391,8 @@ impl VmFunctionRunner {
     }
 
     fn run_function(&mut self, vm: &VirtualMachine) -> VmRes<Value> {
-        while self.instruction_count < self.bytecode.len() {
-            let bc = self.bytecode[self.instruction_count].clone();
+        while self.instruction_count < self.bytecode().len() {
+            let bc = self.bytecode()[self.instruction_count].clone();
             if let Some(value) = self.run_bytecode(&bc, vm)? {
                 return Ok(value);
             }
