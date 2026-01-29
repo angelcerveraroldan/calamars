@@ -7,11 +7,12 @@
 use crate::function::{Frame, VFunction};
 
 mod bytecode;
+mod values;
 mod errors;
 mod function;
 
 // A register
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Register(u8);
 
 impl From<u8> for Register {
@@ -24,15 +25,6 @@ impl Register {
     pub fn inner_id(&self) -> u8 {
         self.0
     }
-}
-
-/// Stack allocated values
-#[derive(Clone, Debug)]
-pub enum Value {
-    Integer(i64),
-    Float(f64),
-    Boolean(bool),
-    Char(char),
 }
 
 /// Virtual Machine

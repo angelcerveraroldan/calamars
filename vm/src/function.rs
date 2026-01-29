@@ -1,7 +1,8 @@
 use crate::{
-    Register, Value,
+    Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
+    values::Value,
 };
 use calamars_core::Identifier;
 use ir;
@@ -70,6 +71,8 @@ pub enum FrameOut {
         args: Vec<Value>,
         dst: Register,
     },
+    /// We are returning what we have saved in some register. At this point our registers
+    /// may be deallocated.
     Return(Register),
 }
 
@@ -99,6 +102,13 @@ impl Frame {
             .ok_or(VError::TODO)
     }
 
+    fn read_register_as_bool(&self, from: &Register) -> VResult<bool> {
+        match self.read_register(from)? {
+            Value::Boolean(b) => Ok(*b),
+            _ => Err(VError::TODO),
+        }
+    }
+
     fn next_instruction(&mut self) {
         self.bc += 1;
     }
@@ -117,40 +127,52 @@ impl Frame {
         Ok(())
     }
 
-    fn phi_jump(&mut self, phi: &Box<[(ir::BlockId, Register)]>, dst: &Register) -> VResult<()> {
+    fn phi_join_values_to_dest(&mut self, phi: &Box<[(ir::BlockId, Register)]>, dst: &Register) -> VResult<()> {
         let last = self.block_info.last().ok_or(VError::TODO)?;
         let (_, reg) = phi
             .iter()
-            .find(|(blockid, reg)| blockid == last)
+            .find(|(blockid, _)| blockid == last)
             .ok_or(VError::TODO)?;
         let value = *self.read_register(reg)?;
-        self.store_value(value, &dst);
+        self.store_value(value, &dst)?;
         Ok(())
     }
 
-    fn run_unary_inst(&self, op: &UnOp, dst: &Register, x: &Register) -> VResult<()> {
-        todo!()
+    fn run_unary_instruct(&mut self, op: &UnOp, dst: &Register, a: &Register) -> VResult<()> {
+        let v = self.read_register(a)?;
+        let nv = match op {
+            UnOp::Not | UnOp::Neg => v.negate(),
+        }?;
+        self.store_value(nv, dst)
     }
 
-    fn run_binary_instruct(&mut self, op: &BinOp, dst: &Register, a: &Register, b: &Register) -> VResult<()> {
+    fn run_binary_instruct(
+        &mut self,
+        op: &BinOp,
+        dst: &Register,
+        a: &Register,
+        b: &Register,
+    ) -> VResult<()> {
+        let lhs = self.read_register(a)?;
+        let rhs = self.read_register(b)?;
         let nval = match op {
-            BinOp::Add => todo!(),
-            BinOp::Sub => todo!(),
-            BinOp::Mul => todo!(),
-            BinOp::Div => todo!(),
-            BinOp::Mod => todo!(),
-            BinOp::Eq => todo!(),
-            BinOp::Ne => todo!(),
-            BinOp::Lt => todo!(),
-            BinOp::Le => todo!(),
-            BinOp::Gt => todo!(),
-            BinOp::Ge => todo!(),
-            BinOp::And => todo!(),
-            BinOp::Or => todo!(),
-            BinOp::Xor => todo!(),
-        };
-        self.store_value(nval, dst);
-        self.next_instruction();
+            BinOp::Add => lhs.add(rhs),
+            BinOp::Sub => lhs.sub(rhs),
+            BinOp::Mul => lhs.mul(rhs),
+            BinOp::Div => lhs.div(rhs),
+            BinOp::Mod => lhs.modulus(rhs),
+            BinOp::Eq => lhs.e(rhs),
+            BinOp::Ne => lhs.e(rhs)?.negate(),
+            BinOp::Lt => lhs.l(rhs),
+            BinOp::Le => lhs.le(rhs),
+            BinOp::Gt => lhs.g(rhs),
+            BinOp::Ge => lhs.ge(rhs),
+            BinOp::And => lhs.and(rhs),
+            BinOp::Or => lhs.or(rhs),
+            BinOp::Xor => lhs.xor(rhs),
+        }?;
+        self.store_value(nval, dst)?;
+        Ok(())
     }
 
     /// Keep taking steps until we need the VM's help
@@ -161,25 +183,62 @@ impl Frame {
         let fo: FrameOut = loop {
             let bc = vf.get_bytecode(self.bc as usize).ok_or(VError::TODO)?;
             match bc {
-		// here we have no choice but to clone - we need the value to be stored in the frame, but it lives in the
-		// vfunction. We dont want to move it from there, as it may be needed lated by another frame.
-                Bytecode::Const { dst, k } => self.store_value(k.clone(), dst),
-                Bytecode::Bin { op, dst, a, b } => self.run_binary_instruct(op, dst, a, b),
-                Bytecode::Un { op, dst, x } => self.run_unary_inst(op, dst, x),
-                Bytecode::Br { target } => todo!(),
+                // here we have no choice but to clone - we need the value to be stored in the frame, but it lives in the
+                // vfunction. We dont want to move it from there, as it may be needed lated by another frame.
+                Bytecode::Const { dst, k } => {
+                    self.store_value(k.clone(), dst)?;
+		    self.next_instruction();
+                }
+                Bytecode::Bin { op, dst, a, b } => {
+                    self.run_binary_instruct(op, dst, a, b)?;
+		    self.next_instruction();
+                }
+                Bytecode::Un { op, dst, x } => {
+                    self.run_unary_instruct(op, dst, x)?;
+		    self.next_instruction();
+
+                }
+                Bytecode::Br { target } => {
+                    self.jump_block(*target, &vf.bbi_map)?;
+                }
                 Bytecode::BrIf {
                     cond,
                     then_t,
                     else_t,
-                } => todo!(),
+                } => {
+                    let b = self.read_register_as_bool(cond)?;
+                    if b {
+                        self.jump_block(*then_t, &vf.bbi_map)?;
+                    } else {
+                        self.jump_block(*else_t, &vf.bbi_map)?;
+                    }
+		    
+                }
                 Bytecode::Call { callee, args, dst } => {
+                    let args = args
+                        .iter()
+                        .map(|reg| self.read_register(reg).copied())
+                        .collect::<VResult<Vec<_>>>()?;
+		    
+		    // Here we are trusting that the VM will fill the register for us, when we are told to continue running,
+		    // we can assume that the functions output will be in that register.
+		    self.next_instruction();
+                    break FrameOut::FunctionCallPls {
+                        fid: *callee,
+                        args: args,
+                        dst: *dst,
+                    };
 
-		    break FrameOut::Return(Register::from(0));
-		},
-                Bytecode::Ret { src } => todo!(),
-                Bytecode::Phi { dst, incoming } => self.phi_jump(incoming, dst),
-            }?;
+                }
+                Bytecode::Ret { src } => {
+                    break FrameOut::Return(*src);
+                }
+                Bytecode::Phi { dst, incoming } => {
+                    self.phi_join_values_to_dest(incoming, dst)?;
+		    self.next_instruction();
+                }
+            };
         };
-	Ok(fo)
+        Ok(fo)
     }
 }
