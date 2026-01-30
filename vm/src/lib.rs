@@ -4,25 +4,31 @@
 //! project reaches a state where the front end is semi-stable, and a stdlib exists, much
 //! optimization needs to be done here.
 
-use crate::function::{Frame, VFunction};
+use crate::{
+    errors::{VError, VResult},
+    function::{Frame, VFunction},
+    values::Value,
+};
+use calamars_core::Identifier;
 
 mod bytecode;
-mod values;
 mod errors;
 mod function;
+pub mod lower;
+mod values;
 
 // A register
 #[derive(Clone, Debug, Copy)]
-pub struct Register(u8);
+pub struct Register(u32);
 
-impl From<u8> for Register {
-    fn from(value: u8) -> Self {
+impl From<u32> for Register {
+    fn from(value: u32) -> Self {
         Register(value)
     }
 }
 
 impl Register {
-    pub fn inner_id(&self) -> u8 {
+    pub fn inner_id(&self) -> u32 {
         self.0
     }
 }
@@ -30,5 +36,56 @@ impl Register {
 /// Virtual Machine
 pub struct VMachine {
     functions: Box<[VFunction]>,
+    memory: Vec<Register>,
     stack: Vec<Frame>,
+}
+
+fn generate_frame(id: ir::FunctionId, fns: &[VFunction]) -> VResult<Frame> {
+    let f = fns.get(id.inner_id()).ok_or(VError::TODO)?;
+    let frame = Frame::new(id, f.register_size());
+    Ok(frame)
+}
+
+impl VMachine {
+    pub fn new(functions: Box<[VFunction]>, entry: ir::FunctionId) -> VResult<Self> {
+        let mut stack = Vec::new();
+        let entry_frame = generate_frame(entry, &functions)?;
+        stack.push(entry_frame);
+        Ok(Self {
+            functions,
+            stack,
+            memory: Vec::new(),
+        })
+    }
+
+    pub fn run(&mut self) -> VResult<Value> {
+        loop {
+            let mut frame = self.stack.pop().ok_or(VError::TODO)?;
+            let vfunc = self
+                .functions
+                .get(frame.function.inner_id())
+                .ok_or(VError::TODO)?;
+
+            match frame.step_until_vm_is_needed(vfunc)? {
+                function::FrameOut::FunctionCallPls { fid, args, dst } => {
+                    self.memory.push(dst); // Where we need to later save the returned value
+                    self.stack.push(frame);
+                    let mut newfn = generate_frame(fid, &self.functions)?;
+                    newfn.inputs(args);
+                    self.stack.push(newfn);
+                }
+                function::FrameOut::Return(register) => {
+                    let value = *frame.read_register(&register)?;
+                    let dst = match self.memory.pop() {
+                        Some(r) => r,
+                        None => {
+                            return Ok(value);
+                        }
+                    };
+                    let lf = self.stack.last_mut().ok_or(VError::TODO)?;
+                    lf.store_value(value, &dst)?;
+                }
+            }
+        }
+    }
 }

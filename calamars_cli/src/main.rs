@@ -7,6 +7,7 @@ use front::{
 };
 use ir::printer::MirPrinter;
 use std::path::PathBuf;
+use vm::VMachine;
 
 use calamars_cli::source::SourceFile;
 
@@ -99,9 +100,9 @@ fn main() {
             }
 
             if run_vm {
-                let mut vmlower = vm::Lowerer::new(&irmodule);
-                let vm = vmlower
-                    .finish()
+                let mut vmlower = vm::lower::Lowerer::new(&irmodule);
+                let functions = vmlower
+                    .lower_module()
                     .map_err(|err| {
                         format!(
                             "Failed to lower from MIR to VM Bytecode with error: {:?}",
@@ -109,7 +110,11 @@ fn main() {
                         )
                     })
                     .unwrap();
-                vm.run_module();
+
+                let mut vm = VMachine::new(functions.into_boxed_slice(), ir::FunctionId::from(0))
+                    .expect("Failed to lower to vm");
+		let out = vm.run();
+		println!("Main fn returns: {:?}", out);
             }
         }
     }

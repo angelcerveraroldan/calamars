@@ -18,11 +18,32 @@ pub struct VFunction {
     ///
     /// bbi_map[i] ~ First bytecode instructio in the ith block
     bbi_map: Vec<BytecodeIndex>,
+    register_size: u32,
 }
 
 impl VFunction {
+    pub fn new(
+        id: ir::FunctionId,
+        arity: u8,
+        bytecode: Box<[Bytecode]>,
+        bbi_map: Vec<BytecodeIndex>,
+        register_size: u32,
+    ) -> Self {
+        Self {
+            id,
+            arity,
+            bytecode,
+            bbi_map,
+            register_size,
+        }
+    }
+
     fn get_bytecode(&self, nth: usize) -> Option<&Bytecode> {
         self.bytecode.get(nth)
+    }
+
+    pub fn register_size(&self) -> u32 {
+        self.register_size
     }
 }
 
@@ -37,6 +58,12 @@ enum BlockInfo {
         current: ir::BlockId,
         last: ir::BlockId,
     },
+}
+
+impl Default for BlockInfo {
+    fn default() -> Self {
+        Self::Initial(ir::BlockId::from(0))
+    }
 }
 
 impl BlockInfo {
@@ -79,7 +106,7 @@ pub enum FrameOut {
 /// This is the mutable state of a running function
 pub struct Frame {
     /// Immutable state of this function
-    function: ir::FunctionId,
+    pub function: ir::FunctionId,
     registers: Vec<Value>,
     /// Bytecode instruction counter
     bc: BytecodeIndex,
@@ -87,7 +114,20 @@ pub struct Frame {
 }
 
 impl Frame {
-    fn store_value(&mut self, value: Value, dst: &Register) -> VResult<()> {
+    // Think of how to optimize inputs to avoid allocating here, as well as when
+    // passing in the arguments.
+    pub fn new(function: ir::FunctionId, register_count: u32) -> Self {
+        let registers = Vec::with_capacity(register_count as usize);
+        let block_info = BlockInfo::default();
+        Frame {
+            registers,
+            block_info,
+            bc: 0,
+            function,
+        }
+    }
+
+    pub fn store_value(&mut self, value: Value, dst: &Register) -> VResult<()> {
         let v = self
             .registers
             .get_mut(dst.inner_id() as usize)
@@ -96,7 +136,7 @@ impl Frame {
         Ok(())
     }
 
-    fn read_register(&self, from: &Register) -> VResult<&Value> {
+    pub fn read_register(&self, from: &Register) -> VResult<&Value> {
         self.registers
             .get(from.inner_id() as usize)
             .ok_or(VError::TODO)
@@ -127,7 +167,11 @@ impl Frame {
         Ok(())
     }
 
-    fn phi_join_values_to_dest(&mut self, phi: &Box<[(ir::BlockId, Register)]>, dst: &Register) -> VResult<()> {
+    fn phi_join_values_to_dest(
+        &mut self,
+        phi: &Box<[(ir::BlockId, Register)]>,
+        dst: &Register,
+    ) -> VResult<()> {
         let last = self.block_info.last().ok_or(VError::TODO)?;
         let (_, reg) = phi
             .iter()
@@ -179,7 +223,7 @@ impl Frame {
     ///
     /// A frame for example, cannot handle `val x = foo()` by itsef, it needs
     /// to stop, and ask the vm to run `foo`.
-    fn step_until_vm_is_needed(&mut self, vf: &VFunction) -> VResult<FrameOut> {
+    pub fn step_until_vm_is_needed(&mut self, vf: &VFunction) -> VResult<FrameOut> {
         let fo: FrameOut = loop {
             let bc = vf.get_bytecode(self.bc as usize).ok_or(VError::TODO)?;
             match bc {
@@ -187,16 +231,15 @@ impl Frame {
                 // vfunction. We dont want to move it from there, as it may be needed lated by another frame.
                 Bytecode::Const { dst, k } => {
                     self.store_value(k.clone(), dst)?;
-		    self.next_instruction();
+                    self.next_instruction();
                 }
                 Bytecode::Bin { op, dst, a, b } => {
                     self.run_binary_instruct(op, dst, a, b)?;
-		    self.next_instruction();
+                    self.next_instruction();
                 }
                 Bytecode::Un { op, dst, x } => {
                     self.run_unary_instruct(op, dst, x)?;
-		    self.next_instruction();
-
+                    self.next_instruction();
                 }
                 Bytecode::Br { target } => {
                     self.jump_block(*target, &vf.bbi_map)?;
@@ -212,33 +255,35 @@ impl Frame {
                     } else {
                         self.jump_block(*else_t, &vf.bbi_map)?;
                     }
-		    
                 }
                 Bytecode::Call { callee, args, dst } => {
                     let args = args
                         .iter()
                         .map(|reg| self.read_register(reg).copied())
                         .collect::<VResult<Vec<_>>>()?;
-		    
-		    // Here we are trusting that the VM will fill the register for us, when we are told to continue running,
-		    // we can assume that the functions output will be in that register.
-		    self.next_instruction();
+
+                    // Here we are trusting that the VM will fill the register for us, when we are told to continue running,
+                    // we can assume that the functions output will be in that register.
+                    self.next_instruction();
                     break FrameOut::FunctionCallPls {
                         fid: *callee,
                         args: args,
                         dst: *dst,
                     };
-
                 }
                 Bytecode::Ret { src } => {
                     break FrameOut::Return(*src);
                 }
                 Bytecode::Phi { dst, incoming } => {
                     self.phi_join_values_to_dest(incoming, dst)?;
-		    self.next_instruction();
+                    self.next_instruction();
                 }
             };
         };
         Ok(fo)
+    }
+
+    /// load input arguments
+    pub fn inputs(&mut self, args: Vec<Value>) {
     }
 }
