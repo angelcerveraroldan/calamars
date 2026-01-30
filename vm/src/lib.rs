@@ -40,9 +40,6 @@ pub struct VMachine {
     stack: Vec<Frame>,
 }
 
-pub use bytecode::{BinOp, Bytecode, UnOp};
-pub use function::VFunction;
-
 fn generate_frame(id: ir::FunctionId, fns: &[VFunction]) -> VResult<Frame> {
     let f = fns.get(id.inner_id()).ok_or(VError::FunctionNotFound {
         id: id.inner_id() as u32,
