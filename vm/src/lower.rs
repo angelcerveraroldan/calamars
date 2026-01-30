@@ -1,9 +1,9 @@
 use crate::{
+    Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
     function::VFunction,
     values::Value,
-    Register,
 };
 use calamars_core::Identifier;
 use ir::{self, FunctionId, ValueId};

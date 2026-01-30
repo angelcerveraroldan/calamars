@@ -1,4 +1,4 @@
-use crate::{values::Value, Register};
+use crate::{Register, values::Value};
 use ir;
 
 #[rustfmt::skip]

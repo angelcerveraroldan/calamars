@@ -113,8 +113,8 @@ fn main() {
 
                 let mut vm = VMachine::new(functions.into_boxed_slice(), ir::FunctionId::from(0))
                     .expect("Failed to lower to vm");
-		let out = vm.run();
-		println!("Main fn returns: {:?}", out);
+                let out = vm.run();
+                println!("Main fn returns: {:?}", out);
             }
         }
     }

@@ -1,8 +1,8 @@
 use crate::{
+    Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
     values::Value,
-    Register,
 };
 use calamars_core::Identifier;
 use ir;
