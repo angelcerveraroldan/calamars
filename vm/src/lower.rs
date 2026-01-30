@@ -1,9 +1,9 @@
 use crate::{
-    Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
     function::VFunction,
     values::Value,
+    Register,
 };
 use calamars_core::Identifier;
 use ir::{self, FunctionId, ValueId};
@@ -66,8 +66,8 @@ impl<'a> Lowerer<'a> {
                 let k = match constant {
                     ir::Consts::I64(val) => Value::Integer(*val),
                     ir::Consts::Bool(val) => Value::Boolean(*val),
-                    ir::Consts::Unit => return Err(VError::TODO),
-                    ir::Consts::String(_) => return Err(VError::TODO),
+                    ir::Consts::Unit => return Err(VError::UnsupportedConstant),
+                    ir::Consts::String(_) => return Err(VError::UnsupportedConstant),
                 };
                 Ok(vec![Bytecode::Const {
                     dst: destination,
@@ -119,7 +119,7 @@ impl<'a> Lowerer<'a> {
             ir::VInstructionKind::Call { callee, args, .. } => {
                 let callee = match callee {
                     ir::Callee::Function(fid) => *fid,
-                    ir::Callee::Extern(_) => return Err(VError::TODO),
+                    ir::Callee::Extern(_) => return Err(VError::UnsupportedExtern),
                 };
 
                 let regs = args
@@ -134,7 +134,7 @@ impl<'a> Lowerer<'a> {
                 }])
             }
             ir::VInstructionKind::Parameter { .. } => Ok(vec![]),
-            ir::VInstructionKind::ConstDataPointer { .. } => Err(VError::TODO),
+            ir::VInstructionKind::ConstDataPointer { .. } => Err(VError::UnsupportedInstruction),
         }
     }
 
@@ -146,7 +146,7 @@ impl<'a> Lowerer<'a> {
                         src: self.register_dest(vid),
                     }]
                 })
-                .ok_or(VError::TODO),
+                .ok_or(VError::InvalidReturnValue),
             ir::Terminator::Br { target } => Ok(vec![Bytecode::Br { target: *target }]),
             ir::Terminator::BrIf {
                 condition,
@@ -169,7 +169,7 @@ impl<'a> Lowerer<'a> {
         for inst_id in &block.instructs {
             let instruction = instruction_pool
                 .get(inst_id.inner_id())
-                .ok_or(VError::TODO)?;
+                .ok_or(VError::InternalInstructionNotFound)?;
             let destination = self.register_dest(*inst_id);
             let mut bytecode = self.lower_inst(instruction, destination)?;
             instructions.append(&mut bytecode);
@@ -186,7 +186,7 @@ impl<'a> Lowerer<'a> {
     fn lower_function(&self, fun: &ir::Function, fid: FunctionId) -> VResult<VFunction> {
         let mut bytecode = vec![];
         let mut bbi_map = Vec::with_capacity(fun.blocks.len());
-	// this needs to be optimized ....
+        // this needs to be optimized ....
         let register_size = fun.instructions.len() as u32;
 
         for block in fun.blocks.iter() {

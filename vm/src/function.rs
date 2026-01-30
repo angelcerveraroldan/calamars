@@ -1,8 +1,8 @@
 use crate::{
-    Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
     values::Value,
+    Register,
 };
 use calamars_core::Identifier;
 use ir;
@@ -117,7 +117,7 @@ impl Frame {
     // Think of how to optimize inputs to avoid allocating here, as well as when
     // passing in the arguments.
     pub fn new(function: ir::FunctionId, register_count: u32) -> Self {
-        let registers = Vec::with_capacity(register_count as usize);
+        let registers = vec![Value::Empty; register_count as usize];
         let block_info = BlockInfo::default();
         Frame {
             registers,
@@ -128,24 +128,34 @@ impl Frame {
     }
 
     pub fn store_value(&mut self, value: Value, dst: &Register) -> VResult<()> {
-        let v = self
-            .registers
-            .get_mut(dst.inner_id() as usize)
-            .ok_or(VError::TODO)?;
-        *v = value;
-        Ok(())
+        let v = self.registers.get_mut(dst.inner_id() as usize);
+        if let Some(v) = v {
+            *v = value;
+            return Ok(());
+        }
+
+        let err = VError::RegisterOutOfBounds {
+            index: dst.inner_id(),
+            len: self.registers.len() as u32,
+        };
+        Err(err)
     }
 
     pub fn read_register(&self, from: &Register) -> VResult<&Value> {
         self.registers
             .get(from.inner_id() as usize)
-            .ok_or(VError::TODO)
+            .ok_or(VError::RegisterOutOfBounds {
+                index: from.inner_id(),
+                len: self.registers.len() as u32,
+            })
     }
 
     fn read_register_as_bool(&self, from: &Register) -> VResult<bool> {
         match self.read_register(from)? {
             Value::Boolean(b) => Ok(*b),
-            _ => Err(VError::TODO),
+            v => Err(VError::InvalidConditionType {
+                found: v.type_name(),
+            }),
         }
     }
 
@@ -161,7 +171,9 @@ impl Frame {
     ) -> VResult<()> {
         let nbc = block_instruction_map
             .get(to.inner_id())
-            .ok_or(VError::TODO)?;
+            .ok_or(VError::BlockNotFound {
+                block: to.inner_id() as u32,
+            })?;
         self.bc = *nbc;
         self.block_info.mut_advance(to);
         Ok(())
@@ -172,11 +184,16 @@ impl Frame {
         phi: &Box<[(ir::BlockId, Register)]>,
         dst: &Register,
     ) -> VResult<()> {
-        let last = self.block_info.last().ok_or(VError::TODO)?;
-        let (_, reg) = phi
-            .iter()
-            .find(|(blockid, _)| blockid == last)
-            .ok_or(VError::TODO)?;
+        let last = self
+            .block_info
+            .last()
+            .ok_or(VError::PhiMissingIncoming { block: 0 })?;
+        let (_, reg) =
+            phi.iter()
+                .find(|(blockid, _)| blockid == last)
+                .ok_or(VError::PhiMissingIncoming {
+                    block: last.inner_id() as u32,
+                })?;
         let value = *self.read_register(reg)?;
         self.store_value(value, &dst)?;
         Ok(())
@@ -225,7 +242,12 @@ impl Frame {
     /// to stop, and ask the vm to run `foo`.
     pub fn step_until_vm_is_needed(&mut self, vf: &VFunction) -> VResult<FrameOut> {
         let fo: FrameOut = loop {
-            let bc = vf.get_bytecode(self.bc as usize).ok_or(VError::TODO)?;
+            let bc = vf
+                .get_bytecode(self.bc as usize)
+                .ok_or(VError::BytecodeOutOfBounds {
+                    index: self.bc as u32,
+                    len: vf.bytecode.len() as u32,
+                })?;
             match bc {
                 // here we have no choice but to clone - we need the value to be stored in the frame, but it lives in the
                 // vfunction. We dont want to move it from there, as it may be needed lated by another frame.
@@ -283,7 +305,8 @@ impl Frame {
         Ok(fo)
     }
 
-    /// load input arguments
-    pub fn inputs(&mut self, args: Vec<Value>) {
+    /// Load inputs into the register
+    pub fn load_inputs(&mut self, inputs: Vec<Value>) {
+        self.registers[..inputs.len()].copy_from_slice(&inputs);
     }
 }

@@ -9,6 +9,8 @@ pub enum Value {
     Float(f64),
     Boolean(bool),
     Char(char),
+
+    Empty,
 }
 
 macro_rules! binfuncs {
@@ -16,7 +18,10 @@ macro_rules! binfuncs {
 	pub fn $name(&self, other: &Value) -> VResult<Value> {
 	    match (self, other) {
 		$((Value::$id(a), Value::$id(b)) => Ok(Value::$id($e(a, b))),)*
-		_ => Err(VError::TODO),
+		_ => Err(VError::TypeMismatchBinary {
+                lhs: self.type_name(),
+                rhs: other.type_name(),
+            }),
 	    }
 	}
     };
@@ -24,18 +29,34 @@ macro_rules! binfuncs {
 	pub fn $name(&self, other: &Value) -> VResult<Value> {
 	    match (self, other) {
 		$((Value::$id(a), Value::$id(b)) => Ok(Value::Boolean($e(a, b))),)*
-		_ => Err(VError::TODO),
+		_ => Err(VError::TypeMismatchBinary {
+                lhs: self.type_name(),
+                rhs: other.type_name(),
+            }),
 	    }
 	}
     }
 }
 
 impl Value {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Integer(_) => "integer",
+            Value::Float(_) => "float",
+            Value::Boolean(_) => "bool",
+            Value::Char(_) => "char",
+            Value::Empty => "empty",
+        }
+    }
+
     pub fn negate(&self) -> VResult<Value> {
         match self {
             Value::Integer(i) => Ok(Value::Integer(-i)),
             Value::Boolean(b) => Ok(Value::Boolean(!b)),
-            _ => Err(VError::TODO),
+            _ => Err(VError::TypeMismatchUnary {
+                op: "negate",
+                found: self.type_name(),
+            }),
         }
     }
 
@@ -55,7 +76,10 @@ impl Value {
         match (self, other) {
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a.bitxor(b))),
             (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(*a ^ *b)),
-            _ => Err(VError::TODO),
+            _ => Err(VError::TypeMismatchBinary {
+                lhs: self.type_name(),
+                rhs: other.type_name(),
+            }),
         }
     }
 
@@ -63,7 +87,10 @@ impl Value {
         match (self, other) {
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a.bitor(b))),
             (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(*a || *b)),
-            _ => Err(VError::TODO),
+            _ => Err(VError::TypeMismatchBinary {
+                lhs: self.type_name(),
+                rhs: other.type_name(),
+            }),
         }
     }
 
@@ -71,7 +98,10 @@ impl Value {
         match (self, other) {
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a.bitand(b))),
             (Value::Boolean(a), Value::Boolean(b)) => Ok(Value::Boolean(*a && *b)),
-            _ => Err(VError::TODO),
+            _ => Err(VError::TypeMismatchBinary {
+                lhs: self.type_name(),
+                rhs: other.type_name(),
+            }),
         }
     }
 }

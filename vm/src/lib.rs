@@ -40,8 +40,13 @@ pub struct VMachine {
     stack: Vec<Frame>,
 }
 
+pub use bytecode::{BinOp, Bytecode, UnOp};
+pub use function::VFunction;
+
 fn generate_frame(id: ir::FunctionId, fns: &[VFunction]) -> VResult<Frame> {
-    let f = fns.get(id.inner_id()).ok_or(VError::TODO)?;
+    let f = fns.get(id.inner_id()).ok_or(VError::FunctionNotFound {
+        id: id.inner_id() as u32,
+    })?;
     let frame = Frame::new(id, f.register_size());
     Ok(frame)
 }
@@ -60,18 +65,20 @@ impl VMachine {
 
     pub fn run(&mut self) -> VResult<Value> {
         loop {
-            let mut frame = self.stack.pop().ok_or(VError::TODO)?;
-            let vfunc = self
-                .functions
-                .get(frame.function.inner_id())
-                .ok_or(VError::TODO)?;
+            let mut frame = self.stack.pop().ok_or(VError::EmptyStack)?;
+            let vfunc =
+                self.functions
+                    .get(frame.function.inner_id())
+                    .ok_or(VError::FunctionNotFound {
+                        id: frame.function.inner_id() as u32,
+                    })?;
 
             match frame.step_until_vm_is_needed(vfunc)? {
                 function::FrameOut::FunctionCallPls { fid, args, dst } => {
                     self.memory.push(dst); // Where we need to later save the returned value
                     self.stack.push(frame);
                     let mut newfn = generate_frame(fid, &self.functions)?;
-                    newfn.inputs(args);
+                    newfn.load_inputs(args);
                     self.stack.push(newfn);
                 }
                 function::FrameOut::Return(register) => {
@@ -82,7 +89,7 @@ impl VMachine {
                             return Ok(value);
                         }
                     };
-                    let lf = self.stack.last_mut().ok_or(VError::TODO)?;
+                    let lf = self.stack.last_mut().ok_or(VError::EmptyStack)?;
                     lf.store_value(value, &dst)?;
                 }
             }
