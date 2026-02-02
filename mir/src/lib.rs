@@ -209,6 +209,13 @@ pub enum Terminator {
     /// When a return instruction is executed, control flow will return back to the calling
     /// functions context.
     Return(Option<ValueId>),
+	/// Return a function call. This is better than VInstructionKind::Call followed by return,
+	/// since we know that we can use this for tail call optimizatoin.
+	Call {
+		callee: Callee,
+        args: Vec<ValueId>,
+        return_ty: ids::TypeId,
+	},
     /// Break out of a block
     Br { target: BlockId },
     BrIf {

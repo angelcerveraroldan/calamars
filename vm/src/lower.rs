@@ -147,6 +147,9 @@ impl<'a> Lowerer<'a> {
                     }]
                 })
                 .ok_or(VError::InvalidReturnValue),
+            ir::Terminator::Call { .. } => {
+                todo!("Not yet implemented - tail call optimization");
+            }
             ir::Terminator::Br { target } => Ok(vec![Bytecode::Br { target: *target }]),
             ir::Terminator::BrIf {
                 condition,
