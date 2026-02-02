@@ -28,7 +28,9 @@ pub enum Bytecode {
     BrIf  { cond: Register, then_t: ir::BlockId, else_t: ir::BlockId },
     /// call some function
     Call  { callee: ir::FunctionId, args: Box<[Register]>, dst: Register },
-    /// return the value in some register
-    Ret   { src: Register },
-    Phi   { dst: Register, incoming: Box<[(ir::BlockId, Register)]> },
+    /// Tail call return
+    RetCall  { callee: ir::FunctionId, args: Box<[Register]> },
+    /// Return the value in some register
+    Ret      { src: Register },
+    Phi      { dst: Register, incoming: Box<[(ir::BlockId, Register)]> },
 }

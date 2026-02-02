@@ -115,7 +115,7 @@ impl<'a> MirPrinter<'a> {
                 callee,
                 args,
                 return_ty,
-            } => self.fmt_call(callee, args, return_ty),
+            } => format!("return {}", self.fmt_call(callee, args, return_ty)),
             Terminator::Br { target } => {
                 format!("br {}", self.bb(*target))
             }

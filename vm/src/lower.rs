@@ -8,6 +8,13 @@ use crate::{
 use calamars_core::Identifier;
 use ir::{self, FunctionId, ValueId};
 
+fn callee_fnid(callee: &ir::Callee) -> VResult<FunctionId> {
+    match callee {
+        ir::Callee::Function(fid) => Ok(*fid),
+        ir::Callee::Extern(_) => Err(VError::UnsupportedExtern),
+    }
+}
+
 /// Lower MIR to VM bytecode
 pub struct Lowerer<'a> {
     ctx: &'a ir::Module,
@@ -117,11 +124,7 @@ impl<'a> Lowerer<'a> {
                 }])
             }
             ir::VInstructionKind::Call { callee, args, .. } => {
-                let callee = match callee {
-                    ir::Callee::Function(fid) => *fid,
-                    ir::Callee::Extern(_) => return Err(VError::UnsupportedExtern),
-                };
-
+                let callee = callee_fnid(callee)?;
                 let regs = args
                     .iter()
                     .map(|vid| self.register_dest(*vid))
@@ -147,8 +150,17 @@ impl<'a> Lowerer<'a> {
                     }]
                 })
                 .ok_or(VError::InvalidReturnValue),
-            ir::Terminator::Call { .. } => {
-                todo!("Not yet implemented - tail call optimization");
+            ir::Terminator::Call { callee, args, .. } => {
+                let callee = callee_fnid(callee)?;
+                let regs = args
+                    .iter()
+                    .map(|vid| self.register_dest(*vid))
+                    .collect::<Vec<_>>();
+
+                Ok(vec![Bytecode::RetCall {
+                    callee,
+                    args: regs.into_boxed_slice(),
+                }])
             }
             ir::Terminator::Br { target } => Ok(vec![Bytecode::Br { target: *target }]),
             ir::Terminator::BrIf {

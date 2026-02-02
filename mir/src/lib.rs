@@ -12,12 +12,19 @@
 
 pub mod errors;
 pub mod lower;
+mod optimizations;
 pub mod printer;
 
 use calamars_core::{Arena, UncheckedArena, ids};
 use front::syntax::span::Span;
 
-#[derive(Copy, Debug, Clone)]
+use crate::{
+    errors::MirErrors,
+    lower::MirRes,
+    optimizations::{OptFunction, TailCallOptimization},
+};
+
+#[derive(Copy, Debug, Clone, PartialEq, Eq)]
 pub struct FunctionId(usize);
 
 impl From<usize> for FunctionId {
@@ -54,7 +61,7 @@ impl calamars_core::Identifier for BlockId {
 ///
 /// This identifier is local, that is to say ValueId(0) is the first instruction in the wokring
 /// function.
-#[derive(Copy, Debug, Clone)]
+#[derive(Copy, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ValueId(usize);
 
 impl ValueId {
@@ -75,11 +82,11 @@ impl calamars_core::Identifier for ValueId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DataId(usize);
 
 /// Ways in which we can call a function
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Callee {
     /// Call a function with a given function id. These are functions defined in the same language
     Function(FunctionId),
@@ -104,7 +111,7 @@ pub enum Types {
 }
 
 /// Constants that are known at compile time
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Consts {
     Unit,
     I64(i64),
@@ -113,6 +120,7 @@ pub enum Consts {
 }
 
 /// Store some binary data
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataSeg {
     id: DataId,
     name: String,
@@ -120,7 +128,7 @@ pub struct DataSeg {
     align: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum UnaryOperator {
     /// Negate a boolean value
     Not,
@@ -128,7 +136,7 @@ pub enum UnaryOperator {
     Negate,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum BinaryOperator {
     Add,
     Sub,
@@ -151,14 +159,14 @@ pub enum BinaryOperator {
 ///
 /// TODO: There are many [missing operators](https://releases.llvm.org/18.1.4/docs/LangRef.html#bitwiseops)
 /// that may be worth implementing later.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum BitwiseBinaryOperator {
     And,
     Xor,
     Or,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum VInstructionKind {
     Constant(Consts),
     ConstDataPointer {
@@ -195,10 +203,29 @@ pub enum VInstructionKind {
     },
 }
 
+impl VInstructionKind {
+    pub fn call_to_terminator(&self) -> MirRes<Terminator> {
+        match self {
+            VInstructionKind::Call {
+                callee,
+                args,
+                return_ty,
+            } => Ok(Terminator::Call {
+                callee: callee.clone(),
+                args: args.clone(),
+                return_ty: return_ty.clone(),
+            }),
+            _ => Err(MirErrors::LoweringErr {
+                msg: "Can only convert function calls".to_string(),
+            }),
+        }
+    }
+}
+
 /// A single value producing instruction.
 ///
 /// Reference: https://releases.llvm.org/18.1.4/docs/LangRef.html#instruction-reference
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct VInstruct {
     pub kind: VInstructionKind,
 }
@@ -209,13 +236,13 @@ pub enum Terminator {
     /// When a return instruction is executed, control flow will return back to the calling
     /// functions context.
     Return(Option<ValueId>),
-	/// Return a function call. This is better than VInstructionKind::Call followed by return,
-	/// since we know that we can use this for tail call optimizatoin.
-	Call {
-		callee: Callee,
+    /// Return a function call. This is better than VInstructionKind::Call followed by return,
+    /// since we know that we can use this for tail call optimizatoin.
+    Call {
+        callee: Callee,
         args: Vec<ValueId>,
         return_ty: ids::TypeId,
-	},
+    },
     /// Break out of a block
     Br { target: BlockId },
     BrIf {
@@ -285,6 +312,21 @@ pub struct Module {
 
 impl Module {
     pub fn new(function_arena: UncheckedArena<Function, FunctionId>) -> Self {
-        Self { function_arena }
+        let mut raw = Self { function_arena };
+        raw.optimize();
+        raw
+    }
+
+    pub fn tco(&mut self) {
+        for function in self.function_arena.inner_mut() {
+            let mut tco = TailCallOptimization::new();
+            if let Err(error) = tco.optimize(function, 1) {
+                eprint!("{:?}", error);
+            }
+        }
+    }
+
+    pub fn optimize(&mut self) {
+        self.tco();
     }
 }

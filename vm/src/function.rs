@@ -98,6 +98,11 @@ pub enum FrameOut {
         args: Vec<Value>,
         dst: Register,
     },
+    /// Ask the vm to call a function for us, and return that value (tail call)
+    TailCallPls {
+        fid: ir::FunctionId,
+        args: Vec<Value>,
+    },
     /// We are returning what we have saved in some register. At this point our registers
     /// may be deallocated.
     Return(Register),
@@ -107,7 +112,7 @@ pub enum FrameOut {
 pub struct Frame {
     /// Immutable state of this function
     pub function: ir::FunctionId,
-    registers: Vec<Value>,
+    pub registers: Vec<Value>,
     /// Bytecode instruction counter
     bc: BytecodeIndex,
     block_info: BlockInfo,
@@ -125,6 +130,26 @@ impl Frame {
             bc: 0,
             function,
         }
+    }
+
+    /// Clear the frame, get it ready to be used by another function
+    fn clear(&mut self, n: usize) {
+        let len = self.registers.len();
+        if len < n {
+            self.registers.resize(n, Value::Empty);
+            self.registers[..len].fill(Value::Empty);
+        } else {
+            self.registers.truncate(n);
+            self.registers.fill(Value::Empty);
+        }
+        self.bc = 0;
+    }
+
+    /// Reuse this frame for another function
+    pub fn new_fn(mut self, new_fn: &VFunction) -> Self {
+        self.clear(new_fn.register_size as usize);
+        self.function = new_fn.id;
+        self
     }
 
     pub fn store_value(&mut self, value: Value, dst: &Register) -> VResult<()> {
@@ -291,6 +316,16 @@ impl Frame {
                         fid: *callee,
                         args: args,
                         dst: *dst,
+                    };
+                }
+                Bytecode::RetCall { callee, args } => {
+                    let args = args
+                        .iter()
+                        .map(|reg| self.read_register(reg).copied())
+                        .collect::<VResult<Vec<_>>>()?;
+                    break FrameOut::TailCallPls {
+                        fid: *callee,
+                        args: args,
                     };
                 }
                 Bytecode::Ret { src } => {
