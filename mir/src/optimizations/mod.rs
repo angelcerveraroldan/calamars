@@ -114,8 +114,8 @@ impl TailCallOptimization {
         block_ids
     }
 
-	// This is a little iffy - If the terminator fails, we have already popped the instruction so we will have
-	// invalid MIR. Oh well, this is a pre alpha mainly for testing, so we will allow it for now, and add a TODO.
+    // This is a little iffy - If the terminator fails, we have already popped the instruction so we will have
+    // invalid MIR. Oh well, this is a pre alpha mainly for testing, so we will allow it for now, and add a TODO.
     fn update_block(&mut self, f: &mut Function, blockid: usize) -> MirRes<()> {
         let block = &mut f.blocks[blockid];
         let last = block

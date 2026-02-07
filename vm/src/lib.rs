@@ -52,8 +52,8 @@ fn reuse_frame(frame: Frame, id: ir::FunctionId, fns: &[VFunction]) -> VResult<F
     let f = fns.get(id.inner_id()).ok_or(VError::FunctionNotFound {
         id: id.inner_id() as u32,
     })?;
-	let new_frame = frame.new_fn(f);
-	Ok(new_frame)
+    let new_frame = frame.new_fn(f);
+    Ok(new_frame)
 }
 
 impl VMachine {
