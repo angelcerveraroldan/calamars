@@ -48,6 +48,14 @@ fn generate_frame(id: ir::FunctionId, fns: &[VFunction]) -> VResult<Frame> {
     Ok(frame)
 }
 
+fn reuse_frame(frame: Frame, id: ir::FunctionId, fns: &[VFunction]) -> VResult<Frame> {
+    let f = fns.get(id.inner_id()).ok_or(VError::FunctionNotFound {
+        id: id.inner_id() as u32,
+    })?;
+    let new_frame = frame.new_fn(f);
+    Ok(new_frame)
+}
+
 impl VMachine {
     pub fn new(functions: Box<[VFunction]>, entry: ir::FunctionId) -> VResult<Self> {
         let mut stack = Vec::new();
@@ -75,6 +83,11 @@ impl VMachine {
                     self.memory.push(dst); // Where we need to later save the returned value
                     self.stack.push(frame);
                     let mut newfn = generate_frame(fid, &self.functions)?;
+                    newfn.load_inputs(args);
+                    self.stack.push(newfn);
+                }
+                function::FrameOut::TailCallPls { fid, args } => {
+                    let mut newfn = reuse_frame(frame, fid, &self.functions)?;
                     newfn.load_inputs(args);
                     self.stack.push(newfn);
                 }

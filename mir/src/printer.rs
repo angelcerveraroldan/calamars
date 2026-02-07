@@ -1,4 +1,4 @@
-use calamars_core::Identifier;
+use calamars_core::{Identifier, ids::TypeId};
 
 use std::fmt::Write;
 
@@ -24,6 +24,19 @@ impl<'a> MirPrinter<'a> {
     #[inline]
     fn bb(&self, id: BlockId) -> String {
         format!("bb{}", id.0)
+    }
+
+    pub fn fmt_call(&self, callee: &Callee, args: &Vec<ValueId>, return_ty: &TypeId) -> String {
+        let callee_s = match callee {
+            Callee::Function(fid) => format!("fn#{}", fid.inner_id()),
+            Callee::Extern(name) => format!("@{name}"),
+        };
+        let args_s = args
+            .iter()
+            .map(|a| self.v(*a))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("call {callee_s}({args_s}) : ty#{}", return_ty.inner_id())
     }
 
     /// Format a Value Producing instruction
@@ -77,18 +90,7 @@ impl<'a> MirPrinter<'a> {
                 callee,
                 args,
                 return_ty,
-            } => {
-                let callee_s = match callee {
-                    Callee::Function(fid) => format!("fn#{}", fid.inner_id()),
-                    Callee::Extern(name) => format!("@{name}"),
-                };
-                let args_s = args
-                    .iter()
-                    .map(|a| self.v(*a))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("call {callee_s}({args_s}) : ty#{}", return_ty.inner_id())
-            }
+            } => self.fmt_call(callee, args, return_ty),
             VInstructionKind::Phi { ty, incoming } => {
                 let cs = incoming
                     .iter()
@@ -109,6 +111,11 @@ impl<'a> MirPrinter<'a> {
         match t {
             Terminator::Return(Some(v)) => format!("return {}", self.v(*v)),
             Terminator::Return(None) => "return".to_string(),
+            Terminator::Call {
+                callee,
+                args,
+                return_ty,
+            } => format!("return {}", self.fmt_call(callee, args, return_ty)),
             Terminator::Br { target } => {
                 format!("br {}", self.bb(*target))
             }

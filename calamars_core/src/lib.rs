@@ -70,6 +70,10 @@ impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
         &self.data
     }
 
+    pub fn inner_mut(&mut self) -> &mut Vec<Ty> {
+        &mut self.data
+    }
+
     pub fn new_unchecked() -> Self {
         Self {
             data: vec![],
