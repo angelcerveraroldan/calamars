@@ -23,8 +23,9 @@ install:
 test:
 	cargo test
 	./testing/golden.py
+	cargo fmt --all --check
 
-all: build install
+all: build test
 
 help:
 	@echo "usage: make $(prog) [debug=1]"
