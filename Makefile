@@ -1,4 +1,4 @@
-prog :=xnixperms
+prog :=calamars
 
 debug ?=
 
