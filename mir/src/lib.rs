@@ -21,7 +21,7 @@ use front::syntax::span::Span;
 use crate::{
     errors::MirErrors,
     lower::MirRes,
-    optimizations::{OptFunction, TailCallOptimization},
+    optimizations::{OptFunction, PhiReturnOptimization, TailCallOptimization},
 };
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
@@ -326,7 +326,18 @@ impl Module {
         }
     }
 
+    pub fn remove_uneccesary_phis(&mut self) {
+        for function in self.function_arena.inner_mut() {
+            let mut pro = PhiReturnOptimization ::new();
+            if let Err(error) = pro.optimize(function, 1) {
+                eprint!("{:?}", error);
+            }
+        }
+    }
+
+	/// Optimize MIR. ORDER OF THE FUNCTIONS IS CRUCIAL
     pub fn optimize(&mut self) {
+		self.remove_uneccesary_phis();
         self.tco();
     }
 }
