@@ -1,11 +1,9 @@
-use std::ops::IndexMut;
-
 ///! Optimizations for the MIR
 use calamars_core::Identifier;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 
 use crate::{
-    BBlock, Function, VInstruct, VInstructionKind, ValueId, errors::MirErrors, lower::MirRes,
+    BBlock, BlockId, Function, VInstructionKind, ValueId, errors::MirErrors, lower::MirRes,
 };
 
 /// An optimization pass on some function
@@ -23,6 +21,7 @@ pub trait OptFunction {
     fn optimize(&mut self, f: &mut Function, ctx: Self::PassContext) -> MirRes<Self::PassOutput>;
 }
 
+#[derive(PartialEq, Eq)]
 pub enum OptLevel {
     None,
     All,
@@ -152,5 +151,145 @@ impl OptFunction for TailCallOptimization {
             self.update_block(f, block_id)?;
         }
         Ok(())
+    }
+}
+
+/// When returning an if statement, we don't need to return the phi value
+/// generated, we can just move the return into the function body.
+///
+/// I.e.
+/// ```text
+/// bb0:
+///   %v0 = param #0
+///   %v1 = param #1
+///   %v2 = %v0 == %v1
+///   br_if %v2, then: bb1 else: bb2
+/// bb1:
+///   %v3 = const true
+///   br bb3
+/// bb2:
+///   %v4 = const false
+///   br bb3
+/// bb3:
+///   %v5 = phi ty#4 [bb1: %v3, bb2: %v4]
+///   return %v5
+/// ```
+///
+/// Should be optimized to
+/// ```text
+/// bb0:
+///   %v0 = param #0
+///   %v1 = param #1
+///   %v2 = %v0 == %v1
+///   br_if %v2, then: bb1 else: bb2
+/// bb1:
+///   %v3 = const true
+///   return %v3
+/// bb2:
+///   %v4 = const false
+///   return %v4
+/// ```
+///
+/// This allows for better tail call optimization. Note that this optimization
+/// needs to be run many times for the same function, to handle nested ifs.
+pub struct PhiReturnOptimization {
+    // We need a whitelist since we don't delete the block in which the phi is resolved.
+    // Otherwise, we would end up in infinite loops. Once we find a way to delete blocks
+    // we can safely remove this whitelist.
+    whitelist: HashSet<ValueId>,
+}
+
+impl PhiReturnOptimization {
+    pub fn new() -> Self {
+        Self {
+            whitelist: HashSet::new(),
+        }
+    }
+
+    /// Find which blocks we can optimize
+    fn blocks_to_optimize(&self, f: &Function) -> Vec<(BlockId, ValueId)> {
+        let mut blocks = vec![];
+        for (blockid, block) in f.blocks.iter().enumerate() {
+            if let Some(crate::Terminator::Return(Some(vid))) = block.finally {
+                // check if the value id was from a phi block
+                let ik = f.instructions.get(vid.inner_id()).map(|x| &x.kind);
+                if matches!(ik, Some(VInstructionKind::Phi { .. }))
+                    && !self.whitelist.contains(&vid)
+                {
+                    let blockid = BlockId::from(blockid);
+                    blocks.push((blockid, vid))
+                }
+            }
+        }
+        blocks
+    }
+
+    /// Given one block, we can now optimize it
+    fn optimize_block(
+        &mut self,
+        f: &mut Function,
+        phi_resolution_block: BlockId,
+        value_id: ValueId,
+    ) {
+        let inst = &f
+            .instructions
+            .get(value_id.inner_id())
+            // This is safe since we make sure it exists when generating the data
+            .unwrap()
+            .kind;
+
+        let VInstructionKind::Phi { incoming, .. } = inst else {
+            unreachable!("optimize_block called with non-phi");
+        };
+
+        for (incoming_block_id, incoming_value_id) in incoming {
+            let block = f.blocks.get_mut(incoming_block_id.inner_id()).unwrap();
+            // Lets make sure that this optimization is safe to do for this specific block
+            // It should always be the cases, buy maybe another optimization later will have
+            // played with this block already ...
+            if let Some(crate::Terminator::Br { target }) = &block.finally
+                && *target == phi_resolution_block
+            {
+                block.finally = Some(crate::Terminator::Return(Some(*incoming_value_id)));
+            }
+        }
+
+        // FIXME: We should delete the block, but right now it messes with the indices ...
+        // for now we will leave it as is, it should be an unreachable block.
+
+        self.whitelist.insert(value_id);
+    }
+}
+
+impl OptFunction for PhiReturnOptimization {
+    type PassContext = usize;
+
+    type PassOutput = ();
+
+    fn name(&self) -> &'static str {
+        "Phi return optimization"
+    }
+
+    fn desc(&self) -> &'static str {
+        "When returning an ifs value, move the return into the bodies of the statements"
+    }
+
+    fn optimize(&mut self, f: &mut Function, ctx: Self::PassContext) -> MirRes<Self::PassOutput> {
+        if Into::<OptLevel>::into(ctx) != OptLevel::All {
+            return Ok(());
+        }
+
+        loop {
+            let opt_spots = self.blocks_to_optimize(&f);
+            if opt_spots.is_empty() {
+                break;
+            }
+
+            for (b, v) in opt_spots {
+                self.optimize_block(f, b, v);
+            }
+        }
+
+        return Ok(());
     }
 }

@@ -1,0 +1,31 @@
+func @0 {
+bb0:
+  %v0 = param #0
+  %v1 = const 0
+  %v2 = %v0 == %v1
+  br_if %v2, then: bb1 else: bb2
+bb1:
+  return call fn#0(%v0) : ty#7
+bb2:
+  %v4 = const 1
+  %v5 = %v0 == %v4
+  br_if %v5, then: bb4 else: bb5
+bb3:
+  %v11 = phi ty#2 [bb1: %v3, bb6: %v10]
+  return %v11
+bb4:
+  return call fn#0(%v0) : ty#7
+bb5:
+  %v7 = const 1
+  %v8 = %v0 - %v7
+  return call fn#0(%v8) : ty#7
+bb6:
+  %v10 = phi ty#2 [bb4: %v6, bb5: %v9]
+  return %v10
+}
+
+func @2 {
+bb0:
+  %v0 = const 2
+  return call fn#0(%v0) : ty#7
+}
