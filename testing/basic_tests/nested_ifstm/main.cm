@@ -1,4 +1,6 @@
-def main(): Int =
-    if 2 != 2 then 2
-    else if 2 != 3 then 3
-    else 4
+def f(n: Int): Int =
+    if n == 0 then f(n)
+    else if n == 1 then f(n)
+    else f(n - 1)
+
+def main(): Int = f(2)

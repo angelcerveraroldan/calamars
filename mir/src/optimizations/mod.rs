@@ -158,7 +158,7 @@ impl OptFunction for TailCallOptimization {
 /// generated, we can just move the return into the function body.
 ///
 /// I.e.
-/// ```
+/// ```text
 /// bb0:
 ///   %v0 = param #0
 ///   %v1 = param #1
@@ -176,7 +176,7 @@ impl OptFunction for TailCallOptimization {
 /// ```
 ///
 /// Should be optimized to
-/// ```
+/// ```text
 /// bb0:
 ///   %v0 = param #0
 ///   %v1 = param #1

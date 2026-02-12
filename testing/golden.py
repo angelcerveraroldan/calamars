@@ -5,6 +5,8 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+import difflib
+import shlex
 from pathlib import Path
 
 try:
@@ -28,10 +30,18 @@ class TestConfig:
     description: str | None
     source: str
 
+    # Optional runner override (string or list of args)
+    runner: list[str] | None
+
+    # Optional per-stage flag overrides
+    flags: dict[str, list[str]]
+
     # Expected out when parsing
-    test_parse: int | None
+    test_parse: int
     # Expected out for mir generation
-    test_mir: int | None
+    test_mir: int
+    # Expected out for vm run
+    test_vm: int
 
 
 def normalize(text: str) -> str:
@@ -62,6 +72,16 @@ def parse_bool_like(value) -> bool | None:
     return None
 
 
+def parse_str_list(value) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    if isinstance(value, str):
+        return shlex.split(value)
+    return None
+
+
 def parse_config(path: Path) -> TestConfig:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     test = data.get("test")
@@ -72,18 +92,34 @@ def parse_config(path: Path) -> TestConfig:
     description = test.get("description", None)
     source = str(test.get("source", "main.cm"))
 
+    runner = parse_str_list(test.get("runner"))
+
+    flags: dict[str, list[str]] = {}
+    raw_flags = test.get("flags")
+    if isinstance(raw_flags, dict):
+        for key, val in raw_flags.items():
+            parsed = parse_str_list(val)
+            if parsed is not None:
+                flags[str(key)] = parsed
+
     test_mir_str = test.get("mir", "pass")
     test_mir = parse_expected_out(test_mir_str)
 
     test_parse_str = test.get("parser", "pass")
     test_parse = parse_expected_out(test_parse_str)
 
+    test_vm_str = test.get("vm", "ignore")
+    test_vm = parse_expected_out(test_vm_str)
+
     return TestConfig(
         name=name,
         description=description,
         source=source,
+        runner=runner,
+        flags=flags,
         test_mir=test_mir,
         test_parse=test_parse,
+        test_vm=test_vm,
     )
 
 
@@ -142,7 +178,41 @@ def compare_output(actual: str, expected_path: Path) -> tuple[bool, str]:
     e = normalize(expected)
     if a == e:
         return True, ""
-    return False, f"Expected {expected_path.name} to match output"
+    diff = "\n".join(
+        difflib.unified_diff(
+            e.splitlines(),
+            a.splitlines(),
+            fromfile=f"expected/{expected_path.name}",
+            tofile="actual",
+            lineterm="",
+        )
+    )
+    return False, f"Expected {expected_path.name} to match output\n{diff}"
+
+
+def resolve_runner(cfg: TestConfig) -> list[str] | None:
+    env_runner = os.environ.get("CALAMARS_RUNNER")
+    if env_runner:
+        return parse_str_list(env_runner)
+    return cfg.runner
+
+
+def build_cmd(
+    base_cmd: list[str],
+    flags: list[str],
+    source_path: Path,
+) -> list[str]:
+    cmd = base_cmd + flags
+    source_str = str(source_path)
+    if any("{source}" in part for part in cmd):
+        return [part.replace("{source}", source_str) for part in cmd]
+    return cmd + [source_str]
+
+
+def expected_files(test_dir: Path, stage: str) -> tuple[Path | None, Path | None]:
+    out_path = test_dir / f"{stage}.out"
+    err_path = test_dir / f"{stage}.err"
+    return (out_path if out_path.exists() else None, err_path if err_path.exists() else None)
 
 
 def main() -> int:
@@ -153,7 +223,7 @@ def main() -> int:
         print(f"No {INFO_FILE} files found under {testing_dir}")
         return 1
 
-    bin_path = ensure_binary()
+    bin_path = None
     failures = 0
     total = 0
 
@@ -167,16 +237,29 @@ def main() -> int:
         test_dir = info_path.parent
         source_path = resolve_path(test_dir, cfg.source)
 
+        runner = resolve_runner(cfg)
+        if runner is None:
+            if bin_path is None:
+                bin_path = ensure_binary()
+            base_cmd = [str(bin_path), "build"]
+        else:
+            base_cmd = runner
+
         steps: list[tuple[str, list[str], int]] = []
         if cfg.test_parse != IGNORE:
-            steps.append(("parse", [], cfg.test_parse))
+            flags = cfg.flags.get("parse", [])
+            steps.append(("parse", flags, cfg.test_parse))
         if cfg.test_mir != IGNORE:
-            steps.append(("mir", ["--emit-mir"], cfg.test_mir))
+            flags = cfg.flags.get("mir", ["--emit-mir"])
+            steps.append(("mir", flags, cfg.test_mir))
+        if cfg.test_vm != IGNORE:
+            flags = cfg.flags.get("vm", ["--run-vm"])
+            steps.append(("vm", flags, cfg.test_vm))
 
         for label, flags, expected_out in steps:
             total += 1
             print(f"==== RUNNING {cfg.name} [{label}]")
-            cmd = [str(bin_path), "build", *flags, str(source_path)]
+            cmd = build_cmd(base_cmd, flags, source_path)
             result = run_cmd(cmd, cwd=root)
 
             if expected_out == SHOULD_PASS and result.returncode != 0:
@@ -190,6 +273,22 @@ def main() -> int:
                 failures += 1
                 print(f"==== FAIL {cfg.name} [{label}] (expected failure)")
                 continue
+
+            out_path, err_path = expected_files(test_dir, label)
+            if out_path:
+                ok, msg = compare_output(result.stdout, out_path)
+                if not ok:
+                    failures += 1
+                    print(f"==== FAIL {cfg.name} [{label}] (stdout mismatch)")
+                    print(msg)
+                    continue
+            if err_path:
+                ok, msg = compare_output(result.stderr, err_path)
+                if not ok:
+                    failures += 1
+                    print(f"==== FAIL {cfg.name} [{label}] (stderr mismatch)")
+                    print(msg)
+                    continue
 
             print(f"==== PASS {cfg.name} [{label}]")
 
