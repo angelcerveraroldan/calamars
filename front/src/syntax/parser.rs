@@ -3,7 +3,7 @@
 use calamars_core::ids;
 
 use crate::syntax::{
-    ast::{self, FuncCall},
+    ast::{self, Apply, Ident},
     errors::ParsingError,
     span::Span,
     token::Token,
@@ -135,7 +135,7 @@ impl CalamarsParser {
 
     /// Get the index of the next non-consumed token
     ///
-    /// We are guaranteed that this insdex will be in range for tokens indexing
+    /// We are guaranteed that this index will be in range for tokens indexing
     fn n_index(&self) -> usize {
         self.eof_index().min(self.curr_index)
     }
@@ -286,7 +286,7 @@ impl CalamarsParser {
 
         loop {
             match self.next_token_ref() {
-                Token::Var | Token::Val | Token::Def => {
+                Token::Ident(_) | Token::DocComment(_) => {
                     let d = self.parse_declaration();
                     items.push(ast::Item::Declaration(d));
                 }
@@ -337,7 +337,6 @@ impl CalamarsParser {
         }
         let (tk, sp) = self.next_ref().clone();
         match tk {
-            // TODO: For now we just supprt idents to be one word
             Token::Ident(_) => ast::Expression::Identifier(self.parse_identifier()),
             Token::LParen => {
                 self.advance_one();
@@ -402,40 +401,35 @@ impl CalamarsParser {
         arguments
     }
 
+    fn is_apply_arg_start(&self, token: &Token) -> bool {
+        matches!(
+            token,
+            Token::Ident(_)
+                | Token::Int(_)
+                | Token::Float(_)
+                | Token::True
+                | Token::False
+                | Token::String(_)
+                | Token::Char(_)
+                | Token::LParen
+                | Token::LBrace
+                | Token::If
+        )
+    }
+
     /// Given some expression, apply postfix operations to it.
     ///
-    /// This will handle things such as `f(x)`. We will apply `(x)` to `f`.
+    /// This will handle application such as `f x` and `f (x)`.
     fn parse_postfix_operation(&mut self, mut expr: ast::Expression) -> ast::Expression {
         loop {
-            let (tk, sp) = self.next_ref().clone();
-            match tk {
-                // Apply parameters to input
-                Token::LParen => {
-                    let args = self.parse_fn_arguments();
-                    let span_end = self.last_consumed_span();
-                    let span = Span::from(sp.start..span_end.end);
-                    expr = ast::Expression::FunctionCall(FuncCall::new(expr, args, span));
-                }
-                // TODO: Index not yet supported
-                Token::LBracket => {
-                    let start = self.begin_span();
-                    self.skip_until(1, |a, b| {
-                        if matches!(b, Token::RBracket) {
-                            *a -= 1;
-                        }
-                        if matches!(b, Token::LBracket) {
-                            *a += 1;
-                        }
-                        *a == 0
-                    });
-                    let end = self.end_span();
-                    self.insert_err(ParsingError::NotSupported {
-                        span: Span::from((start..end)),
-                        message: "Cannot index yet, arrays are coming soon.".to_owned(),
-                    });
-                }
-                _ => break,
+            let token = self.next_token_ref();
+            if !self.is_apply_arg_start(token) {
+                break;
             }
+
+            let arg = self.parse_primary();
+            let span = Span::from(expr.span().start..arg.span().end);
+            expr = ast::Expression::Apply(Apply::new(expr, arg, span));
         }
         expr
     }
@@ -514,42 +508,6 @@ impl CalamarsParser {
         ast::Type::new_path(segments, Span::from(init_span..end_span))
     }
 
-    /// Parse a function type. Note that this specifically handles a type that is a function, such
-    /// as `(Int) -> Int` (lambda), it is not to meant to be executed on function definitions.
-    ///
-    /// The grammar for lambdas:
-    ///
-    /// `( <type>*, ) -> <type>`
-    fn parse_fn_type(&mut self) -> ast::Type {
-        let init_span = self.next_span();
-        self.need(Token::LParen, "(");
-
-        let mut inputs = vec![];
-        loop {
-            if *self.next_token_ref() == Token::RParen {
-                self.advance_one();
-                break;
-            }
-
-            let ty = self.parse_type();
-            inputs.push(ty);
-
-            if *self.next_token_ref() == Token::Comma {
-                self.advance_one();
-            }
-        }
-
-        self.need(Token::Arrow, "->");
-
-        let output = Box::new(self.parse_type());
-        let out_final = output.span().unwrap().end;
-        ast::Type::Func {
-            inputs,
-            output,
-            span: Some(Span::from(init_span.start..out_final)),
-        }
-    }
-
     /// Parse an array type, this is:
     ///
     /// `[ <type> ]`
@@ -577,7 +535,7 @@ impl CalamarsParser {
                 self.advance_one();
                 sp
             } else {
-                elem.span().unwrap_or(opening_loc)
+                elem.span()
             }
         };
 
@@ -587,59 +545,47 @@ impl CalamarsParser {
         }
     }
 
-    /// Parse types
+    /// Parse types:
     ///
     /// Possible types currently implemented are:
     /// - Path (something like `String`, or `foo.Bar`)
     /// - Function (`Type -> Type`)
     /// - Array (`[ Type ]`)
     fn parse_type(&mut self) -> ast::Type {
-        match self.next_token_ref() {
+        let span_init = self.begin_span();
+        let lhs_type = match self.next_token_ref() {
             Token::Ident(_) => self.parse_path_type(),
-            Token::LParen => self.parse_fn_type(),
+            Token::LParen => {
+                self.advance_one();
+                let inner_type = self.parse_type();
+                self.need(Token::RParen, ")");
+                inner_type
+            }
             Token::LBracket => self.parse_arr_type(),
             _ => {
                 self.expect_err("type");
-                ast::Type::Error
+                ast::Type::Error(Span::from(self.end_span()..self.end_span()))
             }
-        }
-    }
-
-    /// Parse bindings such as
-    ///
-    /// ```cm
-    /// var x: Int = expression;
-    /// val y: Int = expression;
-    /// ```
-    /// To call this function, you need to assure that the next token is either Var or Val
-    fn parse_binding(&mut self) -> ast::Binding {
-        let start = self.begin_span();
-
-        let mutable = match self.next_token_ref() {
-            Token::Var => true,
-            Token::Val => false,
-            _ => panic!("This function should only be executed if the first token is var or val"),
         };
 
+        if !self.next_matches(|tk| matches!(tk, Token::Arrow)) {
+            return lhs_type;
+        }
+
         self.advance_one();
-        let name = self.parse_identifier();
-
-        self.need(Token::Colon, ":");
-        let vtype = self.parse_type();
-
-        self.need(Token::Equal, "=");
-
-        let assigned = Box::new(self.parse_expression());
-        self.handle_semicolon();
-
-        let end = self.end_span();
-        ast::Binding::new(name, vtype, assigned, mutable, Span::from(start..end))
+        let rhs_type = self.parse_type();
+        let span_end = self.end_span();
+        ast::Type::Func {
+            input: lhs_type.into(),
+            output: rhs_type.into(),
+            span: Span::from(span_init..span_end),
+        }
     }
 
     fn parse_comma_separated_idents(&mut self) -> Vec<(ast::Ident, ast::Type)> {
         let mut v = vec![];
         loop {
-            // We need to make sure that ther is a token before parsing ident
+            // We need to make sure that there is a token before parsing ident
             if !self.next_matches(|tk| matches!(tk, Token::Ident(_))) {
                 break;
             }
@@ -658,74 +604,75 @@ impl CalamarsParser {
         v
     }
 
-    /// Parse a function declaration such as
+    /// Parse the type definition of a  declaration
     ///
+    /// Examples are:
     /// ```cm
-    /// def main() = {
-    ///   var x: Int = 2;
-    /// }
+    /// x :: Int
+    ///
+    /// identity :: Int -> Int
     /// ```
-    /// To call this function, you need to assure that the next token is Def
-    fn parse_function_declaration(&mut self) -> ast::FuncDec {
-        // There may be a doc-comment
-        let next_token = self.next_token_ref();
-        let doc_comment = if let Token::DocComment(comment) = next_token {
+    fn parse_declaration_type(&mut self) -> ast::Declaration {
+        let docs = if let Token::DocComment(comment) = self.next_token_ref() {
             Some(comment.clone())
         } else {
             None
         };
 
-        if doc_comment.is_some() {
+        if docs.is_some() {
             self.advance_one();
         }
 
-        let start = self.begin_span();
+        let name = self.parse_identifier();
+        self.need(Token::DoubleColon, "::");
+        let dtype = self.parse_type();
+        ast::Declaration::TypeSignature { docs, name, dtype }
+    }
 
-        self.need(Token::Def, "def");
+    /// Parse the body of a declaration. This can be a function definition or a variable.
+    ///
+    /// Examples are:
+    /// ```cm
+    /// x = 2
+    ///
+    /// identity x = x
+    /// ```
+    fn parse_declaration_body(&mut self) -> ast::Declaration {
+        let name = self.parse_identifier();
 
-        let fname = self.parse_identifier();
-
-        self.need(Token::LParen, "(");
-
-        let params = self.parse_comma_separated_idents();
-
-        if self.next_eq(Token::RParen) {
+        let mut params = vec![];
+        loop {
+            match self.next_ref() {
+                (Token::Ident(ident), span) => {
+                    params.push(Ident::new(ident.clone(), *span));
+                }
+                _ => break,
+            }
             self.advance_one();
-        } else {
-            self.expect_err(")");
-
-            // Skip until we are out of the input brackets.
-            self.skip_until(1, |a, b| {
-                if matches!(b, Token::RParen) {
-                    *a -= 1;
-                }
-                if matches!(b, Token::LParen) {
-                    *a += 1;
-                }
-                *a == 0
-            });
         }
-
-        let out_ty = if self.next_eq(Token::Colon) {
-            self.advance_one();
-            self.parse_type()
-        } else {
-            ast::Type::Unit
-        };
 
         self.need(Token::Equal, "=");
-
-        let expr = self.parse_expression();
-        let end = self.end_span();
-        let total_span = Span::from(start..end);
-        ast::FuncDec::new(fname, params, out_ty, expr, total_span, doc_comment)
+        let body = self.parse_expression();
+        ast::Declaration::Binding { name, params, body }
     }
 
     fn parse_declaration(&mut self) -> ast::Declaration {
-        match self.next_token_ref() {
-            Token::Def => ast::Declaration::Function(self.parse_function_declaration()),
-            Token::Var | Token::Val => ast::Declaration::Binding(self.parse_binding()),
-            _ => panic!("not a declaration"),
+        let checkpoint = self.checkpoint();
+        if self.next_matches(|tk| matches!(tk, Token::DocComment(_))) {
+            self.advance_one();
+        }
+
+        let is_type_declaration = if self.next_matches(|tk| matches!(tk, Token::Ident(_))) {
+            self.advance_one();
+            self.next_eq(Token::DoubleColon)
+        } else {
+            false
+        };
+        self.rollback(checkpoint);
+        if is_type_declaration {
+            self.parse_declaration_type()
+        } else {
+            self.parse_declaration_body()
         }
     }
 
@@ -741,6 +688,7 @@ impl CalamarsParser {
                 | Token::Char(_)
                 | Token::LBrace
                 | Token::LParen
+                | Token::If
                 // Unary operators
                 | Token::Minus
                 | Token::Plus
@@ -749,8 +697,9 @@ impl CalamarsParser {
 
     pub fn parse_item(&mut self) -> ast::Item {
         match self.next_token_ref() {
-            Token::Def | Token::Var | Token::Val => {
-                ast::Item::Declaration(self.parse_declaration())
+            Token::Ident(_) | Token::DocComment(_) => {
+                let dec = self.parse_declaration();
+                ast::Item::Declaration(dec)
             }
             tk if self.is_expr_init(tk) => ast::Item::Expression(self.parse_expression()),
 
@@ -761,10 +710,9 @@ impl CalamarsParser {
     pub fn parse_file(&mut self) -> ast::Module {
         let mut decs = vec![];
         loop {
-            // Skip until we find a def, var, or val (only declarations are supported on top level,
-            // later also imports)
+            // Skip until we find a declaration or EOF
             self.skip_until((), |_, tk| {
-                matches!(tk, Token::Def | Token::Var | Token::Val)
+                matches!(tk, Token::Ident(_) | Token::DocComment(_) | Token::EOF)
             });
 
             // If we finished the file without finding the above tokens, we exit
@@ -819,18 +767,11 @@ mod tests {
         (p, ty)
     }
 
-    fn parse_varval(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Binding) {
+    fn parse_decl(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Declaration) {
         let file = ids::FileId::from(0);
         let mut p = CalamarsParser::new(file, tokens);
-        let ty = p.parse_binding();
-        (p, ty)
-    }
-
-    fn parse_fn(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::FuncDec) {
-        let file = ids::FileId::from(0);
-        let mut p = CalamarsParser::new(file, tokens);
-        let ty = p.parse_function_declaration();
-        (p, ty)
+        let dec = p.parse_declaration();
+        (p, dec)
     }
 
     fn bool(f: usize, t: usize) -> ast::Type {
