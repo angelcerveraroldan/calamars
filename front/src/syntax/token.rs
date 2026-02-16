@@ -61,6 +61,7 @@ pub enum Token {
     #[token("true")]   True,
     #[token("false")]  False,
 
+    #[token("::")] DoubleColon,
     #[token("(")] LParen,
     #[token(")")] RParen,
     #[token("{")] LBrace,
@@ -86,10 +87,12 @@ pub enum Token {
     #[token("*")] Star,
     #[token("^")] Pow,
     #[token("/")] Slash,
+    #[token("\\")] BackSlash,
     #[token("=")] Equal,
     #[token("<")] Less,
     #[token(">")] Greater,
     #[token("%")] Mod,
+
 
     #[regex(r"--[^\n]*", priority = 2)]
     LineComment,
@@ -208,6 +211,7 @@ impl fmt::Display for Token {
             Token::RBracket => write!(f, "]"),
             Token::Dot => write!(f, "."),
             Token::Comma => write!(f, ","),
+			Token::DoubleColon => write!(f, "::"),
             Token::Colon => write!(f, ":"),
             Token::Semicolon => write!(f, ";"),
 
@@ -224,6 +228,7 @@ impl fmt::Display for Token {
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
+            Token::BackSlash => write!(f, "\\"),
             Token::Equal => write!(f, "="),
             Token::Less => write!(f, "<"),
             Token::Greater => write!(f, ">"),
