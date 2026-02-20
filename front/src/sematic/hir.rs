@@ -1,9 +1,13 @@
 use calamars_core::{
-    MaybeErr,
     ids::{self, SymbolId},
+    MaybeErr,
 };
+use proptest::prelude::Strategy;
 
-use crate::{sematic::hir, syntax::span::Span};
+use crate::{
+    sematic::{error::SemanticError, hir},
+    syntax::span::Span,
+};
 
 pub type TypeArena = calamars_core::InternArena<Type, ids::TypeId>;
 
@@ -32,7 +36,6 @@ pub type SymbolArena = calamars_core::UncheckedArena<Symbol, ids::SymbolId>;
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ItemId {
     Expr(ids::ExpressionId),
-    // A val, var, or def
     Symbol(ids::SymbolId),
 }
 
@@ -55,13 +58,13 @@ pub enum Type {
 
     Array(ids::TypeId),
     Function {
-        input: Box<[ids::TypeId]>,
+        input: ids::TypeId,
         output: ids::TypeId,
     },
 }
 
 impl Type {
-    pub fn function_input(&self) -> &Box<[ids::TypeId]> {
+    pub fn function_input(&self) -> &ids::TypeId {
         if let Type::Function { input, .. } = self {
             return input;
         }
@@ -93,13 +96,9 @@ pub fn type_id_stringify(arena: &TypeArena, id: ids::TypeId) -> String {
         Type::Unit => "Unit".into(),
         Type::Array(tid) => format!("[{}]", type_id_stringify(arena, *tid)),
         Type::Function { input, output } => {
-            let inp = input
-                .iter()
-                .map(|x| type_id_stringify(arena, *x))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let inp = type_id_stringify(arena, *input);
             let out = type_id_stringify(arena, *output);
-            format!("fn({inp}) -> ({out})")
+            format!("{inp} -> ({out})")
         }
     }
 }
@@ -151,10 +150,8 @@ pub enum Expr {
         span: Span,
     },
     Call {
-        /// The function may not be an identifier since we can have HOFs, or lambdas in
-        /// structs, ...
         f: ids::ExpressionId,
-        inputs: Box<[ids::ExpressionId]>,
+        input: ids::ExpressionId,
         span: Span,
     },
     If {
@@ -192,101 +189,148 @@ impl MaybeErr for Expr {
     const ERR: Self = Expr::Err;
 }
 
-#[derive(Debug, Clone)]
-pub enum SymbolKind {
-    /// A function parameter, this will have no body, as it will be used when type cecking a
-    /// function, not during the call
-    Parameter,
-    Extern,
-    /// A function that has yet to have a body attached to it
-    FunctionUndeclared {
-        params: Box<[SymbolId]>,
-    },
-    Function {
-        params: Box<[SymbolId]>,
-        body: ids::ExpressionId,
-    },
-    /// A variable that has yet to have a body attached to it
-    VariableUndeclared {
-        mutable: bool,
-    },
-    Variable {
-        body: ids::ExpressionId,
-        mutable: bool,
-    },
-}
-
 #[derive(Debug)]
-pub struct Symbol {
-    pub kind: SymbolKind,
-    ty: ids::TypeId,
-    name: ids::IdentId,
-    /// Span to the identifier for this symbol
-    name_span: Span,
-    /// Span of the entire declaration for this symbol
-    decl_span: Span,
+pub struct SymbolDec {
+    pub inputs: Box<[ids::SymbolId]>,
+    pub body: ids::ExpressionId,
 }
 
-impl Symbol {
+/// A builder for calamars declarations
+///
+/// This should not be used for things like FFI, a body must be had.
+pub struct SymbolBuilder {
+    pub ty: ids::TypeId,
+    pub name: ids::IdentId,
+    /// A span to the name of the symbol in its type declaration
+    pub span_name_type: Span,
+    /// A span to the name of the symbol in its body declaration
+    pub span_name_decl: Option<Span>,
+    pub symbol_declaration: Option<SymbolDec>,
+    pub reserved_spot: ids::SymbolId,
+}
+
+impl SymbolBuilder {
     pub fn new(
-        kind: SymbolKind,
         ty: ids::TypeId,
         name: ids::IdentId,
-        name_span: Span,
-        decl_span: Span,
+        span_name_type: Span,
+        span_name_decl: Option<Span>,
+        symbol_declaration: Option<SymbolDec>,
+        reserved_spot: ids::SymbolId,
     ) -> Self {
         Self {
-            kind,
             ty,
             name,
-            name_span,
-            decl_span,
-        }
-    }
-
-    pub fn update_body(&mut self, body: ids::ExpressionId) {
-        match &mut self.kind {
-            SymbolKind::Parameter | SymbolKind::Extern => (),
-            SymbolKind::FunctionUndeclared { params } | SymbolKind::Function { params, .. } => {
-                let params = std::mem::take(params);
-                self.kind = SymbolKind::Function { params, body };
-            }
-            SymbolKind::VariableUndeclared { mutable } | SymbolKind::Variable { mutable, .. } => {
-                self.kind = SymbolKind::Variable {
-                    mutable: *mutable,
-                    body,
-                };
-            }
+            span_name_type,
+            span_name_decl,
+            symbol_declaration,
+            reserved_spot,
         }
     }
 
     pub fn ident_id(&self) -> ids::IdentId {
         self.name
     }
+}
 
-    pub fn name_span(&self) -> Span {
-        self.name_span
+/// A symbol such as:
+/// ```
+/// foo :: Int
+/// foo = 2
+/// ```
+#[derive(Debug)]
+pub struct Symbol {
+    pub ty: ids::TypeId,
+    pub name: ids::IdentId,
+    pub kind: SymbolKind,
+}
+
+#[derive(Debug)]
+pub enum SymbolKind {
+    Param {
+        span: Span,
+    },
+    Ffi {
+        /// span of the function name on type definition
+        span_type: Span,
+    },
+    Defn {
+        /// span of the function name on type definition
+        span_type: Span,
+        /// span of the function name on the declaration
+        span_decl: Span,
+        declaration: SymbolDec,
+    },
+}
+
+impl Symbol {
+    pub fn name_id(&self) -> ids::IdentId {
+        self.name
     }
 
-    pub fn ty_id(&self) -> ids::TypeId {
-        self.ty
+    pub fn span(&self) -> Span {
+        match self.kind {
+            SymbolKind::Param { span: span }
+            | SymbolKind::Ffi { span_type: span }
+            | SymbolKind::Defn {
+                span_type: span, ..
+            } => span,
+        }
     }
 }
 
-/// All of the HIR information for a module.
-///
-/// To have full infromation about the module, you need access to the global context, containing:
-/// - TypeArena
-/// - ConstantStringArena
-/// - IdentArena,
-/// - SymbolArena
+/// Context shared between modules
+pub struct GlobalContext {
+    pub types: hir::TypeArena,
+    pub const_str: hir::ConstantStringArena,
+}
+
+/// Given some functions type, find the type of the first n inputs,
+/// and the return type.
+pub fn take_inputs(
+    type_id: ids::TypeId,
+    mut n: usize,
+    global_ctx: &GlobalContext,
+    span: Span,
+) -> Result<(Vec<ids::TypeId>, ids::TypeId), SemanticError> {
+    let expected = n;
+    let mut v = vec![];
+    let mut curr_type_id = type_id;
+
+    while n != 0 {
+        let curr_type = global_ctx.types.get_unchecked(curr_type_id);
+        match curr_type {
+            Type::Function { input, output } => {
+                v.push(*input);
+                curr_type_id = *output;
+                n -= 1;
+            }
+            Type::Error => {
+                return Ok((v, curr_type_id));
+            }
+            _ => {
+                if v.is_empty() {
+                    return Err(SemanticError::NotSupported {
+                        msg: "Expected a function type",
+                        span,
+                    });
+                }
+                return Err(SemanticError::ArityError {
+                    expected,
+                    actual: expected - n,
+                    span,
+                });
+            }
+        }
+    }
+    Ok((v, curr_type_id))
+}
+
 pub struct Module {
     /// For now, ModuleId is the same as FileId, as each file is exactly a module.
     pub id: ids::FileId,
     pub name: String,
 
-    pub types: hir::TypeArena,
-    pub const_str: hir::ConstantStringArena,
     pub idents: hir::IdentArena,
     pub symbols: hir::SymbolArena,
     pub exprs: hir::ExpressionArena,

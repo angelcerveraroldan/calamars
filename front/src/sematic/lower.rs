@@ -5,7 +5,7 @@ use calamars_core::ids;
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, Symbol, SymbolBuilder, SymbolDec},
+        hir::{self, take_inputs, Symbol, SymbolBuilder, SymbolDec, SymbolKind},
     },
     syntax::{
         ast::{self, Declaration},
@@ -30,12 +30,6 @@ fn lower_str_to_type(s: &str, span: &Span) -> Result<hir::Type, SemanticError> {
     })
 }
 
-/// Lower AST to HIR in two passes:
-/// - Pass A (`declare_symbols_pass`) walks declarations, creates symbols, and fills scopes so uses can
-///   resolve regardless of order.
-/// - Pass B (`attach_body_declaration`) lowers bodies/expressions now that all symbols exist.
-///
-/// This prevents order-dependent resolution errors (e.g., calling a function declared later).
 pub struct HirBuilder {
     pub identifiers: hir::IdentArena,
     pub expressions: hir::ExpressionArena,
@@ -46,8 +40,6 @@ pub struct HirBuilder {
 
     /// Errors, if any are present, we cannot proceed with compilation
     pub diag_err: Vec<SemanticError>,
-    /// Warnings, if any are present, we can still proceed with compilation
-    diag_war: Vec<()>,
 }
 
 impl Default for HirBuilder {
@@ -58,7 +50,6 @@ impl Default for HirBuilder {
             symbols: hir::SymbolArena::new_unchecked(),
             scopes: vec![],
             diag_err: vec![],
-            diag_war: vec![],
         };
         d.push_scope();
         d
@@ -113,6 +104,7 @@ impl HirBuilder {
             ast::Expression::Apply(apply) => self.lower_apply_expr(apply, global_ctx),
             ast::Expression::IfStm(ifstm) => self.lower_if_expr(ifstm, global_ctx),
             ast::Expression::Block(block) => self.lower_block(block, global_ctx),
+            ast::Expression::Error(_) => hir::Expr::Err,
             other => {
                 self.insert_error(SemanticError::NotSupported {
                     msg: "Expression not yet supported",
@@ -163,7 +155,7 @@ impl HirBuilder {
                             .lower_binding_declaration(name, params, body, builder, global_ctx)
                         {
                             Ok(symbol_id) => {
-                                self.insert_symbol_to_current_scope(
+                                let _ = self.insert_symbol_to_current_scope(
                                     name_id,
                                     symbol_id,
                                     name.span(),
@@ -247,7 +239,7 @@ impl HirBuilder {
         if let Some(original) = scope.insert(ident, symbol_id) {
             let original = self.symbols.get_unchecked(original);
             self.insert_error(SemanticError::Redeclaration {
-                original_span: original.span_name_decl,
+                original_span: original.span(),
                 redec_span: span,
             });
         }
@@ -383,29 +375,39 @@ impl HirBuilder {
         let lowered_id = self.lower_ident(declared_name);
         let err_expr =
             self.lower_expression(&ast::Expression::Error(Span::from(0..0)), global_context);
-        let reserved = self.symbols.push(Symbol {
-            ty: lowered_ty,
-            name: lowered_id,
-            span_name_type: name_span,
-            span_name_decl: Span::from(0..0),
-            symbol_declaration: SymbolDec {
+        let symbol_kind = SymbolKind::Defn {
+            span_type: name_span,
+            span_decl: Span::from(0..0),
+            declaration: SymbolDec {
                 inputs: Box::new([]),
                 body: err_expr,
             },
+        };
+        let reserved = self.symbols.push(Symbol {
+            ty: lowered_ty,
+            name: lowered_id,
+            kind: symbol_kind,
         });
-        self.insert_symbol_to_current_scope(lowered_id, reserved, name_span);
+        let _ = self.insert_symbol_to_current_scope(lowered_id, reserved, name_span);
         hir::SymbolBuilder::new(lowered_ty, lowered_id, name_span, None, None, reserved)
     }
 
-    fn finish_builder(
-        &mut self,
-        builder: SymbolBuilder,
-        global_ctx: &mut hir::GlobalContext,
-    ) -> Result<ids::SymbolId, SemanticError> {
+    fn finish_builder(&mut self, builder: SymbolBuilder) -> Result<ids::SymbolId, SemanticError> {
         let symbol = self.symbols.get_unchecked_mut(builder.reserved_spot);
-        symbol.span_name_decl = builder.span_name_decl.unwrap();
-        symbol.symbol_declaration = builder.symbol_declaration.unwrap();
-        Ok(builder.reserved_spot)
+        if let SymbolKind::Defn {
+            span_decl,
+            declaration,
+            ..
+        } = &mut symbol.kind
+        {
+            *span_decl = builder.span_name_decl.unwrap();
+            *declaration = builder.symbol_declaration.unwrap();
+            return Ok(builder.reserved_spot);
+        }
+        Err(SemanticError::InternalError {
+            msg: "finish_builder should only be used to build calamars values",
+            span: symbol.span(),
+        })
     }
 
     fn lower_binding_declaration(
@@ -416,23 +418,46 @@ impl HirBuilder {
         mut builder: SymbolBuilder,
         global_ctx: &mut hir::GlobalContext,
     ) -> Result<ids::SymbolId, SemanticError> {
-        let inputs: Box<[ids::IdentId]> =
-            params.iter().map(|ident| self.lower_ident(ident)).collect();
+        // Lower the inputs to symbols
+        let (input_types, _) = take_inputs(builder.ty, params.len(), global_ctx, name.span())?;
+        let inputs: Box<[ids::SymbolId]> = params
+            .iter()
+            .zip(input_types)
+            .map(|(ident, ty)| {
+                let name = self.lower_ident(ident);
+                let symbol = Symbol {
+                    ty,
+                    name,
+                    kind: SymbolKind::Param { span: ident.span() },
+                };
+                self.symbols.push(symbol)
+            })
+            .collect();
+
+        self.push_scope();
+        // Add inputs to the functions scope
+        for symbol_id in inputs.iter() {
+            let symbol = self.symbols.get_unchecked(*symbol_id);
+            let _ = self.insert_symbol_to_current_scope(symbol.name, *symbol_id, symbol.span());
+        }
         let body = self.lower_expression(body, global_ctx);
+        self.pop_scope();
 
         builder.span_name_decl = Some(name.span());
         builder.symbol_declaration = Some(SymbolDec { inputs, body });
-        self.finish_builder(builder, global_ctx)
+        self.finish_builder(builder)
     }
 
     /// Given some module, lower it and return any errors that were generated along the way
     pub fn lower_module(
-        &mut self,
+        mut self,
         module: &ast::Module,
         id: ids::FileId,
         name: String,
         global_ctx: &mut hir::GlobalContext,
     ) -> hir::Module {
+        let mut roots = vec![];
+
         // Generate the builders from the type declarations
         let mut builders = hashbrown::HashMap::new();
         for declaration in &module.items {
@@ -457,23 +482,35 @@ impl HirBuilder {
             let name_id = self.lower_ident(name);
             let builder = builders.remove(&name_id);
 
-            if let Some(builder) = builder {
-                self.lower_binding_declaration(name, params, body, builder, global_ctx);
-            } else {
-                self.insert_error(SemanticError::TypeMissing {
+            match builder {
+                Some(builder) => {
+                    match self.lower_binding_declaration(name, params, body, builder, global_ctx) {
+                        Ok(symbol_id) => roots.push(symbol_id),
+                        Err(err) => self.insert_error(err),
+                    }
+                }
+                None => self.insert_error(SemanticError::TypeMissing {
                     for_identifier: name.span(),
-                });
+                }),
             }
         }
 
         // these are the ones that had a type declaration but no body
-        for (ident, builder) in builders {
+        for (_, builder) in builders {
             self.insert_error(SemanticError::MissingDeclaration {
                 name: builder.name,
                 type_declaration: builder.span_name_type,
             });
         }
 
-        todo!()
+        hir::Module {
+            id,
+            name,
+            idents: self.identifiers,
+            symbols: self.symbols,
+            exprs: self.expressions,
+            roots: roots.into_boxed_slice(),
+            expression_types: hashbrown::HashMap::new(),
+        }
     }
 }

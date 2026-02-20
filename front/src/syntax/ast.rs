@@ -367,6 +367,10 @@ impl Apply {
         }
     }
 
+    pub fn input(&self) -> &Box<Expression> {
+        &self.input
+    }
+
     pub fn callable(&self) -> &Box<Expression> {
         &self.func
     }
