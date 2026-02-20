@@ -5,7 +5,7 @@ use calamars_core::ids;
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, take_inputs, Symbol, SymbolBuilder, SymbolDec, SymbolKind},
+        hir::{self, Symbol, SymbolBuilder, SymbolDec, SymbolKind, take_inputs},
     },
     syntax::{
         ast::{self, Declaration},
@@ -98,7 +98,7 @@ impl HirBuilder {
         global_ctx: &mut hir::GlobalContext,
     ) -> hir::Expr {
         match expr {
-            ast::Expression::Literal(literal) => self.lower_literal(literal),
+            ast::Expression::Literal(literal) => self.lower_literal(literal, global_ctx),
             ast::Expression::Identifier(ident) => self.lower_identifier_expr(ident),
             ast::Expression::BinaryOp(binary_op) => self.lower_binary_expr(binary_op, global_ctx),
             ast::Expression::Apply(apply) => self.lower_apply_expr(apply, global_ctx),
@@ -193,17 +193,15 @@ impl HirBuilder {
         }
     }
 
-    fn lower_literal(&mut self, literal: &ast::Literal) -> hir::Expr {
+    fn lower_literal(
+        &mut self,
+        literal: &ast::Literal,
+        global_ctx: &mut hir::GlobalContext,
+    ) -> hir::Expr {
         let constant = match literal.kind() {
             ast::LiteralKind::Integer(i) => hir::Const::I64(*i),
             ast::LiteralKind::Boolean(b) => hir::Const::Bool(*b),
-            ast::LiteralKind::String(_s) => {
-                self.insert_error(SemanticError::NotSupported {
-                    msg: "String literals not yet",
-                    span: literal.span(),
-                });
-                return hir::Expr::Err;
-            }
+            ast::LiteralKind::String(s) => hir::Const::String(global_ctx.const_str.intern(s)),
             _ => return hir::Expr::Err,
         };
         hir::Expr::Literal {
