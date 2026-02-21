@@ -234,7 +234,7 @@ impl SymbolBuilder {
 }
 
 /// A symbol such as:
-/// ```
+/// ```txt
 /// foo :: Int
 /// foo = 2
 /// ```

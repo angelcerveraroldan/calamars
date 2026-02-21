@@ -240,7 +240,7 @@ impl<'a> FunctionBuilder<'a> {
     /// When lowering to MIR we will no longer require that functions be
     /// of exactly one input and one output. That is, given the following fn:
     ///
-    /// ```
+    /// ```txt
     /// def add (x : Int) (y : Int) : Int x + y
     /// ```
     ///
