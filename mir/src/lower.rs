@@ -414,7 +414,8 @@ impl<'a> ModuleBuilder<'a> {
             if let SymbolKind::Defn {
                 declaration: SymbolDec { .. },
                 ..
-            } = &symbol.kind {
+            } = &symbol.kind
+            {
                 let id = FunctionId::from(self.function_map.len());
                 self.function_map.insert(symbol.name, id);
             }

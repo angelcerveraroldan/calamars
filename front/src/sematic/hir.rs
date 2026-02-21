@@ -1,6 +1,6 @@
 use calamars_core::{
-    ids::{self, SymbolId},
     MaybeErr,
+    ids::{self, SymbolId},
 };
 use proptest::prelude::Strategy;
 

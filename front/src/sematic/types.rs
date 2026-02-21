@@ -5,7 +5,7 @@ use calamars_core::ids::{self, ExpressionId};
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, take_inputs, type_id_stringify, GlobalContext, ItemId, Type},
+        hir::{self, GlobalContext, ItemId, Type, take_inputs, type_id_stringify},
     },
     syntax::span::Span,
 };

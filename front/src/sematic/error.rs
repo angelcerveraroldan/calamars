@@ -4,7 +4,7 @@ use ariadne::{Color, Fmt, Label};
 use calamars_core::ids;
 
 use crate::{
-    errors::{label_from, PrettyError},
+    errors::{PrettyError, label_from},
     syntax::span::Span,
 };
 
