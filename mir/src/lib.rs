@@ -1,6 +1,6 @@
 //! An intermediate representation for the Calamars programming language
 //!
-//! This shuold be a stable, sugar free represenatation ready to be lowered to
+//! This should be a stable, sugar free representation ready to be lowered to
 //! some other IR such as cranelift.
 //!
 //!
@@ -15,7 +15,7 @@ pub mod lower;
 mod optimizations;
 pub mod printer;
 
-use calamars_core::{Arena, UncheckedArena, ids};
+use calamars_core::{UncheckedArena, ids};
 use front::syntax::span::Span;
 
 use crate::{
@@ -59,7 +59,7 @@ impl calamars_core::Identifier for BlockId {
 
 /// Identifier for an SSA value
 ///
-/// This identifier is local, that is to say ValueId(0) is the first instruction in the wokring
+/// This identifier is local, that is to say ValueId(0) is the first instruction in the working
 /// function.
 #[derive(Copy, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ValueId(usize);
@@ -99,7 +99,7 @@ pub enum Callee {
 pub enum Types {
     Unit,
 
-    I32,
+    I64,
     Bool,
     Char,
     // Later:
@@ -237,7 +237,7 @@ pub enum Terminator {
     /// functions context.
     Return(Option<ValueId>),
     /// Return a function call. This is better than VInstructionKind::Call followed by return,
-    /// since we know that we can use this for tail call optimizatoin.
+    /// since we know that we can use this for tail call optimization.
     Call {
         callee: Callee,
         args: Vec<ValueId>,
@@ -260,7 +260,7 @@ pub enum Terminator {
 ///
 /// Since there may have been de-sugaring, this may not just be a single span
 pub enum Origin {
-    /// No desugaring happened, we know that this is exactly in this part of
+    /// No de-sugaring happened, we know that this is exactly in this part of
     /// the source
     Exact { span: Span },
 }
@@ -274,7 +274,7 @@ pub struct BBlock {
 
 impl BBlock {
     pub fn with_term(&mut self, term: Terminator) -> &mut BBlock {
-        debug_assert!(self.finally.is_none(), "Cannot double-assign a temrinator");
+        debug_assert!(self.finally.is_none(), "Cannot double-assign a terminator");
 
         self.finally = Some(term);
         self

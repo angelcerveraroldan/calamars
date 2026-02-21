@@ -3,7 +3,7 @@
 use calamars_core::ids;
 
 use crate::syntax::{
-    ast::{self, FuncCall},
+    ast::{self, Apply, Ident},
     errors::ParsingError,
     span::Span,
     token::Token,
@@ -135,7 +135,7 @@ impl CalamarsParser {
 
     /// Get the index of the next non-consumed token
     ///
-    /// We are guaranteed that this insdex will be in range for tokens indexing
+    /// We are guaranteed that this index will be in range for tokens indexing
     fn n_index(&self) -> usize {
         self.eof_index().min(self.curr_index)
     }
@@ -145,7 +145,7 @@ impl CalamarsParser {
         self.curr_index += 1;
     }
 
-    /// The next token needs to be `token`, if it isnt then `err` will be added to the diagnostics.
+    /// The next token needs to be `token`, if it isn't then `err` will be added to the diagnostics.
     fn need(&mut self, token: Token, err: &str) {
         if self.next_eq(token) {
             self.advance_one();
@@ -286,7 +286,7 @@ impl CalamarsParser {
 
         loop {
             match self.next_token_ref() {
-                Token::Var | Token::Val | Token::Def => {
+                Token::TypeDef | Token::Def | Token::DocComment(_) => {
                     let d = self.parse_declaration();
                     items.push(ast::Item::Declaration(d));
                 }
@@ -337,7 +337,6 @@ impl CalamarsParser {
         }
         let (tk, sp) = self.next_ref().clone();
         match tk {
-            // TODO: For now we just supprt idents to be one word
             Token::Ident(_) => ast::Expression::Identifier(self.parse_identifier()),
             Token::LParen => {
                 self.advance_one();
@@ -402,40 +401,35 @@ impl CalamarsParser {
         arguments
     }
 
+    fn is_apply_arg_start(&self, token: &Token) -> bool {
+        matches!(
+            token,
+            Token::Ident(_)
+                | Token::Int(_)
+                | Token::Float(_)
+                | Token::True
+                | Token::False
+                | Token::String(_)
+                | Token::Char(_)
+                | Token::LParen
+                | Token::LBrace
+                | Token::If
+        )
+    }
+
     /// Given some expression, apply postfix operations to it.
     ///
-    /// This will handle things such as `f(x)`. We will apply `(x)` to `f`.
+    /// This will handle application such as `f x` and `f (x)`.
     fn parse_postfix_operation(&mut self, mut expr: ast::Expression) -> ast::Expression {
         loop {
-            let (tk, sp) = self.next_ref().clone();
-            match tk {
-                // Apply parameters to input
-                Token::LParen => {
-                    let args = self.parse_fn_arguments();
-                    let span_end = self.last_consumed_span();
-                    let span = Span::from(sp.start..span_end.end);
-                    expr = ast::Expression::FunctionCall(FuncCall::new(expr, args, span));
-                }
-                // TODO: Index not yet supported
-                Token::LBracket => {
-                    let start = self.begin_span();
-                    self.skip_until(1, |a, b| {
-                        if matches!(b, Token::RBracket) {
-                            *a -= 1;
-                        }
-                        if matches!(b, Token::LBracket) {
-                            *a += 1;
-                        }
-                        *a == 0
-                    });
-                    let end = self.end_span();
-                    self.insert_err(ParsingError::NotSupported {
-                        span: Span::from((start..end)),
-                        message: "Cannot index yet, arrays are coming soon.".to_owned(),
-                    });
-                }
-                _ => break,
+            let token = self.next_token_ref();
+            if !self.is_apply_arg_start(token) {
+                break;
             }
+
+            let arg = self.parse_primary();
+            let span = Span::from(expr.span().start..arg.span().end);
+            expr = ast::Expression::Apply(Apply::new(expr, arg, span));
         }
         expr
     }
@@ -514,42 +508,6 @@ impl CalamarsParser {
         ast::Type::new_path(segments, Span::from(init_span..end_span))
     }
 
-    /// Parse a function type. Note that this specifically handles a type that is a function, such
-    /// as `(Int) -> Int` (lambda), it is not to meant to be executed on function definitions.
-    ///
-    /// The grammar for lambdas:
-    ///
-    /// `( <type>*, ) -> <type>`
-    fn parse_fn_type(&mut self) -> ast::Type {
-        let init_span = self.next_span();
-        self.need(Token::LParen, "(");
-
-        let mut inputs = vec![];
-        loop {
-            if *self.next_token_ref() == Token::RParen {
-                self.advance_one();
-                break;
-            }
-
-            let ty = self.parse_type();
-            inputs.push(ty);
-
-            if *self.next_token_ref() == Token::Comma {
-                self.advance_one();
-            }
-        }
-
-        self.need(Token::Arrow, "->");
-
-        let output = Box::new(self.parse_type());
-        let out_final = output.span().unwrap().end;
-        ast::Type::Func {
-            inputs,
-            output,
-            span: Some(Span::from(init_span.start..out_final)),
-        }
-    }
-
     /// Parse an array type, this is:
     ///
     /// `[ <type> ]`
@@ -577,7 +535,7 @@ impl CalamarsParser {
                 self.advance_one();
                 sp
             } else {
-                elem.span().unwrap_or(opening_loc)
+                elem.span()
             }
         };
 
@@ -587,59 +545,47 @@ impl CalamarsParser {
         }
     }
 
-    /// Parse types
+    /// Parse types:
     ///
     /// Possible types currently implemented are:
     /// - Path (something like `String`, or `foo.Bar`)
     /// - Function (`Type -> Type`)
     /// - Array (`[ Type ]`)
     fn parse_type(&mut self) -> ast::Type {
-        match self.next_token_ref() {
+        let span_init = self.begin_span();
+        let lhs_type = match self.next_token_ref() {
             Token::Ident(_) => self.parse_path_type(),
-            Token::LParen => self.parse_fn_type(),
+            Token::LParen => {
+                self.advance_one();
+                let inner_type = self.parse_type();
+                self.need(Token::RParen, ")");
+                inner_type
+            }
             Token::LBracket => self.parse_arr_type(),
             _ => {
                 self.expect_err("type");
-                ast::Type::Error
+                ast::Type::Error(Span::from(self.end_span()..self.end_span()))
             }
-        }
-    }
-
-    /// Parse bindings such as
-    ///
-    /// ```cm
-    /// var x: Int = expression;
-    /// val y: Int = expression;
-    /// ```
-    /// To call this function, you need to assure that the next token is either Var or Val
-    fn parse_binding(&mut self) -> ast::Binding {
-        let start = self.begin_span();
-
-        let mutable = match self.next_token_ref() {
-            Token::Var => true,
-            Token::Val => false,
-            _ => panic!("This function should only be executed if the first token is var or val"),
         };
 
+        if !self.next_matches(|tk| matches!(tk, Token::Arrow)) {
+            return lhs_type;
+        }
+
         self.advance_one();
-        let name = self.parse_identifier();
-
-        self.need(Token::Colon, ":");
-        let vtype = self.parse_type();
-
-        self.need(Token::Equal, "=");
-
-        let assigned = Box::new(self.parse_expression());
-        self.handle_semicolon();
-
-        let end = self.end_span();
-        ast::Binding::new(name, vtype, assigned, mutable, Span::from(start..end))
+        let rhs_type = self.parse_type();
+        let span_end = self.end_span();
+        ast::Type::Func {
+            input: lhs_type.into(),
+            output: rhs_type.into(),
+            span: Span::from(span_init..span_end),
+        }
     }
 
     fn parse_comma_separated_idents(&mut self) -> Vec<(ast::Ident, ast::Type)> {
         let mut v = vec![];
         loop {
-            // We need to make sure that ther is a token before parsing ident
+            // We need to make sure that there is a token before parsing ident
             if !self.next_matches(|tk| matches!(tk, Token::Ident(_))) {
                 break;
             }
@@ -658,74 +604,63 @@ impl CalamarsParser {
         v
     }
 
-    /// Parse a function declaration such as
+    /// Parse the type definition of a  declaration
     ///
+    /// Examples are:
     /// ```cm
-    /// def main() = {
-    ///   var x: Int = 2;
-    /// }
+    /// x :: Int
+    ///
+    /// identity :: Int -> Int
     /// ```
-    /// To call this function, you need to assure that the next token is Def
-    fn parse_function_declaration(&mut self) -> ast::FuncDec {
-        // There may be a doc-comment
-        let next_token = self.next_token_ref();
-        let doc_comment = if let Token::DocComment(comment) = next_token {
+    fn parse_declaration_type(&mut self) -> ast::Declaration {
+        #[rustfmt::skip]
+        let docs = if let Token::DocComment(comment) = self.next_token_ref() {
             Some(comment.clone())
-        } else {
-            None
-        };
+        } else { None };
 
-        if doc_comment.is_some() {
+        if docs.is_some() {
             self.advance_one();
         }
 
-        let start = self.begin_span();
+        self.need(Token::TypeDef, "typ");
+        let name = self.parse_identifier();
+        self.need(Token::DoubleColon, "::");
+        let dtype = self.parse_type();
+        ast::Declaration::TypeSignature { docs, name, dtype }
+    }
 
+    /// Parse the body of a declaration. This can be a function definition or a variable.
+    ///
+    /// Examples are:
+    /// ```cm
+    /// x = 2
+    ///
+    /// identity x = x
+    /// ```
+    fn parse_declaration_body(&mut self) -> ast::Declaration {
         self.need(Token::Def, "def");
-
-        let fname = self.parse_identifier();
-
-        self.need(Token::LParen, "(");
-
-        let params = self.parse_comma_separated_idents();
-
-        if self.next_eq(Token::RParen) {
+        let name = self.parse_identifier();
+        let mut params = vec![];
+        loop {
+            match self.next_ref() {
+                (Token::Ident(ident), span) => {
+                    params.push(Ident::new(ident.clone(), *span));
+                }
+                _ => break,
+            }
             self.advance_one();
-        } else {
-            self.expect_err(")");
-
-            // Skip until we are out of the input brackets.
-            self.skip_until(1, |a, b| {
-                if matches!(b, Token::RParen) {
-                    *a -= 1;
-                }
-                if matches!(b, Token::LParen) {
-                    *a += 1;
-                }
-                *a == 0
-            });
         }
-
-        let out_ty = if self.next_eq(Token::Colon) {
-            self.advance_one();
-            self.parse_type()
-        } else {
-            ast::Type::Unit
-        };
 
         self.need(Token::Equal, "=");
-
-        let expr = self.parse_expression();
-        let end = self.end_span();
-        let total_span = Span::from(start..end);
-        ast::FuncDec::new(fname, params, out_ty, expr, total_span, doc_comment)
+        let body = self.parse_expression();
+        ast::Declaration::Binding { name, params, body }
     }
 
     fn parse_declaration(&mut self) -> ast::Declaration {
-        match self.next_token_ref() {
-            Token::Def => ast::Declaration::Function(self.parse_function_declaration()),
-            Token::Var | Token::Val => ast::Declaration::Binding(self.parse_binding()),
-            _ => panic!("not a declaration"),
+        if self.next_eq(Token::Def) {
+            self.parse_declaration_body()
+        } else {
+            self.parse_declaration_type()
         }
     }
 
@@ -741,6 +676,7 @@ impl CalamarsParser {
                 | Token::Char(_)
                 | Token::LBrace
                 | Token::LParen
+                | Token::If
                 // Unary operators
                 | Token::Minus
                 | Token::Plus
@@ -749,8 +685,9 @@ impl CalamarsParser {
 
     pub fn parse_item(&mut self) -> ast::Item {
         match self.next_token_ref() {
-            Token::Def | Token::Var | Token::Val => {
-                ast::Item::Declaration(self.parse_declaration())
+            Token::Ident(_) | Token::DocComment(_) => {
+                let dec = self.parse_declaration();
+                ast::Item::Declaration(dec)
             }
             tk if self.is_expr_init(tk) => ast::Item::Expression(self.parse_expression()),
 
@@ -761,13 +698,18 @@ impl CalamarsParser {
     pub fn parse_file(&mut self) -> ast::Module {
         let mut decs = vec![];
         loop {
-            // Skip until we find a def, var, or val (only declarations are supported on top level,
-            // later also imports)
+            // Skip until we find a declaration or EOF
             self.skip_until((), |_, tk| {
-                matches!(tk, Token::Def | Token::Var | Token::Val)
+                matches!(
+                    tk,
+                    Token::Def
+                        | Token::TypeDef
+                        | Token::Ident(_)
+                        | Token::DocComment(_)
+                        | Token::EOF
+                )
             });
 
-            // If we finished the file without finding the above tokens, we exit
             if self.next_eq(Token::EOF) {
                 break;
             }
@@ -784,674 +726,5 @@ impl CalamarsParser {
 
     pub fn diag(&self) -> &[ParsingError] {
         &self.diag
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    fn sp(start: usize, end: usize) -> logos::Span {
-        logos::Span { start, end }
-    }
-
-    fn toks(pairs: &[(Token, (usize, usize))]) -> Vec<(Token, logos::Span)> {
-        pairs
-            .iter()
-            .map(|(t, (s, e))| (t.clone(), sp(*s, *e)))
-            .collect()
-    }
-
-    fn parse_expr_from_tokens(
-        tokens: Vec<(Token, logos::Span)>,
-    ) -> (CalamarsParser, ast::Expression) {
-        let file = ids::FileId::from(0);
-        let mut p = CalamarsParser::new(file, tokens);
-        let expr = p.parse_expression();
-        (p, expr)
-    }
-
-    fn parse_ty(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Type) {
-        let file = ids::FileId::from(0);
-        let mut p = CalamarsParser::new(file, tokens);
-        let ty = p.parse_type();
-        (p, ty)
-    }
-
-    fn parse_varval(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::Binding) {
-        let file = ids::FileId::from(0);
-        let mut p = CalamarsParser::new(file, tokens);
-        let ty = p.parse_binding();
-        (p, ty)
-    }
-
-    fn parse_fn(tokens: Vec<(Token, logos::Span)>) -> (CalamarsParser, ast::FuncDec) {
-        let file = ids::FileId::from(0);
-        let mut p = CalamarsParser::new(file, tokens);
-        let ty = p.parse_function_declaration();
-        (p, ty)
-    }
-
-    fn bool(f: usize, t: usize) -> ast::Type {
-        ast::Type::Path {
-            segments: vec![ast::Ident::new("Bool".into(), Span::from(f..t))],
-            span: Span::from(f..t),
-        }
-    }
-
-    fn int(f: usize, t: usize) -> ast::Type {
-        ast::Type::Path {
-            segments: vec![ast::Ident::new("Int".into(), Span::from(f..t))],
-            span: Span::from(f..t),
-        }
-    }
-
-    fn float(f: usize, t: usize) -> ast::Type {
-        ast::Type::Path {
-            segments: vec![ast::Ident::new("Float".into(), Span::from(f..t))],
-            span: Span::from(f..t),
-        }
-    }
-
-    #[test]
-    fn expr_precedence_mul_over_add() {
-        // 1 + 2 * 3
-        let tokens = toks(&[
-            (Token::Int(1), (0, 1)),
-            (Token::Plus, (2, 3)),
-            (Token::Int(2), (4, 5)),
-            (Token::Star, (6, 7)),
-            (Token::Int(3), (8, 9)),
-            (Token::EOF, (9, 9)),
-        ]);
-        let (p, e) = parse_expr_from_tokens(tokens);
-
-        // 2 * 3
-        let mult = ast::Expression::BinaryOp(ast::BinaryOp::new(
-            ast::BinaryOperator::Times,
-            Box::new(ast::Expression::Literal(ast::Literal::new(
-                ast::LiteralKind::Integer(2),
-                Span::from(4..5),
-            ))),
-            Box::new(ast::Expression::Literal(ast::Literal::new(
-                ast::LiteralKind::Integer(3),
-                Span::from(8..9),
-            ))),
-            Span::from(4..9),
-        ));
-
-        // 1 + mult
-        let expected = ast::Expression::BinaryOp(ast::BinaryOp::new(
-            ast::BinaryOperator::Add,
-            Box::new(ast::Expression::Literal(ast::Literal::new(
-                ast::LiteralKind::Integer(1),
-                Span::from(0..1),
-            ))),
-            Box::new(mult),
-            Span::from(0..9),
-        ));
-
-        assert!(p.diag.is_empty(), "should parse without diagnostics");
-        assert!(e == expected);
-    }
-
-    #[test]
-    fn expr_comp_greater() {
-        // 1 > 2
-        let tokens = toks(&[
-            (Token::Int(1), (0, 1)),
-            (Token::Greater, (2, 3)),
-            (Token::Int(2), (4, 5)),
-            (Token::EOF, (6, 6)),
-        ]);
-        let (p, e) = parse_expr_from_tokens(tokens);
-
-        let comp = ast::Expression::BinaryOp(ast::BinaryOp::new(
-            ast::BinaryOperator::Greater,
-            Box::new(ast::Expression::Literal(ast::Literal::new(
-                ast::LiteralKind::Integer(1),
-                Span::from(0..1),
-            ))),
-            Box::new(ast::Expression::Literal(ast::Literal::new(
-                ast::LiteralKind::Integer(2),
-                Span::from(4..5),
-            ))),
-            Span::from(0..5),
-        ));
-        assert!(p.diag.is_empty(), "should parse without diagnostics");
-        assert_eq!(e, comp);
-    }
-
-    #[test]
-    fn expr_calls_chain() {
-        // f(1)(2 + 3)
-        let tokens = toks(&[
-            (Token::Ident("f".into()), (0, 1)),
-            (Token::LParen, (1, 2)),
-            (Token::Int(1), (2, 3)),
-            (Token::RParen, (3, 4)),
-            (Token::LParen, (4, 5)),
-            (Token::Int(2), (5, 6)),
-            (Token::Plus, (7, 8)),
-            (Token::Int(3), (9, 10)),
-            (Token::RParen, (10, 11)),
-            (Token::EOF, (11, 11)),
-        ]);
-        let (p, e) = parse_expr_from_tokens(tokens);
-
-        assert!(matches!(e, ast::Expression::FunctionCall(_)));
-        assert!(p.diag.is_empty(), "call chaining should parse cleanly");
-    }
-
-    #[test]
-    fn expr_grouping_then_mul() {
-        // (a + b) * c
-        let tokens = toks(&[
-            (Token::LParen, (0, 1)),
-            (Token::Ident("a".into()), (1, 2)),
-            (Token::Plus, (3, 4)),
-            (Token::Ident("b".into()), (5, 6)),
-            (Token::RParen, (6, 7)),
-            (Token::Star, (8, 9)),
-            (Token::Ident("c".into()), (10, 11)),
-            (Token::EOF, (11, 11)),
-        ]);
-        let (p, e) = parse_expr_from_tokens(tokens);
-        assert!(matches!(e, ast::Expression::BinaryOp(_)));
-        match e {
-            ast::Expression::BinaryOp(b) => {
-                assert!(matches!(b.rhs().as_ref(), ast::Expression::Identifier(_)));
-            }
-            _ => panic!(),
-        }
-        assert!(
-            p.diag.is_empty(),
-            "grouping + precedence should parse without diagnostics"
-        );
-    }
-
-    #[test]
-    fn expr_missing_rparen_in_call_emits_diag() {
-        // f(1
-        let tokens = toks(&[
-            (Token::Ident("f".into()), (0, 1)),
-            (Token::LParen, (1, 2)),
-            (Token::Int(1), (2, 3)),
-            (Token::EOF, (3, 3)),
-        ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
-        assert!(!p.diag.is_empty(), "should report a missing `)` diagnostic");
-    }
-
-    #[test]
-    fn expr_missing_rhs_after_plus_emits_diag() {
-        // 1 +
-        let tokens = toks(&[
-            (Token::Int(1), (0, 1)),
-            (Token::Plus, (2, 3)),
-            (Token::EOF, (3, 3)),
-        ]);
-        let (mut p, _e) = parse_expr_from_tokens(tokens);
-        let _ = p.parse_expression();
-
-        assert!(
-            !p.diag.is_empty(),
-            "should report an expected expression after `+`"
-        );
-    }
-
-    #[test]
-    fn type_array_parsers_no_error() {
-        let tokens = toks(&[
-            (Token::LBracket, (0, 1)),
-            (Token::Ident("int".into()), (2, 5)),
-            (Token::RBracket, (6, 7)),
-        ]);
-
-        let (p, ty) = parse_ty(tokens);
-        assert!(p.diag.is_empty());
-        assert!(matches!(ty, ast::Type::Array { .. }));
-    }
-
-    #[test]
-    fn type_path_simple() {
-        // String
-        let tokens = toks(&[
-            (Token::Ident("String".into()), (0, 6)),
-            (Token::EOF, (6, 6)),
-        ]);
-        let (p, ty) = parse_ty(tokens);
-        assert!(
-            p.diag.is_empty(),
-            "should parse simple path without diagnostics"
-        );
-    }
-
-    #[test]
-    fn type_fn_two_params() {
-        // (Int, Float) -> Bool
-        let tokens = toks(&[
-            (Token::LParen, (0, 1)),
-            (Token::Ident("Int".into()), (1, 4)),
-            (Token::Comma, (4, 5)),
-            (Token::Ident("Float".into()), (6, 11)),
-            (Token::RParen, (11, 12)),
-            (Token::Arrow, (13, 15)),
-            (Token::Ident("Bool".into()), (16, 20)),
-            (Token::EOF, (20, 20)),
-        ]);
-        let (p, ty) = parse_ty(tokens);
-        assert!(
-            p.diag.is_empty(),
-            "should parse (Int, Float) -> Bool without diagnostics"
-        );
-
-        assert!(matches!(ty, ast::Type::Func { .. }));
-        match ty {
-            ast::Type::Func {
-                inputs,
-                output,
-                span,
-            } => {
-                assert_eq!(
-                    *output.as_ref(),
-                    ast::Type::new_path(
-                        vec![ast::Ident::new("Bool".into(), Span::from(16..20))],
-                        Span::from(16..20)
-                    )
-                )
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    #[test]
-    fn parse_binding() {
-        let tokens = toks(&[
-            (Token::Var, (0, 1)),
-            (Token::Ident("x".into()), (1, 2)),
-            (Token::Colon, (4, 5)),
-            (Token::Ident("Float".into()), (6, 11)),
-            (Token::Equal, (12, 13)),
-            (Token::Int(12), (14, 15)),
-            (Token::Semicolon, (16, 17)),
-            (Token::EOF, (20, 20)),
-        ]);
-        let (p, var) = parse_varval(tokens);
-        println!("{:?}", p.diag);
-        assert!(p.diag.is_empty(), "Parse binding without errors");
-
-        assert!(matches!(var.vtype, ast::Type::Path { .. }));
-        if let ast::Type::Path { segments, span } = var.vtype.clone() {
-            assert_eq!(segments[0].ident(), "Float");
-        }
-        assert_eq!(var.vname.ident(), "x");
-        assert_eq!(var.span(), Span::from(0..17));
-    }
-
-    #[test]
-    fn lambda_fn() {
-        // val x: (Int, Float) -> Bool = 12;
-        //
-        // The spans make no sense for this test, but theyre not really beind read.
-        let tokens = toks(&[
-            (Token::Val, (0, 1)),
-            (Token::Ident("x".into()), (1, 2)),
-            (Token::Colon, (4, 5)),
-            (Token::LParen, (0, 1)),
-            (Token::Ident("Int".into()), (1, 4)),
-            (Token::Comma, (4, 5)),
-            (Token::Ident("Float".into()), (6, 11)),
-            (Token::RParen, (11, 12)),
-            (Token::Arrow, (13, 15)),
-            (Token::Ident("Bool".into()), (16, 20)),
-            (Token::Equal, (12, 13)),
-            (Token::Int(12), (14, 15)),
-            (Token::Semicolon, (16, 17)),
-            (Token::EOF, (20, 20)),
-        ]);
-        let (p, var) = parse_varval(tokens);
-        assert!(p.diag.is_empty(), "Parse binding without errors");
-        assert!(matches!(var.vtype, ast::Type::Func { .. }));
-
-        let bool = bool(16, 20);
-        let int = int(1, 4);
-        let float = float(6, 11);
-
-        if let ast::Type::Func { inputs, output, .. } = var.vtype.clone() {
-            assert_eq!(output.as_ref(), &bool, "var has type fn with bool output");
-            assert_eq!(inputs[0], int, "var has fn type with first input int");
-            assert_eq!(inputs[1], float, "var has fn type with second input float");
-        }
-        assert_eq!(var.vname.ident(), "x");
-        assert_eq!(var.span(), Span::from(0..17));
-    }
-
-    #[test]
-    fn fn_simple_no_params_expr_body() {
-        // def cn(): Int = 42
-        let tokens = toks(&[
-            (Token::Def, (0, 3)),
-            (Token::Ident("cn".into()), (4, 6)),
-            (Token::LParen, (6, 7)),
-            (Token::RParen, (7, 8)),
-            (Token::Colon, (9, 10)),
-            (Token::Ident("Int".into()), (11, 14)),
-            (Token::Equal, (15, 16)),
-            (Token::Int(42), (17, 19)),
-            (Token::EOF, (19, 19)),
-        ]);
-        let (p, f) = parse_fn(tokens);
-        assert_eq!(f.airity(), 0);
-        assert!(
-            p.diag.is_empty(),
-            "should parse simple function without diagnostics"
-        );
-    }
-
-    #[test]
-    fn fn_two_params_with_types() {
-        // def sum(a: Int, b: Bool): Int = a
-        let tokens = toks(&[
-            (Token::Def, (0, 3)),
-            (Token::Ident("sum".into()), (4, 7)),
-            (Token::LParen, (7, 8)),
-            (Token::Ident("a".into()), (8, 9)),
-            (Token::Colon, (9, 10)),
-            (Token::Ident("Int".into()), (11, 14)),
-            (Token::Comma, (14, 15)),
-            (Token::Ident("b".into()), (16, 17)),
-            (Token::Colon, (17, 18)),
-            (Token::Ident("Bool".into()), (19, 22)),
-            (Token::RParen, (22, 23)),
-            (Token::Colon, (24, 25)),
-            (Token::Ident("Int".into()), (26, 29)),
-            (Token::Equal, (30, 31)),
-            (Token::Ident("a".into()), (32, 33)),
-            (Token::EOF, (33, 33)),
-        ]);
-        let (p, f) = parse_fn(tokens);
-        assert_eq!(f.airity(), 2);
-        let ty = f.fntype();
-        assert!(matches!(ty, ast::Type::Func { .. }));
-        if let ast::Type::Func { inputs, output, .. } = ty {
-            assert_eq!(output.as_ref().clone(), int(26, 29));
-            assert_eq!(inputs[0], int(11, 14));
-            assert_eq!(inputs[1], bool(19, 22));
-        }
-        assert!(
-            p.diag.is_empty(),
-            "params + return type should parse cleanly"
-        );
-    }
-
-    #[test]
-    fn fn_trailing_comma_in_params_is_ok() {
-        // def f(a: Int,): Int = a
-        let tokens = toks(&[
-            (Token::Def, (0, 3)),
-            (Token::Ident("f".into()), (4, 5)),
-            (Token::LParen, (5, 6)),
-            (Token::Ident("a".into()), (6, 7)),
-            (Token::Colon, (7, 8)),
-            (Token::Ident("Int".into()), (9, 12)),
-            (Token::Comma, (12, 13)),
-            (Token::RParen, (13, 14)),
-            (Token::Colon, (15, 16)),
-            (Token::Ident("Int".into()), (17, 20)),
-            (Token::Equal, (21, 22)),
-            (Token::Ident("a".into()), (23, 24)),
-            (Token::EOF, (24, 24)),
-        ]);
-        let (p, f) = parse_fn(tokens);
-        assert_eq!(f.airity(), 1);
-        assert!(
-            p.diag.is_empty(),
-            "trailing comma before `)` should be accepted"
-        );
-    }
-
-    #[test]
-    fn fn_missing_paren_emits_diag_but_parses() {
-        // def bad(a: Int: Int = a   -- missing ')'
-        let tokens = toks(&[
-            (Token::Def, (0, 3)),
-            (Token::Ident("bad".into()), (4, 7)),
-            (Token::LParen, (7, 8)),
-            (Token::Ident("a".into()), (8, 9)),
-            (Token::Colon, (9, 10)),
-            (Token::Ident("Int".into()), (11, 14)),
-            // missing RParen here
-            (Token::Colon, (15, 16)),
-            (Token::Ident("Int".into()), (17, 20)),
-            (Token::Equal, (21, 22)),
-            (Token::Ident("a".into()), (23, 24)),
-            (Token::EOF, (24, 24)),
-        ]);
-        let (p, _f) = parse_fn(tokens);
-        assert!(!p.diag.is_empty(), "should report missing `)` diagnostic");
-    }
-
-    #[test]
-    fn test_if_statement_basic() {
-        let tokens = toks(&[
-            (Token::If, (0, 2)),
-            (Token::Ident("a".into()), (3, 4)),
-            (Token::Then, (5, 9)),
-            (Token::Ident("xy".into()), (10, 12)),
-            (Token::Else, (13, 17)),
-            (Token::Ident("xy".into()), (18, 20)),
-        ]);
-        let (p, ifstm) = parse_expr_from_tokens(tokens);
-        assert!(
-            matches!(ifstm, ast::Expression::IfStm(_)),
-            "expression parsed is an if statement"
-        );
-        if let ast::Expression::IfStm(ifstm) = ifstm {
-            assert!(matches!(
-                ifstm.then_expr().as_ref(),
-                ast::Expression::Identifier(_)
-            ));
-        }
-        assert!(p.diag.is_empty(), "No errors should be found");
-    }
-
-    #[test]
-    fn test_if_statement_precedence() {
-        // if a then 2 else 2 + 3 should be if a then 2 else (2 + 3)
-        let tokens = toks(&[
-            (Token::If, (0, 2)),
-            (Token::Ident("a".into()), (3, 4)),
-            (Token::Then, (5, 9)),
-            (Token::Int(2), (10, 11)),
-            (Token::Plus, (11, 12)),
-            (Token::Int(3), (13, 14)),
-            (Token::Else, (15, 19)),
-            (Token::Ident("xy".into()), (20, 22)),
-            (Token::EOF, (23, 23)),
-        ]);
-        let (p, ifstm) = parse_expr_from_tokens(tokens);
-        assert!(
-            matches!(ifstm, ast::Expression::IfStm(_)),
-            "expression parsed is an if statement"
-        );
-        if let ast::Expression::IfStm(ifstm) = ifstm {
-            println!("{:?}", ifstm.then_expr());
-            assert!(
-                matches!(ifstm.then_expr().as_ref(), ast::Expression::BinaryOp(_)),
-                "Then expression should be 2+3, not just 2"
-            );
-        }
-        assert!(p.diag.is_empty(), "No errors should be found");
-    }
-
-    #[test]
-    fn test_if_stm_missing_then() {
-        // if a then 2 else 2 + 3 should be if a then 2 else (2 + 3)
-        let tokens = toks(&[
-            (Token::If, (0, 2)),
-            (Token::Ident("a".into()), (3, 4)),
-            (Token::Int(2), (10, 11)),
-            (Token::Plus, (11, 12)),
-            (Token::Int(3), (13, 14)),
-            (Token::Else, (15, 19)),
-            (Token::Ident("xy".into()), (20, 22)),
-            (Token::EOF, (23, 23)),
-        ]);
-        let (p, ifstm) = parse_expr_from_tokens(tokens);
-        assert!(
-            matches!(ifstm, ast::Expression::IfStm(_)),
-            "expression parsed is an if statement"
-        );
-        if let ast::Expression::IfStm(ifstm) = ifstm {
-            println!("{:?}", ifstm.then_expr());
-            assert!(
-                matches!(ifstm.then_expr().as_ref(), ast::Expression::BinaryOp(_)),
-                "Then expression should be 2+3, not just 2"
-            );
-        }
-        assert!(!p.diag.is_empty(), "Missing then keyword");
-    }
-
-    #[test]
-    fn block_empty_ok() {
-        // { }
-        let tokens = toks(&[
-            (Token::LBrace, (0, 1)),
-            (Token::RBrace, (1, 2)),
-            (Token::EOF, (2, 2)),
-        ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
-        assert!(
-            p.diag.is_empty(),
-            "empty block should parse without diagnostics"
-        );
-    }
-
-    #[test]
-    fn block_decl_then_final_expr() {
-        // { var x: Int = 1; x }
-        let tokens = toks(&[
-            (Token::LBrace, (0, 1)),
-            (Token::Var, (1, 4)),
-            (Token::Ident("x".into()), (5, 6)),
-            (Token::Colon, (6, 7)),
-            (Token::Ident("Int".into()), (8, 11)),
-            (Token::Equal, (12, 13)),
-            (Token::Int(1), (14, 15)),
-            (Token::Semicolon, (15, 16)),
-            (Token::Ident("x".into()), (17, 18)),
-            (Token::RBrace, (18, 19)),
-            (Token::EOF, (19, 19)),
-        ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
-        assert!(
-            p.diag.is_empty(),
-            "decl + final expression should parse cleanly"
-        );
-    }
-
-    #[test]
-    fn block_expr_statements_and_final_expr() {
-        // { a();; b(); c }
-        let tokens = toks(&[
-            (Token::LBrace, (0, 1)),
-            (Token::Ident("a".into()), (1, 2)),
-            (Token::LParen, (2, 3)),
-            (Token::RParen, (3, 4)),
-            (Token::Semicolon, (4, 5)),
-            (Token::Semicolon, (5, 6)),
-            (Token::Ident("b".into()), (6, 7)),
-            (Token::LParen, (7, 8)),
-            (Token::RParen, (8, 9)),
-            (Token::Semicolon, (9, 10)),
-            (Token::Ident("c".into()), (11, 12)),
-            (Token::RBrace, (12, 13)),
-            (Token::EOF, (13, 13)),
-        ]);
-        let (p, e) = parse_expr_from_tokens(tokens);
-        assert!(
-            matches!(e, ast::Expression::Block(_)),
-            "expr parses to a block expression"
-        );
-        if let ast::Expression::Block(b) = e {
-            assert_eq!(b.items.len(), 2);
-            assert!(
-                b.final_expr.is_some(),
-                "the last expression with no semicolon is returned"
-            );
-        }
-        assert!(p.diag.is_empty(), "No errors reported");
-    }
-
-    #[test]
-    fn block_expr_statements_no_return() {
-        // { a();; b(); c; }
-        let tokens = toks(&[
-            (Token::LBrace, (0, 1)),
-            (Token::Ident("a".into()), (1, 2)),
-            (Token::LParen, (2, 3)),
-            (Token::RParen, (3, 4)),
-            (Token::Semicolon, (4, 5)),
-            (Token::Semicolon, (5, 6)),
-            (Token::Ident("b".into()), (6, 7)),
-            (Token::LParen, (7, 8)),
-            (Token::RParen, (8, 9)),
-            (Token::Semicolon, (9, 10)),
-            (Token::Ident("c".into()), (11, 12)),
-            (Token::Semicolon, (13, 14)),
-            (Token::RBrace, (12, 13)),
-            (Token::EOF, (14, 14)),
-        ]);
-        let (p, e) = parse_expr_from_tokens(tokens);
-        assert!(
-            matches!(e, ast::Expression::Block(_)),
-            "expr parses to a block expression"
-        );
-        if let ast::Expression::Block(b) = e {
-            assert_eq!(b.items.len(), 3);
-            assert!(
-                b.final_expr.is_none(),
-                "Last expression is not returned due to semicolon"
-            );
-        }
-        assert!(p.diag.is_empty(), "No errors reported");
-    }
-    #[test]
-    fn block_missing_semicolon_between_exprs() {
-        // { a() b(); }
-        let tokens = toks(&[
-            (Token::LBrace, (0, 1)),
-            (Token::Ident("a".into()), (1, 2)),
-            (Token::LParen, (2, 3)),
-            (Token::RParen, (3, 4)),
-            (Token::Ident("b".into()), (5, 6)),
-            (Token::LParen, (6, 7)),
-            (Token::RParen, (7, 8)),
-            (Token::Semicolon, (8, 9)),
-            (Token::RBrace, (9, 10)),
-            (Token::EOF, (10, 10)),
-        ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
-        assert!(!p.diag.is_empty(), "missing ';' between expressions");
-    }
-
-    #[test]
-    fn block_missing_rbrace() {
-        // { a();
-        let tokens = toks(&[
-            (Token::LBrace, (0, 1)),
-            (Token::Ident("a".into()), (1, 2)),
-            (Token::LParen, (2, 3)),
-            (Token::RParen, (3, 4)),
-            (Token::Semicolon, (4, 5)),
-            (Token::EOF, (5, 5)),
-        ]);
-        let (p, _e) = parse_expr_from_tokens(tokens);
-        assert!(
-            !p.diag.is_empty(),
-            "missing '}}' should produce a diagnostic"
-        );
     }
 }

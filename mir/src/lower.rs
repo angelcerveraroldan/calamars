@@ -1,15 +1,14 @@
 //! Lower HIR to MIR
-//! p
 
 use calamars_core::{
     Identifier, UncheckedArena,
-    ids::{self, ExpressionId, SymbolId, TypeId},
+    ids::{self, ExpressionId, SymbolId},
 };
-use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolKind};
+use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolDec, SymbolKind};
 
 use crate::{
-    BBlock, BinaryOperator, BlockId, Function, FunctionId, Module, VInstruct, VInstructionKind,
-    ValueId, errors::MirErrors,
+    BBlock, BinaryOperator, BlockId, Callee, Function, FunctionId, Module, VInstruct,
+    VInstructionKind, ValueId, errors::MirErrors,
 };
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
@@ -188,7 +187,6 @@ impl<'a> FunctionBuilder<'a> {
         items: &Box<[ItemId]>,
         expr: &Option<ids::ExpressionId>,
     ) -> MirRes<(ValueId, BlockId)> {
-        // Todo: How do we lower the items ... ?
         for i in items {
             match i {
                 ItemId::Expr(expression_id) => {
@@ -196,11 +194,16 @@ impl<'a> FunctionBuilder<'a> {
                 }
                 ItemId::Symbol(symbol_id) => {
                     let x = self.ctx.symbols.get_unchecked(*symbol_id).kind.clone();
-                    if let SymbolKind::Variable { body, .. } = x {
+                    if let SymbolKind::Defn {
+                        declaration: SymbolDec { inputs, body },
+                        ..
+                    } = x
+                        && inputs.is_empty()
+                    {
                         let (v, _) = self.lower_expression_from_id(&body)?;
                         self.locals.insert(*symbol_id, v);
                     } else {
-                        panic!("Only variables are supported in non-return block items");
+                        panic!("Function declarations are not allowed in blocks yet, sorry :(");
                     }
                 }
             }
@@ -234,6 +237,74 @@ impl<'a> FunctionBuilder<'a> {
         self.lower_expression(ty, expression)
     }
 
+    /// When lowering to MIR we will no longer require that functions be
+    /// of exactly one input and one output. That is, given the following fn:
+    ///
+    /// ```txt
+    /// def add (x : Int) (y : Int) : Int x + y
+    /// ```
+    ///
+    /// When we call `add 2 3`, which in the HIR is interpreted as `(add 2) 3`
+    /// we will lower it to a single function call, not 2 of them.
+    ///
+    /// For now, we have a few restrictions:
+    /// 1. We will never save intermediary values (i.e. z = add 2 is invalid)
+    ///
+    /// The restrictions will grow and shrink, but ultimately, we need them all
+    /// gone relatively soon.
+    ///
+    /// Returns: (function we are calling, inputs in order)
+    /// add 2 3 |-> (add, [2, 3])
+    fn flatten_function_calls(
+        &self,
+        f: &ExpressionId,
+        input: &ExpressionId,
+    ) -> (SymbolId, Vec<ExpressionId>) {
+        match self.ctx.exprs.get_unchecked(*f) {
+            hir::Expr::Call {
+                f,
+                input: nested_input,
+                ..
+            } => {
+                let (callee, mut inputs) = self.flatten_function_calls(f, nested_input);
+                inputs.push(*input);
+                (callee, inputs)
+            }
+            hir::Expr::Identifier { id, .. } => (*id, vec![*input]),
+            _ => todo!(),
+        }
+    }
+
+    fn emit_function_call(
+        &mut self,
+        f: &ExpressionId,
+        input: &ExpressionId,
+    ) -> MirRes<(ValueId, BlockId)> {
+        let (fn_symbol_id, inputs) = self.flatten_function_calls(f, input);
+        let fn_symbol = self.ctx.symbols.get_unchecked(fn_symbol_id);
+        let fn_ident = fn_symbol.name;
+        let fn_id = self.function_map.get(&fn_ident).expect("Did not lower fn");
+        let callee = crate::Callee::Function(*fn_id);
+
+        let mut args = Vec::with_capacity(inputs.len());
+        for i in inputs.iter() {
+            let (v, _) = self.lower_expression_from_id(i)?;
+            args.push(v);
+        }
+
+        let return_ty = *self
+            .ctx
+            .expression_types
+            .get(f)
+            .expect("function expression should have had a type ...");
+
+        self.emit(VInstructionKind::Call {
+            callee,
+            args,
+            return_ty,
+        })
+    }
+
     /// Given some expression, turn it into a series of instructions, and return the ValueId where
     /// the result of the expression is.
     fn lower_expression(
@@ -242,7 +313,7 @@ impl<'a> FunctionBuilder<'a> {
         expression: &hir::Expr,
     ) -> MirRes<(ValueId, BlockId)> {
         match expression {
-            // When we load an identifier, dont generate new instructions
+            // When we load an identifier, don't generate new instructions
             hir::Expr::Identifier { id, .. } => {
                 let vid = self
                     .locals
@@ -264,35 +335,7 @@ impl<'a> FunctionBuilder<'a> {
             hir::Expr::Block {
                 items, final_expr, ..
             } => self.emit_block(ty, items, final_expr),
-            hir::Expr::Call { f, inputs, .. } => {
-                let return_ty = *self
-                    .ctx
-                    .expression_types
-                    .get(f)
-                    .expect("function expression should have had a type ...");
-
-                let fn_symbolid = match self.ctx.exprs.get_unchecked(*f) {
-                    hir::Expr::Identifier { id, .. } => id,
-                    _ => todo!(),
-                };
-
-                let fn_symbol = self.ctx.symbols.get_unchecked(*fn_symbolid);
-                let fn_ident = fn_symbol.ident_id();
-                let fn_id = self.function_map.get(&fn_ident).expect("Did not lower fn");
-                let callee = crate::Callee::Function(*fn_id);
-
-                let mut args = Vec::with_capacity(inputs.len());
-                for i in inputs.iter() {
-                    let (v, _) = self.lower_expression_from_id(i)?;
-                    args.push(v);
-                }
-
-                self.emit(VInstructionKind::Call {
-                    callee,
-                    args,
-                    return_ty,
-                })
-            }
+            hir::Expr::Call { f, input, .. } => self.emit_function_call(f, input),
             _ => todo!("Cannot yet handle: {:?}", expression),
         }
     }
@@ -324,7 +367,7 @@ impl<'a> FunctionBuilder<'a> {
 
             let kind = VInstructionKind::Parameter {
                 index: index as u16,
-                ty: sym.ty_id(),
+                ty: sym.ty,
             };
             let vid = self.push_instuction_get_index(VInstruct { kind });
             self.block_mut()?.with_instruct(vid);
@@ -363,14 +406,18 @@ impl<'a> ModuleBuilder<'a> {
         }
     }
 
-    /// Generate the functionids before we starts lowering, so that you dont need
+    /// Generate the functionids before we starts lowering, so that you don't need
     /// to define before use.
     pub fn handle_headers(&mut self) {
         for symbol_id in &self.ctx.roots {
             let symbol = self.ctx.symbols.get_unchecked(*symbol_id);
-            if matches!(symbol.kind, SymbolKind::Function { .. }) {
+            if let SymbolKind::Defn {
+                declaration: SymbolDec { .. },
+                ..
+            } = &symbol.kind
+            {
                 let id = FunctionId::from(self.function_map.len());
-                self.function_map.insert(symbol.ident_id(), id);
+                self.function_map.insert(symbol.name, id);
             }
         }
     }
@@ -380,17 +427,17 @@ impl<'a> ModuleBuilder<'a> {
 
         for symbol_id in &self.ctx.roots {
             let symbol = self.ctx.symbols.get_unchecked(*symbol_id);
-            let name = symbol.ident_id();
-            let return_ty = symbol.ty_id();
+            let name = symbol.name;
+            let return_ty = symbol.ty;
 
             let (params, body) = match &symbol.kind {
-                SymbolKind::Function { params, body } => (params, body),
+                SymbolKind::Defn { declaration, .. } => (&declaration.inputs, declaration.body),
                 _ => continue,
             };
 
             let id = *self.function_map.get(&name).expect("Function id missing");
             let mut builder = FunctionBuilder::new(self.ctx, &self.function_map);
-            let func = builder.lower(name, return_ty, params, *body, id)?;
+            let func = builder.lower(name, return_ty, params, body, id)?;
             self.functions.push(func);
         }
         Ok(())

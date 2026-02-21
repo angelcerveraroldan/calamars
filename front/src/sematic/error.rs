@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use ariadne::{Color, Fmt, Label};
+use calamars_core::ids;
 
 use crate::{
     errors::{PrettyError, label_from},
@@ -9,6 +10,10 @@ use crate::{
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SemanticError {
+    // Temporary error
+    TODO,
+    /// Used to halt processing when a prior error was already reported.
+    AlreadyReported,
     Redeclaration {
         original_span: Span,
         redec_span: Span,
@@ -85,11 +90,17 @@ pub enum SemanticError {
         msg: &'static str,
         span: Span,
     },
+    MissingDeclaration {
+        name: ids::IdentId,
+        type_declaration: crate::syntax::span::CtxSpan<()>,
+    },
 }
 
 impl PrettyError for SemanticError {
     fn message(&self) -> &str {
         match self {
+            SemanticError::TODO => "Internal error",
+            SemanticError::AlreadyReported => "",
             SemanticError::Redeclaration { .. } => "Redeclaration is not allowed",
             SemanticError::IdentNotFound { .. } => "Identifier not found",
             SemanticError::WrongType { .. } | SemanticError::BindingWrongType { .. } => {
@@ -111,11 +122,13 @@ impl PrettyError for SemanticError {
             SemanticError::NonCallable { .. } => "Calling non-callable",
             SemanticError::InternalError { .. } => "Internal error",
             SemanticError::FnWrongReturnType { .. } => "Wrong type returned by function",
+            SemanticError::MissingDeclaration { .. } => "Missing declaration",
         }
     }
 
     fn labels<'a>(&'a self, file_name: &'a String) -> Vec<Label<(&'a String, Range<usize>)>> {
         match self {
+            SemanticError::TODO | SemanticError::AlreadyReported => vec![],
             SemanticError::Redeclaration {
                 original_span,
                 redec_span,
@@ -295,6 +308,14 @@ impl PrettyError for SemanticError {
             SemanticError::InternalError { msg, span } => {
                 vec![label_from(file_name, *span, *msg, None)]
             }
+            SemanticError::MissingDeclaration {
+                type_declaration, ..
+            } => vec![label_from(
+                file_name,
+                *type_declaration,
+                "Missing declaration for this type signature",
+                Some(Color::Red),
+            )],
         }
     }
 

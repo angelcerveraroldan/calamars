@@ -103,8 +103,8 @@ impl From<Literal> for Expression {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     /// The parser will generate this error when it cannot parse the type
-    Error,
-    Unit,
+    Error(Span),
+    Unit(Span),
     /// Basic / standard types such as Int, String, Char, Real, ...
     /// as well as types that require many segments, such as people.Person
     Path {
@@ -118,10 +118,9 @@ pub enum Type {
     },
     /// A function (I1, I2, I3, ...) -> (O1, O2, O3, ...)
     Func {
-        inputs: Vec<Self>,
+        input: Box<Self>,
         output: Box<Self>,
-        /// Lambdas have a very clear "full span", where as functions dont
-        span: Option<Span>,
+        span: Span,
     },
 }
 
@@ -130,19 +129,18 @@ impl Type {
         Self::Path { segments, span }
     }
 
-    pub fn span(&self) -> Option<Span> {
+    pub fn span(&self) -> Span {
         match self {
             Type::Path { span, .. }
             | Type::Array { span, .. }
-            | Type::Func {
-                span: Some(span), ..
-            } => Some(*span),
-            _ => None,
+            | Type::Error(span)
+            | Type::Func { span, .. }
+            | Type::Unit(span) => *span,
         }
     }
 
     pub fn is_err(&self) -> bool {
-        matches!(self, Type::Error)
+        matches!(self, Type::Error(_))
     }
 
     pub fn is_ok(&self) -> bool {
@@ -162,7 +160,7 @@ pub enum Expression {
     BinaryOp(BinaryOp),
 
     IfStm(IfStm),
-    FunctionCall(FuncCall),
+    Apply(Apply),
 
     Block(CompoundExpression),
 }
@@ -175,7 +173,7 @@ impl Expression {
             Expression::UnaryOp(cl_unary_op) => cl_unary_op.span(),
             Expression::BinaryOp(cl_binary_op) => cl_binary_op.span(),
             Expression::IfStm(if_stm) => if_stm.span(),
-            Expression::FunctionCall(func_call) => func_call.span(),
+            Expression::Apply(func_call) => func_call.span(),
             Expression::Block(cl_compound_expression) => cl_compound_expression.total_span(),
             // I am not a big fan of this ...
             Expression::Error(span) => *span,
@@ -354,27 +352,27 @@ impl IfStm {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FuncCall {
+pub struct Apply {
     func: Box<Expression>,
-    params: Vec<Expression>,
+    input: Box<Expression>,
     span: Span,
 }
 
-impl FuncCall {
-    pub fn new(func: Expression, params: Vec<Expression>, span: Span) -> Self {
+impl Apply {
+    pub fn new(func: Expression, input: Expression, span: Span) -> Self {
         Self {
             func: func.into(),
-            params,
+            input: input.into(),
             span,
         }
     }
 
-    pub fn callable(&self) -> &Box<Expression> {
-        &self.func
+    pub fn input(&self) -> &Box<Expression> {
+        &self.input
     }
 
-    pub fn params(&self) -> &Vec<Expression> {
-        &self.params
+    pub fn callable(&self) -> &Box<Expression> {
+        &self.func
     }
 
     pub fn span(&self) -> Span {
@@ -422,143 +420,31 @@ impl CompoundExpression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Declaration {
-    Binding(Binding),
-    Function(FuncDec),
+    TypeSignature {
+        docs: Option<String>,
+        name: Ident,
+        dtype: Type,
+    },
+    Binding {
+        name: Ident,
+        params: Vec<Ident>,
+        body: Expression,
+    },
 }
 
 impl Declaration {
     pub fn span(&self) -> Span {
         match self {
-            Declaration::Binding(cl_binding) => cl_binding.span(),
-            Declaration::Function(cl_func_dec) => cl_func_dec.span(),
+            Declaration::TypeSignature { dtype, .. } => dtype.span(),
+            Declaration::Binding { body, .. } => body.span(),
         }
     }
 
     pub fn name_span(&self) -> Span {
         match self {
-            Declaration::Binding(cl_binding) => cl_binding.name_span(),
-            Declaration::Function(cl_func_dec) => cl_func_dec.name_span(),
-        }
-    }
-}
-
-/// Value and Variable declaration
-#[derive(Debug, Clone, PartialEq)]
-pub struct Binding {
-    pub vname: Ident,
-    pub vtype: Type,
-    pub assigned: Box<Expression>,
-    pub mutable: bool,
-
-    span: Span,
-}
-
-impl Binding {
-    pub fn new(
-        vname: Ident,
-        vtype: Type,
-        assigned: Box<Expression>,
-        mutable: bool,
-        span: Span,
-    ) -> Self {
-        Self {
-            vname,
-            vtype,
-            assigned,
-            mutable,
-            span,
-        }
-    }
-
-    pub fn span(&self) -> Span {
-        self.span
-    }
-
-    pub fn name_span(&self) -> Span {
-        self.vname.span()
-    }
-
-    pub fn type_span(&self) -> Option<Span> {
-        self.vtype.clone().span()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FuncDec {
-    pub doc_comment: Option<String>,
-
-    fname: Ident,
-    input_idents: Vec<Ident>,
-    functype: Type,
-    body: Expression,
-    span: Span,
-}
-
-impl FuncDec {
-    pub fn new(
-        fname: Ident,
-        inputs: Vec<(Ident, Type)>,
-        out_type: Type,
-        body: Expression,
-        span: Span,
-        doc_comment: Option<String>,
-    ) -> Self {
-        let cap = inputs.len();
-        let (input_idents, inputs) = inputs.into_iter().fold(
-            (Vec::with_capacity(cap), Vec::with_capacity(cap)),
-            |(mut idents, mut tys), (ident, ty)| {
-                idents.push(ident);
-                tys.push(ty);
-                (idents, tys)
-            },
-        );
-
-        Self {
-            fname,
-            input_idents,
-            functype: Type::Func {
-                inputs,
-                span: None,
-                output: out_type.into(),
-            },
-            body,
-            span,
-            doc_comment,
-        }
-    }
-
-    pub fn airity(&self) -> u16 {
-        self.input_idents.len() as u16
-    }
-
-    pub fn fntype(&self) -> &Type {
-        &self.functype
-    }
-
-    pub fn name(&self) -> &String {
-        &self.fname.ident
-    }
-
-    pub fn span(&self) -> Span {
-        self.span
-    }
-
-    pub fn name_span(&self) -> Span {
-        self.fname.span()
-    }
-
-    pub fn body(&self) -> &Expression {
-        &self.body
-    }
-
-    pub fn input_idents(&self) -> &Vec<Ident> {
-        &self.input_idents
-    }
-
-    pub fn output_span(&self) -> Option<Span> {
-        match &self.functype {
-            Type::Func { output, .. } => output.as_ref().span(),
-            _ => None,
+            Declaration::TypeSignature { name, .. } | Declaration::Binding { name, .. } => {
+                name.span()
+            }
         }
     }
 }
