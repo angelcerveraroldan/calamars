@@ -38,7 +38,8 @@ fn parse_doc_comment(lex: &mut Lexer<Token>) -> Option<String> {
 #[logos(subpattern decimal = r"[0-9][_0-9]*")]
 #[logos(subpattern binary  = r"b_[0-1][_0-1]*")]
 pub enum Token {
-    #[token("def")]    Def,
+    #[token("typ")]    TypeDef, /// Define the type `id :: a -> a`
+    #[token("def")]    Def,     /// Define the body `id x = x`
     #[token("mut")]    Mut,
     #[token("given")]  Given,
     #[token("match")]  Match,
@@ -180,6 +181,7 @@ impl fmt::Display for Token {
         match self {
             // keywords
             Token::Def => write!(f, "def"),
+            Token::TypeDef => write!(f, "typ"),
             Token::Mut => write!(f, "mut"),
             Token::Given => write!(f, "given"),
             Token::Match => write!(f, "match"),
@@ -211,7 +213,7 @@ impl fmt::Display for Token {
             Token::RBracket => write!(f, "]"),
             Token::Dot => write!(f, "."),
             Token::Comma => write!(f, ","),
-			Token::DoubleColon => write!(f, "::"),
+            Token::DoubleColon => write!(f, "::"),
             Token::Colon => write!(f, ":"),
             Token::Semicolon => write!(f, ";"),
 

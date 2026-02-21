@@ -155,11 +155,6 @@ impl HirBuilder {
                             .lower_binding_declaration(name, params, body, builder, global_ctx)
                         {
                             Ok(symbol_id) => {
-                                let _ = self.insert_symbol_to_current_scope(
-                                    name_id,
-                                    symbol_id,
-                                    name.span(),
-                                );
                                 items.push(hir::ItemId::Symbol(symbol_id));
                             }
                             Err(err) => self.insert_error(err),
@@ -453,7 +448,7 @@ impl HirBuilder {
         id: ids::FileId,
         name: String,
         global_ctx: &mut hir::GlobalContext,
-    ) -> hir::Module {
+    ) -> (hir::Module, Vec<SemanticError>) {
         let mut roots = vec![];
 
         // Generate the builders from the type declarations
@@ -501,14 +496,17 @@ impl HirBuilder {
             });
         }
 
-        hir::Module {
-            id,
-            name,
-            idents: self.identifiers,
-            symbols: self.symbols,
-            exprs: self.expressions,
-            roots: roots.into_boxed_slice(),
-            expression_types: hashbrown::HashMap::new(),
-        }
+        (
+            hir::Module {
+                id,
+                name,
+                idents: self.identifiers,
+                symbols: self.symbols,
+                exprs: self.expressions,
+                roots: roots.into_boxed_slice(),
+                expression_types: hashbrown::HashMap::new(),
+            },
+            self.diag_err,
+        )
     }
 }
