@@ -1,12 +1,18 @@
-def main(): Int = {
-    val y: Int = 3;
-    val a: Int = add(2, y);
-    val res: Int = if equals(y, a) then 2 else 3;
+typ main :: Int
+def main = {
+    typ y :: Int;
+    def y = 3;
+    typ a :: Int;
+    def a = add 2 y;
+    typ res :: Int;
+    def res = if equals y a then 2 else 3;
     res
 }
 
-def add(x: Int, y: Int): Int = 
+typ add :: Int -> Int -> Int
+def add x y =
     x + y
 
-def equals(x: Int, y: Int): Bool =
+typ equals :: Int -> Int -> Bool
+def equals x y =
     if x == y then true else false

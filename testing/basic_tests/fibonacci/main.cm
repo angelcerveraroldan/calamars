@@ -1,7 +1,9 @@
-def main(): Int =
-    fib(20)
+typ main :: Int
+def main =
+    fib 20
 
-def fib(n: Int): Int =
+typ fib :: Int -> Int
+def fib n =
     if n == 0 then 0
     else if n == 1 then 1
-    else fib(n - 1) + fib(n - 2)
+    else fib (n - 1) + fib (n - 2)

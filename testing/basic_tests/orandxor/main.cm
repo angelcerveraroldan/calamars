@@ -1,21 +1,29 @@
-def main(): Int =
-    bench(20000, 123456789, 0)
+typ main :: Int
+def main =
+    bench 20000 123456789 0
 
-def bench(n: Int, x: Int, acc: Int): Int =
+typ bench :: Int -> Int -> Int -> Int
+def bench n x acc =
     if n == 0 then acc
     else {
-        val x1: Int = lcg(x);
-        val a: Int  = x1;
-        val x2: Int = lcg(x1);
-        val b: Int  = x2;
-        val g: Int  = gcd(a, b);
-        bench(n - 1, x2, acc + g)
+        typ x1 :: Int;
+        def x1 = lcg x;
+        typ a :: Int;
+        def a = x1;
+        typ x2 :: Int;
+        def x2 = lcg x1;
+        typ b :: Int;
+        def b = x2;
+        typ g :: Int;
+        def g = gcd a b;
+        bench (n - 1) x2 (acc + g)
     }
 
-def lcg(x: Int): Int =
+typ lcg :: Int -> Int
+def lcg x =
     (1103515245 * x + 12345) % 2147483647
 
-def gcd(a: Int, b: Int): Int =
+typ gcd :: Int -> Int -> Int
+def gcd a b =
     if b == 0 then a
-    else gcd(b, a % b)
-
+    else gcd b (a % b)

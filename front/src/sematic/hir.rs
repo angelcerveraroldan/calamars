@@ -189,7 +189,7 @@ impl MaybeErr for Expr {
     const ERR: Self = Expr::Err;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SymbolDec {
     pub inputs: Box<[ids::SymbolId]>,
     pub body: ids::ExpressionId,
@@ -245,7 +245,7 @@ pub struct Symbol {
     pub kind: SymbolKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SymbolKind {
     Param {
         span: Span,

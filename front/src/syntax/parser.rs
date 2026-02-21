@@ -710,9 +710,7 @@ impl CalamarsParser {
                 )
             });
 
-            // If we finished the file without finding the above tokens, we exit
             if self.next_eq(Token::EOF) {
-                println!("Finished with {} errors", self.diag.len());
                 break;
             }
 

@@ -1,6 +1,9 @@
-def f(n: Int): Int =
-    if n == 0 then f(n)
-    else if n == 1 then f(n)
-    else f(n - 1)
+typ main ::  Int
+def main = f 2
 
-def main(): Int = f(2)
+typ f :: Int -> Int
+def f n =
+    if n == 0 then 0
+    else if n == 1 then 12
+    else f (n - 1)
+

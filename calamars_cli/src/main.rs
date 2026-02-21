@@ -2,7 +2,7 @@ use calamars_core::ids;
 use clap::{Parser, Subcommand};
 use front::{
     errors::PrettyError,
-    sematic::{lower::HirBuilder, types::TypeHandler},
+    sematic::{hir, lower::HirBuilder, types::TypeHandler},
     syntax::parser::CalamarsParser,
 };
 use ir::printer::MirPrinter;
@@ -66,12 +66,21 @@ fn main() {
                 std::process::exit(1);
             }
 
-            let (mut module, errors) =
-                HirBuilder::lower_module(&module, file_id, file_name.clone());
+            let mut global_ctx = hir::GlobalContext {
+                types: hir::default_typearena(),
+                const_str: hir::ConstantStringArena::new_unchecked(),
+            };
+
+            let (mut module, errors) = HirBuilder::default().lower_module(
+                &module,
+                file_id,
+                file_name.clone(),
+                &mut global_ctx,
+            );
 
             if !errors.is_empty() {
                 for err in errors {
-                    err.log_error(&file_name, &sf.src);
+                    let _ = err.log_error(&file_name, &sf.src);
                 }
                 std::process::exit(1);
             }
@@ -81,7 +90,7 @@ fn main() {
                 module: &mut module,
                 errors: vec![],
             };
-            type_handler.type_check_module();
+            type_handler.type_check_module(&mut global_ctx);
 
             if !type_handler.errors.is_empty() {
                 for err in type_handler.errors {
@@ -115,6 +124,10 @@ fn main() {
                     .expect("Failed to lower to vm");
                 let out = vm.run();
                 println!("Main fn returns: {:?}", out);
+            }
+
+            if !emit_mir && !run_vm {
+                println!("OK");
             }
         }
     }
