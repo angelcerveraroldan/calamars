@@ -9,7 +9,7 @@ pub enum Value {
     Float(f64),
     Boolean(bool),
     Char(char),
-	HeapPtr(*mut u8), // Pointer to the payload of a `HeapObject`
+
     Empty,
 }
 
@@ -46,7 +46,6 @@ impl Value {
             Value::Boolean(_) => "bool",
             Value::Char(_) => "char",
             Value::Empty => "empty",
-			Value::HeapPtr(_) => "pointer",
         }
     }
 

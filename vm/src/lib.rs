@@ -16,7 +16,6 @@ mod errors;
 mod function;
 pub mod lower;
 mod values;
-mod gc;
 
 // A register
 #[derive(Clone, Debug, Copy)]
