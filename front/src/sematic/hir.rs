@@ -1,27 +1,10 @@
-use calamars_core::{
-    MaybeErr,
-    ids::{self, SymbolId},
-};
-use proptest::prelude::Strategy;
+use calamars_core::global::GlobalContext;
+use calamars_core::{MaybeErr, ids, types};
 
 use crate::{
     sematic::{error::SemanticError, hir},
     syntax::span::Span,
 };
-
-pub type TypeArena = calamars_core::InternArena<Type, ids::TypeId>;
-
-pub fn default_typearena() -> TypeArena {
-    let mut ta = TypeArena::new_checked();
-    ta.intern(&Type::Error);
-    ta.intern(&Type::Unit);
-    ta.intern(&Type::Integer);
-    ta.intern(&Type::Float);
-    ta.intern(&Type::Boolean);
-    ta.intern(&Type::String);
-    ta.intern(&Type::Char);
-    ta
-}
 
 /// An arena for compile-time known strings.
 pub type ConstantStringArena = calamars_core::InternArena<String, ids::StringId>;
@@ -37,70 +20,6 @@ pub type SymbolArena = calamars_core::UncheckedArena<Symbol, ids::SymbolId>;
 pub enum ItemId {
     Expr(ids::ExpressionId),
     Symbol(ids::SymbolId),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub enum Type {
-    /// Among other things, this is used for when we expected a type, but found ClType::None
-    ///
-    /// We can:
-    /// 1. Try to recover (type inference)
-    /// 2. Throw a detailed error
-    Error,
-
-    // Primitives
-    Integer,
-    Float,
-    Boolean,
-    String,
-    Char,
-    Unit,
-
-    Array(ids::TypeId),
-    Function {
-        input: ids::TypeId,
-        output: ids::TypeId,
-    },
-}
-
-impl Type {
-    pub fn function_input(&self) -> &ids::TypeId {
-        if let Type::Function { input, .. } = self {
-            return input;
-        }
-        unreachable!("Make sure to only call this on functions!")
-    }
-
-    pub fn function_output(&self) -> ids::TypeId {
-        if let Type::Function { output, .. } = self {
-            return *output;
-        }
-        unreachable!("Make sure to only call this on functions!")
-    }
-}
-
-impl MaybeErr for Type {
-    const ERR: Self = Type::Error;
-}
-
-pub fn type_id_stringify(arena: &TypeArena, id: ids::TypeId) -> String {
-    let ty = arena.get_unchecked(id);
-
-    match ty {
-        Type::Error => "Error".into(),
-        Type::Integer => "Int".into(),
-        Type::Float => "Float".into(),
-        Type::Boolean => "Bool".into(),
-        Type::String => "String".into(),
-        Type::Char => "Char".into(),
-        Type::Unit => "Unit".into(),
-        Type::Array(tid) => format!("[{}]", type_id_stringify(arena, *tid)),
-        Type::Function { input, output } => {
-            let inp = type_id_stringify(arena, *input);
-            let out = type_id_stringify(arena, *output);
-            format!("{inp} -> ({out})")
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -279,12 +198,6 @@ impl Symbol {
     }
 }
 
-/// Context shared between modules
-pub struct GlobalContext {
-    pub types: hir::TypeArena,
-    pub const_str: hir::ConstantStringArena,
-}
-
 /// Given some functions type, find the type of the first n inputs,
 /// and the return type.
 pub fn take_inputs(
@@ -300,12 +213,12 @@ pub fn take_inputs(
     while n != 0 {
         let curr_type = global_ctx.types.get_unchecked(curr_type_id);
         match curr_type {
-            Type::Function { input, output } => {
+            types::Type::Function { input, output } => {
                 v.push(*input);
                 curr_type_id = *output;
                 n -= 1;
             }
-            Type::Error => {
+            types::Type::Error => {
                 return Ok((v, curr_type_id));
             }
             _ => {

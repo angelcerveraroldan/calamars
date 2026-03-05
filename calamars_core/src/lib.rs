@@ -1,8 +1,12 @@
 //! Structures and functions that will be used form the front, to the back end of the language
 
+pub mod global;
 pub mod ids;
+pub mod types;
 
 use std::{hash::Hash, marker::PhantomData};
+
+pub type StringArena = InternArena<String, ids::StringId>;
 
 pub trait Identifier
 where

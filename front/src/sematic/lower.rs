@@ -1,6 +1,6 @@
 //! Lower AST to HIR
 
-use calamars_core::ids;
+use calamars_core::{ids, types};
 
 use crate::{
     sematic::{
@@ -13,14 +13,14 @@ use crate::{
     },
 };
 
-fn lower_str_to_type(s: &str, span: &Span) -> Result<hir::Type, SemanticError> {
+fn lower_str_to_type(s: &str, span: &Span) -> Result<types::Type, SemanticError> {
     Ok(match s {
-        "Int" | "Integer" => hir::Type::Integer,
-        "Float" | "Real" => hir::Type::Float,
-        "Bool" | "Boolean" => hir::Type::Boolean,
-        "String" => hir::Type::String,
-        "Char" => hir::Type::Char,
-        "Unit" | "()" => hir::Type::Unit,
+        "Int" | "Integer" => types::Type::Integer,
+        "Float" | "Real" => types::Type::Float,
+        "Bool" | "Boolean" => types::Type::Boolean,
+        "String" => types::Type::String,
+        "Char" => types::Type::Char,
+        "Unit" | "()" => types::Type::Unit,
         other => {
             return Err(SemanticError::TypeNotFound {
                 type_name: other.to_string(),
@@ -86,7 +86,7 @@ impl HirBuilder {
     fn lower_expression(
         &mut self,
         expr: &ast::Expression,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> ids::ExpressionId {
         let lowered = self.lower_expression_inner(expr, global_ctx);
         self.expressions.push(lowered)
@@ -95,7 +95,7 @@ impl HirBuilder {
     fn lower_expression_inner(
         &mut self,
         expr: &ast::Expression,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::Expr {
         match expr {
             ast::Expression::Literal(literal) => self.lower_literal(literal, global_ctx),
@@ -118,7 +118,7 @@ impl HirBuilder {
     fn lower_block(
         &mut self,
         block: &ast::CompoundExpression,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::Expr {
         self.push_scope();
 
@@ -191,12 +191,12 @@ impl HirBuilder {
     fn lower_literal(
         &mut self,
         literal: &ast::Literal,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::Expr {
         let constant = match literal.kind() {
             ast::LiteralKind::Integer(i) => hir::Const::I64(*i),
             ast::LiteralKind::Boolean(b) => hir::Const::Bool(*b),
-            ast::LiteralKind::String(s) => hir::Const::String(global_ctx.const_str.intern(s)),
+            ast::LiteralKind::String(s) => hir::Const::String(global_ctx.strings.intern(s)),
             _ => return hir::Expr::Err,
         };
         hir::Expr::Literal {
@@ -255,7 +255,7 @@ impl HirBuilder {
     fn lower_binary_expr(
         &mut self,
         binary_op: &ast::BinaryOp,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::Expr {
         let operator = match binary_op.operator() {
             ast::BinaryOperator::Add => hir::BinOp::Add,
@@ -287,7 +287,7 @@ impl HirBuilder {
     fn lower_apply_expr(
         &mut self,
         apply: &ast::Apply,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::Expr {
         let f = self.lower_expression(apply.callable(), global_ctx);
         let input_expr = apply.input();
@@ -302,7 +302,7 @@ impl HirBuilder {
     fn lower_if_expr(
         &mut self,
         ifstm: &ast::IfStm,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::Expr {
         let predicate = self.lower_expression(ifstm.pred().as_ref(), global_ctx);
         let then = self.lower_expression(ifstm.then_expr().as_ref(), global_ctx);
@@ -321,30 +321,30 @@ impl HirBuilder {
     fn lower_type(
         &mut self,
         ast_type: &ast::Type,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> ids::TypeId {
         let lowered = match ast_type {
-            ast::Type::Error(_) => hir::Type::Error,
-            ast::Type::Unit(_) => hir::Type::Unit,
+            ast::Type::Error(_) => types::Type::Error,
+            ast::Type::Unit(_) => types::Type::Unit,
             ast::Type::Array { elem_type, .. } => {
                 let inner = self.lower_type(elem_type, global_ctx);
-                hir::Type::Array(inner)
+                types::Type::Array(inner)
             }
             ast::Type::Func { input, output, .. } => {
                 let input = self.lower_type(input, global_ctx);
                 let output = self.lower_type(output, global_ctx);
-                hir::Type::Function { input, output }
+                types::Type::Function { input, output }
             }
             ast::Type::Path { segments, span } => 'path: {
                 if segments.len() != 1 {
                     self.insert_error(SemanticError::QualifiedTypeNotSupported { span: *span });
-                    break 'path hir::Type::Error;
+                    break 'path types::Type::Error;
                 }
                 match lower_str_to_type(&segments[0].ident(), span) {
                     Ok(inner) => inner,
                     Err(err) => {
                         self.insert_error(err);
-                        hir::Type::Error
+                        types::Type::Error
                     }
                 }
             }
@@ -361,13 +361,12 @@ impl HirBuilder {
         &mut self,
         declared_type: &ast::Type,
         declared_name: &ast::Ident,
-        global_context: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::SymbolBuilder {
-        let lowered_ty = self.lower_type(declared_type, global_context);
+        let lowered_ty = self.lower_type(declared_type, global_ctx);
         let name_span = declared_name.span();
         let lowered_id = self.lower_ident(declared_name);
-        let err_expr =
-            self.lower_expression(&ast::Expression::Error(Span::from(0..0)), global_context);
+        let err_expr = self.lower_expression(&ast::Expression::Error(Span::from(0..0)), global_ctx);
         let symbol_kind = SymbolKind::Defn {
             span_type: name_span,
             span_decl: Span::from(0..0),
@@ -409,7 +408,7 @@ impl HirBuilder {
         params: &Vec<ast::Ident>,
         body: &ast::Expression,
         mut builder: SymbolBuilder,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> Result<ids::SymbolId, SemanticError> {
         // Lower the inputs to symbols
         let (input_types, _) = take_inputs(builder.ty, params.len(), global_ctx, name.span())?;
@@ -447,7 +446,7 @@ impl HirBuilder {
         module: &ast::Module,
         id: ids::FileId,
         name: String,
-        global_ctx: &mut hir::GlobalContext,
+        global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> (hir::Module, Vec<SemanticError>) {
         let mut roots = vec![];
 
