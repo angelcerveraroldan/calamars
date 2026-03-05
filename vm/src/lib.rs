@@ -14,6 +14,7 @@ use calamars_core::Identifier;
 mod bytecode;
 mod errors;
 mod function;
+mod heap;
 pub mod lower;
 mod values;
 
