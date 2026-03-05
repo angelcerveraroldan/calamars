@@ -1,5 +1,7 @@
 //! Heap and garbage collector for Calamars
 
+use std::ptr::NonNull;
+
 /// State used to keep track of which pointers are reachable from roots
 ///
 /// The default value *has to be* 0, so that we can delete pointers from the heap while
@@ -21,9 +23,6 @@ pub struct MemLayoutId(usize);
 /// A descriptor table for memory layouts
 pub struct MemLayout {
     /// Total size (including padding)
-    ///
-    /// This includes the padding, but does not need to be a power of two, that will be
-    /// handled when allocating.
     size: usize,
     alignment: usize,
     /// Offsets to each of the pointers.
@@ -41,37 +40,53 @@ pub struct Header {
     /// A pointer to the next header
     ///
     /// Will be None if this is the last header.
-    next_header: Option<std::ptr::NonNull<Header>>,
+    next_header: Option<NonNull<Header>>,
 }
 
 /// A wrapper around the memory that represented a heap object.
 ///
 /// The memory is structured as: [ HEADER | PADDING? | PAYLOAD_MEMORY ]
-pub struct HeapObject {
-    memory: *mut u8,
+#[repr(transparent)]
+pub struct HeapObject(NonNull<Header>);
+
+impl From<NonNull<Header>> for HeapObject {
+    fn from(value: NonNull<Header>) -> Self {
+        Self(value)
+    }
 }
 
 impl HeapObject {
-    fn read_header_as_mut_ptr(&self) -> *mut Header {
-        self.memory as *mut Header
+    fn header(&self) -> &Header {
+        unsafe { self.0.as_ref() }
     }
 
-    /// Read the header that is saved in the raw memory
-    pub fn read_header(&self) -> &Header {
-        unsafe {
-            let mheader = self.read_header_as_mut_ptr();
-            &*mheader
-        }
+    fn header_mut(&mut self) -> &mut Header {
+        unsafe { self.0.as_mut() }
     }
 
-    /// Return a pointer to the payload of this heap object
-    pub fn payload_prt(&self) -> *mut u8 {
-        todo!()
+    fn next_object(&self) -> Option<HeapObject> {
+        let header = self.header();
+        header.next_header.map(Into::into)
+    }
+
+    /// Get a raw pointer to the payload data
+    fn _payload_ptr(&self, memlayout: &MemLayout) -> *mut u8 {
+        let alignment = memlayout.alignment;
+        let header_size = std::mem::size_of::<Header>();
+        let header_size_with_padding = size_with_padding(header_size, alignment);
+        let base = self.0.as_ptr() as *mut u8;
+        unsafe { base.add(header_size_with_padding) }
+    }
+
+    /// Given a type to cast the payload into, do said casting and return an immutable reference to it
+    fn _payload_ptr_as_type<T>(&self, memlayout: &MemLayout) -> *mut T {
+        let ptr = self._payload_ptr(memlayout);
+        ptr as *mut T
     }
 }
 
 pub struct Heap {
-    object_list: HeapObject,
+    head: Option<NonNull<Header>>,
 }
 
 pub enum MemoryTag {
