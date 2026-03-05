@@ -66,9 +66,9 @@ fn main() {
                 std::process::exit(1);
             }
 
-            let mut global_ctx = hir::GlobalContext {
-                types: hir::default_typearena(),
-                const_str: hir::ConstantStringArena::new_unchecked(),
+            let mut global_ctx = calamars_core::global::GlobalContext {
+                types: calamars_core::types::TypeArena::default(),
+                strings: hir::ConstantStringArena::new_unchecked(),
             };
 
             let (mut module, errors) = HirBuilder::default().lower_module(

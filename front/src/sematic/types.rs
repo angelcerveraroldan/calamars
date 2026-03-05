@@ -1,11 +1,15 @@
 //! Type checking on the HIR
 
-use calamars_core::ids::{self, ExpressionId};
+use calamars_core::{
+    global::GlobalContext,
+    ids::{self, ExpressionId},
+    types,
+};
 
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, GlobalContext, ItemId, Type, take_inputs, type_id_stringify},
+        hir::{self, ItemId, take_inputs},
     },
     syntax::span::Span,
 };
@@ -20,7 +24,12 @@ pub struct TypeHandler<'a> {
 }
 
 impl<'a> TypeHandler<'a> {
-    fn match_type(&mut self, id: ids::TypeId, ty: &Type, global_ctx: &mut GlobalContext) -> bool {
+    fn match_type(
+        &mut self,
+        id: ids::TypeId,
+        ty: &types::Type,
+        global_ctx: &mut GlobalContext,
+    ) -> bool {
         let ty_id = global_ctx.types.intern(ty);
         id == ty_id
     }
@@ -34,7 +43,7 @@ impl<'a> TypeHandler<'a> {
         global_ctx: &GlobalContext,
     ) {
         self.errors.push(SemanticError::WrongType {
-            actual: type_id_stringify(&global_ctx.types, actual),
+            actual: types::type_id_stringify(&global_ctx.types, actual),
             expected: expected.into(),
             span,
         });
@@ -46,7 +55,7 @@ impl<'a> TypeHandler<'a> {
     }
 
     #[inline]
-    fn intern_ty(&mut self, ty: &Type, global_ctx: &mut GlobalContext) -> ids::TypeId {
+    fn intern_ty(&mut self, ty: &types::Type, global_ctx: &mut GlobalContext) -> ids::TypeId {
         global_ctx.types.intern(ty)
     }
 
@@ -64,8 +73,8 @@ impl<'a> TypeHandler<'a> {
         t: ids::TypeId,
         global_ctx: &mut GlobalContext,
     ) {
-        if self.match_type(t, &Type::Integer, global_ctx)
-            || self.match_type(t, &Type::Float, global_ctx)
+        if self.match_type(t, &types::Type::Integer, global_ctx)
+            || self.match_type(t, &types::Type::Float, global_ctx)
         {
             return;
         }
@@ -87,7 +96,7 @@ impl<'a> TypeHandler<'a> {
         let sp = self.get_expr_unchecked(expr).get_span().unwrap();
         self.push_wrong_type(
             ty_id,
-            &type_id_stringify(&global_ctx.types, expected),
+            &types::type_id_stringify(&global_ctx.types, expected),
             sp,
             global_ctx,
         );
@@ -113,9 +122,9 @@ impl<'a> TypeHandler<'a> {
             hir::Expr::Err => self.err_id(global_ctx),
             hir::Expr::Literal { constant, .. } => {
                 let ty = match constant {
-                    hir::Const::I64(_) => Type::Integer,
-                    hir::Const::Bool(_) => Type::Boolean,
-                    hir::Const::String(_) => Type::String,
+                    hir::Const::I64(_) => types::Type::Integer,
+                    hir::Const::Bool(_) => types::Type::Boolean,
+                    hir::Const::String(_) => types::Type::String,
                 };
                 *global_ctx.types.resolve_unchecked(&ty)
             }
@@ -144,7 +153,7 @@ impl<'a> TypeHandler<'a> {
                 };
 
                 if in_ty[0] != input_ty {
-                    let expected_type_str = type_id_stringify(&global_ctx.types, in_ty[0]);
+                    let expected_type_str = types::type_id_stringify(&global_ctx.types, in_ty[0]);
                     // TODO: We should really have f span and input span be separate ...
                     self.push_wrong_type(input_ty, expected_type_str.as_str(), *span, global_ctx);
                 }
@@ -164,7 +173,7 @@ impl<'a> TypeHandler<'a> {
                 // Make sure that the predicate is a boolean
                 let p_ty = self.type_expression(predicate, global_ctx);
                 if p_ty != self.err_id(global_ctx) {
-                    let bool = self.intern_ty(&Type::Boolean, global_ctx);
+                    let bool = self.intern_ty(&types::Type::Boolean, global_ctx);
                     self.ensure_type(*predicate, p_ty, bool, global_ctx);
                 }
 
@@ -179,9 +188,9 @@ impl<'a> TypeHandler<'a> {
                 if t_ty != o_ty {
                     self.errors.push(SemanticError::MismatchedIfBranches {
                         then_span: *then_span,
-                        then_return: type_id_stringify(&global_ctx.types, t_ty),
+                        then_return: types::type_id_stringify(&global_ctx.types, t_ty),
                         else_span: *othewise_span,
-                        else_return: type_id_stringify(&global_ctx.types, o_ty),
+                        else_return: types::type_id_stringify(&global_ctx.types, o_ty),
                     });
                     return self.err_id(global_ctx);
                 }
@@ -211,8 +220,8 @@ impl<'a> TypeHandler<'a> {
             return error_id;
         }
 
-        let int_type_id = *global_ctx.types.resolve_unchecked(&Type::Integer);
-        let float_type_id = *global_ctx.types.resolve_unchecked(&Type::Float);
+        let int_type_id = *global_ctx.types.resolve_unchecked(&types::Type::Integer);
+        let float_type_id = *global_ctx.types.resolve_unchecked(&types::Type::Float);
 
         match op {
             hir::BinOp::Add | hir::BinOp::Sub | hir::BinOp::Mult | hir::BinOp::Div => {
@@ -244,14 +253,14 @@ impl<'a> TypeHandler<'a> {
                 if lhs_type_id != rhs_type_id {
                     let rhs_expr = self.get_expr_unchecked(*rhs);
                     self.errors.push(SemanticError::WrongType {
-                        expected: type_id_stringify(&global_ctx.types, lhs_type_id),
-                        actual: type_id_stringify(&global_ctx.types, rhs_type_id),
+                        expected: types::type_id_stringify(&global_ctx.types, lhs_type_id),
+                        actual: types::type_id_stringify(&global_ctx.types, rhs_type_id),
                         // We can unwrap since we made sure its not error type
                         span: rhs_expr.get_span().unwrap(),
                     });
                 }
 
-                self.intern_ty(&Type::Boolean, global_ctx)
+                self.intern_ty(&types::Type::Boolean, global_ctx)
             }
             hir::BinOp::Mod => {
                 self.ensure_type(*lhs, lhs_type_id, int_type_id, global_ctx);
@@ -260,23 +269,23 @@ impl<'a> TypeHandler<'a> {
                 if lhs_type_id != int_type_id || rhs_type_id != int_type_id {
                     error_id
                 } else {
-                    self.intern_ty(&Type::Integer, global_ctx)
+                    self.intern_ty(&types::Type::Integer, global_ctx)
                 }
             }
             hir::BinOp::Greater | hir::BinOp::Geq | hir::BinOp::Less | hir::BinOp::Leq => {
                 self.ensure_numeric(*lhs, lhs_type_id, global_ctx);
                 self.ensure_numeric(*rhs, rhs_type_id, global_ctx);
-                self.intern_ty(&Type::Boolean, global_ctx)
+                self.intern_ty(&types::Type::Boolean, global_ctx)
             }
             hir::BinOp::And | hir::BinOp::Or | hir::BinOp::Xor => {
-                if self.match_type(lhs_type_id, &Type::Integer, global_ctx)
-                    && self.match_type(rhs_type_id, &Type::Integer, global_ctx)
+                if self.match_type(lhs_type_id, &types::Type::Integer, global_ctx)
+                    && self.match_type(rhs_type_id, &types::Type::Integer, global_ctx)
                 {
-                    self.intern_ty(&Type::Integer, global_ctx)
-                } else if self.match_type(lhs_type_id, &Type::Boolean, global_ctx)
-                    && self.match_type(rhs_type_id, &Type::Boolean, global_ctx)
+                    self.intern_ty(&types::Type::Integer, global_ctx)
+                } else if self.match_type(lhs_type_id, &types::Type::Boolean, global_ctx)
+                    && self.match_type(rhs_type_id, &types::Type::Boolean, global_ctx)
                 {
-                    self.intern_ty(&Type::Boolean, global_ctx)
+                    self.intern_ty(&types::Type::Boolean, global_ctx)
                 } else {
                     // FIXME: Show an error here
                     error_id
@@ -304,7 +313,7 @@ impl<'a> TypeHandler<'a> {
         }
 
         // If there is no final expression, then we will return the unit type
-        let unit = self.intern_ty(&Type::Unit, global_ctx);
+        let unit = self.intern_ty(&types::Type::Unit, global_ctx);
         final_expr
             .map(|e_id| self.type_expression(&e_id, global_ctx))
             .unwrap_or(unit)
@@ -323,11 +332,11 @@ impl<'a> TypeHandler<'a> {
         if body_ty != expected_type && body_ty != self.err_id(global_ctx) {
             let body = self.get_expr_unchecked(body);
             self.errors.push(SemanticError::FnWrongReturnType {
-                expected: type_id_stringify(&global_ctx.types, expected_type),
+                expected: types::type_id_stringify(&global_ctx.types, expected_type),
                 // none for now, but it really shuold not be none ... We need to improve spans
                 return_type_span: None,
                 fn_name_span: name_span,
-                actual: type_id_stringify(&global_ctx.types, body_ty),
+                actual: types::type_id_stringify(&global_ctx.types, body_ty),
                 return_span: body.get_span(),
                 body_span: body.get_span().unwrap(),
             });
@@ -345,9 +354,9 @@ impl<'a> TypeHandler<'a> {
         if body_ty != expected_type && body_ty != self.err_id(global_ctx) {
             let body = self.get_expr_unchecked(body);
             self.errors.push(SemanticError::BindingWrongType {
-                expected: type_id_stringify(&global_ctx.types, expected_type),
+                expected: types::type_id_stringify(&global_ctx.types, expected_type),
                 return_type_span: name_span,
-                actual: type_id_stringify(&global_ctx.types, body_ty),
+                actual: types::type_id_stringify(&global_ctx.types, body_ty),
                 return_span: body.get_span(),
                 body_span: body.get_span().unwrap(),
             })
@@ -378,7 +387,7 @@ impl<'a> TypeHandler<'a> {
         };
         let body_actual_type = self.type_expression(&body_id, global_ctx);
         if output_type != body_actual_type {
-            let expected_str = type_id_stringify(&global_ctx.types, output_type);
+            let expected_str = types::type_id_stringify(&global_ctx.types, output_type);
             self.push_wrong_type(body_actual_type, &expected_str, span_decl, global_ctx);
         }
     }

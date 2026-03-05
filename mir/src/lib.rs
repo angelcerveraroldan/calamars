@@ -306,6 +306,12 @@ impl Function {
     }
 }
 
+// Information that is shared between modules
+pub struct Globals {
+    /// String interning
+    string_arena: UncheckedArena<ids::StringId, String>,
+}
+
 pub struct Module {
     pub function_arena: UncheckedArena<Function, FunctionId>,
 }
