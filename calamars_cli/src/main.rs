@@ -69,6 +69,7 @@ fn main() {
             let mut global_ctx = calamars_core::global::GlobalContext {
                 types: calamars_core::types::TypeArena::default(),
                 strings: hir::ConstantStringArena::new_unchecked(),
+                memlay: calamars_core::memory::MemoryLayoutArena::new_unchecked(),
             };
 
             let (mut module, errors) = HirBuilder::default().lower_module(
