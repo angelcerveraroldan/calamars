@@ -2,9 +2,10 @@ use crate::{
     Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
+    heap::read_string,
     values::Value,
 };
-use calamars_core::Identifier;
+use calamars_core::{Identifier, ids};
 use ir;
 
 type BytecodeIndex = u16;
@@ -96,6 +97,11 @@ pub enum FrameOut {
     FunctionCallPls {
         fid: ir::FunctionId,
         args: Vec<Value>,
+        dst: Register,
+    },
+    /// Ask the vm to save some data in the heap for us, and save a pointer in some register
+    HeapWrite {
+        string_id: ids::StringId,
         dst: Register,
     },
     /// Ask the vm to call a function for us, and return that value (tail call)
@@ -274,11 +280,38 @@ impl Frame {
                     len: vf.bytecode.len() as u32,
                 })?;
             match bc {
+                Bytecode::DbgPrint { dst } => {
+                    print!("DebugPrint: ");
+                    // Read the value
+                    match self.read_register(dst)? {
+                        Value::Integer(v) => print!("{:?}", v),
+                        Value::Float(v) => print!("{:?}", v),
+                        Value::Boolean(v) => print!("{:?}", v),
+                        Value::Char(v) => print!("{:?}", v),
+                        Value::Empty => print!("()"),
+                        Value::HeapPtr(non_null) => {
+                            let align = std::mem::align_of::<usize>();
+                            let s = read_string(non_null, align);
+                            print!("{:?}", s);
+                        }
+                    }
+                    println!("");
+                    self.next_instruction();
+                }
                 // here we have no choice but to clone - we need the value to be stored in the frame, but it lives in the
                 // vfunction. We dont want to move it from there, as it may be needed lated by another frame.
                 Bytecode::Const { dst, k } => {
                     self.store_value(k.clone(), dst)?;
                     self.next_instruction();
+                }
+                // Later this will need to be made more generic (not just strings)
+                Bytecode::ConstString { dst, string_id } => {
+                    // we will move on after the function returns the heap value
+                    self.next_instruction();
+                    break FrameOut::HeapWrite {
+                        dst: *dst,
+                        string_id: *string_id,
+                    };
                 }
                 Bytecode::Bin { op, dst, a, b } => {
                     self.run_binary_instruct(op, dst, a, b)?;

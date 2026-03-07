@@ -1,6 +1,9 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 
-use crate::errors::{VError, VResult};
+use crate::{
+    errors::{VError, VResult},
+    heap::HeapObject,
+};
 
 /// Stack allocated values
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -9,7 +12,8 @@ pub enum Value {
     Float(f64),
     Boolean(bool),
     Char(char),
-
+    /// Pointer to the payload
+    HeapPtr(HeapObject),
     Empty,
 }
 
@@ -46,6 +50,7 @@ impl Value {
             Value::Boolean(_) => "bool",
             Value::Char(_) => "char",
             Value::Empty => "empty",
+            Value::HeapPtr(_) => "ptr",
         }
     }
 

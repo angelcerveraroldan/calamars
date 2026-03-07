@@ -1,0 +1,6 @@
+[test]
+name = "strings"
+description = "Simple tests to see that strings work"
+
+parser = "pass"
+mir = "pass"

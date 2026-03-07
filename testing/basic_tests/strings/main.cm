@@ -1,0 +1,7 @@
+typ main :: Int
+def main = {
+	typ x :: String
+	def x = "hello there!";
+
+	0
+}

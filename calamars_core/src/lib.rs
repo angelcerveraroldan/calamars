@@ -2,6 +2,7 @@
 
 pub mod global;
 pub mod ids;
+pub mod memory;
 pub mod types;
 
 use std::{hash::Hash, marker::PhantomData};

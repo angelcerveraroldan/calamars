@@ -39,4 +39,5 @@ pub enum VError {
         id: u32,
     },
     EmptyStack,
+    HeapError(&'static str),
 }

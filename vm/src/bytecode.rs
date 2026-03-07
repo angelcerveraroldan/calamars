@@ -1,4 +1,5 @@
 use crate::{Register, values::Value};
+use calamars_core::ids;
 use ir;
 
 #[rustfmt::skip]
@@ -18,6 +19,8 @@ pub enum UnOp { Not, Neg }
 pub enum Bytecode {
     /// Save constant to some register
     Const { dst: Register, k: Value },
+	/// Allocate a string to heap and save a pointer to some dst register
+	ConstString { dst: Register, string_id: ids::StringId },
     /// binary operation
     Bin   { op: BinOp, dst: Register, a: Register, b: Register },
     /// unary operation
@@ -33,4 +36,6 @@ pub enum Bytecode {
     /// Return the value in some register
     Ret      { src: Register },
     Phi      { dst: Register, incoming: Box<[(ir::BlockId, Register)]> },
+	/// For debugging purposes only
+	DbgPrint { dst: Register }
 }
