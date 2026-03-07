@@ -7,9 +7,10 @@
 use crate::{
     errors::{VError, VResult},
     function::{Frame, VFunction},
+    heap::Heap,
     values::Value,
 };
-use calamars_core::Identifier;
+use calamars_core::{Identifier, global::GlobalContext};
 
 mod bytecode;
 mod errors;
@@ -36,6 +37,7 @@ impl Register {
 
 /// Virtual Machine
 pub struct VMachine {
+    heap: Heap,
     functions: Box<[VFunction]>,
     memory: Vec<Register>,
     stack: Vec<Frame>,
@@ -63,13 +65,14 @@ impl VMachine {
         let entry_frame = generate_frame(entry, &functions)?;
         stack.push(entry_frame);
         Ok(Self {
+            heap: Heap::new(),
             functions,
             stack,
             memory: Vec::new(),
         })
     }
 
-    pub fn run(&mut self) -> VResult<Value> {
+    pub fn run(&mut self, ctx: &GlobalContext) -> VResult<Value> {
         loop {
             let mut frame = self.stack.pop().ok_or(VError::EmptyStack)?;
             let vfunc =
@@ -91,6 +94,12 @@ impl VMachine {
                     let mut newfn = reuse_frame(frame, fid, &self.functions)?;
                     newfn.load_inputs(args);
                     self.stack.push(newfn);
+                }
+                function::FrameOut::HeapWrite { dst, string_id } => {
+                    let heap_obj = self.heap.alloca_string(ctx, string_id)?;
+                    let value = Value::HeapPtr(heap_obj);
+                    let lf = self.stack.last_mut().ok_or(VError::EmptyStack)?;
+                    lf.store_value(value, &dst)?;
                 }
                 function::FrameOut::Return(register) => {
                     let value = *frame.read_register(&register)?;

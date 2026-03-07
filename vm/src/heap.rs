@@ -152,18 +152,37 @@ fn save_data_to_payload<T>(heap_obj: &mut HeapObject, src: T, alignment: usize) 
     unsafe { std::ptr::write(ptr, src) }
 }
 
+/// Read a heap object as a string
+pub fn read_string(heap_obj: &HeapObject, alignment: usize) -> &str {
+    unsafe {
+        let mem = _payload_ptr_as_type::<usize>(heap_obj, alignment);
+        let len = std::ptr::read(mem);
+        let mem = mem.add(1) as *mut u8;
+        let str_bytes = std::slice::from_raw_parts(mem, len);
+        std::str::from_utf8_unchecked(str_bytes)
+    }
+}
+
 pub struct Heap {
     head: Option<HeapObject>,
 }
 
 impl Heap {
+    pub fn new() -> Self {
+        Self { head: None }
+    }
+
     pub fn alloca_struct() -> VResult<()> {
         todo!("Leaving this here, but it will be implemented after strings")
     }
 
-    pub fn alloca_string(&mut self, ctx: &GlobalContext, string_id: ids::StringId) -> VResult<()> {
+    pub fn alloca_string(
+        &mut self,
+        ctx: &GlobalContext,
+        string_id: ids::StringId,
+    ) -> VResult<HeapObject> {
         let string = ctx.strings.get_unchecked(string_id);
-		let slen = string.len();
+        let slen = string.len();
         let memid = MemLayout::const_id_string();
         let mut str_obj = new_detached_object_string(ctx, MemoryTag::String, slen, memid)?;
         header_mut(&mut str_obj).next_header = self.head;
@@ -177,7 +196,7 @@ impl Heap {
             std::ptr::copy_nonoverlapping(str_ptr, ptr, slen);
         }
         self.head = Some(str_obj);
-        Ok(())
+        Ok(self.head.unwrap())
     }
 }
 

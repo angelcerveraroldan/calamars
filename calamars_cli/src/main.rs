@@ -69,7 +69,7 @@ fn main() {
             let mut global_ctx = calamars_core::global::GlobalContext {
                 types: calamars_core::types::TypeArena::default(),
                 strings: hir::ConstantStringArena::new_unchecked(),
-                memlay: calamars_core::memory::MemoryLayoutArena::new_unchecked(),
+                memlay: calamars_core::memory::MemoryLayoutArena::default(),
             };
 
             let (mut module, errors) = HirBuilder::default().lower_module(
@@ -123,7 +123,7 @@ fn main() {
 
                 let mut vm = VMachine::new(functions.into_boxed_slice(), ir::FunctionId::from(0))
                     .expect("Failed to lower to vm");
-                let out = vm.run();
+                let out = vm.run(&global_ctx);
                 println!("Main fn returns: {:?}", out);
             }
 

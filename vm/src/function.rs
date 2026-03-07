@@ -4,7 +4,7 @@ use crate::{
     errors::{VError, VResult},
     values::Value,
 };
-use calamars_core::Identifier;
+use calamars_core::{Identifier, ids};
 use ir;
 
 type BytecodeIndex = u16;
@@ -96,6 +96,11 @@ pub enum FrameOut {
     FunctionCallPls {
         fid: ir::FunctionId,
         args: Vec<Value>,
+        dst: Register,
+    },
+    /// Ask the vm to save some data in the heap for us, and save a pointer in some register
+    HeapWrite {
+        string_id: ids::StringId,
         dst: Register,
     },
     /// Ask the vm to call a function for us, and return that value (tail call)
@@ -279,6 +284,13 @@ impl Frame {
                 Bytecode::Const { dst, k } => {
                     self.store_value(k.clone(), dst)?;
                     self.next_instruction();
+                }
+                // Later this will need to be made more generic (not just strings)
+                Bytecode::ConstString { dst, string_id } => {
+                    break FrameOut::HeapWrite {
+                        dst: *dst,
+                        string_id: *string_id,
+                    };
                 }
                 Bytecode::Bin { op, dst, a, b } => {
                     self.run_binary_instruct(op, dst, a, b)?;
