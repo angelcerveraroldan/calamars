@@ -2,6 +2,7 @@ use crate::{
     Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
+    heap::read_string,
     values::Value,
 };
 use calamars_core::{Identifier, ids};
@@ -279,6 +280,24 @@ impl Frame {
                     len: vf.bytecode.len() as u32,
                 })?;
             match bc {
+                Bytecode::DbgPrint { dst } => {
+                    print!("DebugPrint: ");
+                    // Read the value
+                    match self.read_register(dst)? {
+                        Value::Integer(v) => print!("{:?}", v),
+                        Value::Float(v) => print!("{:?}", v),
+                        Value::Boolean(v) => print!("{:?}", v),
+                        Value::Char(v) => print!("{:?}", v),
+                        Value::Empty => print!("()"),
+                        Value::HeapPtr(non_null) => {
+                            let align = std::mem::align_of::<usize>();
+                            let s = read_string(non_null, align);
+                            print!("{:?}", s);
+                        }
+                    }
+                    println!("");
+                    self.next_instruction();
+                }
                 // here we have no choice but to clone - we need the value to be stored in the frame, but it lives in the
                 // vfunction. We dont want to move it from there, as it may be needed lated by another frame.
                 Bytecode::Const { dst, k } => {
@@ -287,6 +306,8 @@ impl Frame {
                 }
                 // Later this will need to be made more generic (not just strings)
                 Bytecode::ConstString { dst, string_id } => {
+                    // we will move on after the function returns the heap value
+                    self.next_instruction();
                     break FrameOut::HeapWrite {
                         dst: *dst,
                         string_id: *string_id,

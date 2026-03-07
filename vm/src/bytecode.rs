@@ -36,4 +36,6 @@ pub enum Bytecode {
     /// Return the value in some register
     Ret      { src: Register },
     Phi      { dst: Register, incoming: Box<[(ir::BlockId, Register)]> },
+	/// For debugging purposes only
+	DbgPrint { dst: Register }
 }

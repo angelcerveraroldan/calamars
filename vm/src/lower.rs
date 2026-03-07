@@ -74,10 +74,16 @@ impl<'a> Lowerer<'a> {
                     ir::Consts::I64(val) => Value::Integer(*val),
                     ir::Consts::Bool(val) => Value::Boolean(*val),
                     ir::Consts::String(string_id) => {
-                        return Ok(vec![Bytecode::ConstString {
+                        let mut v = vec![Bytecode::ConstString {
                             dst: destination,
                             string_id: *string_id,
-                        }]);
+                        }];
+                        #[cfg(debug_assertions)] // just for testing now ...
+                        {
+                            let dbginst = Bytecode::DbgPrint { dst: destination };
+                            v.push(dbginst);
+                        }
+                        return Ok(v);
                     }
                     ir::Consts::Unit => return Err(VError::UnsupportedConstant),
                 };

@@ -98,8 +98,8 @@ impl VMachine {
                 function::FrameOut::HeapWrite { dst, string_id } => {
                     let heap_obj = self.heap.alloca_string(ctx, string_id)?;
                     let value = Value::HeapPtr(heap_obj);
-                    let lf = self.stack.last_mut().ok_or(VError::EmptyStack)?;
-                    lf.store_value(value, &dst)?;
+                    frame.store_value(value, &dst)?;
+                    self.stack.push(frame); // we need to return to the same function and continue
                 }
                 function::FrameOut::Return(register) => {
                     let value = *frame.read_register(&register)?;
