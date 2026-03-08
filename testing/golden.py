@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import difflib
 import shlex
 from pathlib import Path
+import re
 
 try:
     import tomllib
@@ -21,6 +22,7 @@ ERROR_PARSING = -1
 IGNORE = 0  # Known bug / known to fail, ignore for now
 SHOULD_PASS = 1  # Should pass
 SHOULD_FAIL = 2  # Test for failure
+
 
 @dataclass
 class TestConfig:
@@ -42,6 +44,9 @@ class TestConfig:
     test_mir: int
     # Expected out for vm run
     test_vm: int
+
+    # Optional regex expectations per stage
+    expects: dict[str, list[str]]
 
 
 def normalize(text: str) -> str:
@@ -82,6 +87,22 @@ def parse_str_list(value) -> list[str] | None:
     return None
 
 
+def parse_expectations(data: dict) -> dict[str, list[str]]:
+    raw_expect = data.get("expect")
+    if raw_expect is None:
+        return {}
+    if not isinstance(raw_expect, dict):
+        raise ValueError("Expected [expect] table")
+
+    expects: dict[str, list[str]] = {}
+    for stage, stage_data in raw_expect.items():
+        parsed = parse_str_list(stage_data)
+        if parsed is None:
+            raise ValueError(f"Expected string or list for expect.{stage}")
+        expects[str(stage)] = parsed
+    return expects
+
+
 def parse_config(path: Path) -> TestConfig:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     test = data.get("test")
@@ -111,6 +132,8 @@ def parse_config(path: Path) -> TestConfig:
     test_vm_str = test.get("vm", "ignore")
     test_vm = parse_expected_out(test_vm_str)
 
+    expects = parse_expectations(data)
+
     return TestConfig(
         name=name,
         description=description,
@@ -120,6 +143,7 @@ def parse_config(path: Path) -> TestConfig:
         test_mir=test_mir,
         test_parse=test_parse,
         test_vm=test_vm,
+        expects=expects,
     )
 
 
@@ -212,7 +236,21 @@ def build_cmd(
 def expected_files(test_dir: Path, stage: str) -> tuple[Path | None, Path | None]:
     out_path = test_dir / f"{stage}.out"
     err_path = test_dir / f"{stage}.err"
-    return (out_path if out_path.exists() else None, err_path if err_path.exists() else None)
+    return (
+        out_path if out_path.exists() else None,
+        err_path if err_path.exists() else None,
+    )
+
+
+def check_patterns(actual: str, patterns: list[str], label: str) -> tuple[bool, str]:
+    for pattern in patterns:
+        try:
+            matched = re.search(pattern, actual, flags=re.MULTILINE)
+        except re.error as exc:
+            return False, f"Invalid regex for {label}: {pattern} ({exc})"
+        if matched is None:
+            return False, f"Missing pattern in {label}: {pattern}"
+    return True, ""
 
 
 def main() -> int:
@@ -287,6 +325,21 @@ def main() -> int:
                 if not ok:
                     failures += 1
                     print(f"==== FAIL {cfg.name} [{label}] (stderr mismatch)")
+                    print(msg)
+                    continue
+
+            patterns = cfg.expects.get(label)
+            if patterns:
+                stdout_text = normalize(result.stdout)
+                stderr_text = normalize(result.stderr)
+                if stdout_text and stderr_text:
+                    combined = stdout_text + "\n" + stderr_text
+                else:
+                    combined = stdout_text or stderr_text
+                ok, msg = check_patterns(combined, patterns, f"{label} output")
+                if not ok:
+                    failures += 1
+                    print(f"==== FAIL {cfg.name} [{label}] (grep mismatch)")
                     print(msg)
                     continue
 
