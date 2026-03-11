@@ -1,7 +1,15 @@
 typ main :: Int
 def main = {
-	typ x :: String
-	def x = "hello there!";
+	typ x :: String def x = "hello there!";
+	typ y :: String def y = "";
 
-	0
+	if neg (isEmpty y) then 1 -- should be empty, error
+	else if isEmpty x then 1  -- should not be empty, error
+	else 0                    -- all went well
 }
+
+typ isEmpty :: String -> Bool
+def isEmpty str = str == ""
+
+typ neg :: Bool -> Bool
+def neg b = if b then false else true

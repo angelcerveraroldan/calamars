@@ -7,4 +7,4 @@ mir = "pass"
 vm = "pass"
 
 [expect]
-vm = ["hello there!"]
+vm = ["DebugPrint: \"hello there!\"", "DebugPrint: \"\"",]
