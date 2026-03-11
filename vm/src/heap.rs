@@ -122,6 +122,23 @@ fn header_mut(heap_obj: &mut HeapObject) -> &mut Header {
     unsafe { heap_obj.as_mut() }
 }
 
+fn memory_tag(heap_obj: &HeapObject) -> &MemoryTag {
+    &header(heap_obj).memtag
+}
+
+pub fn heap_ptr_eq(a: &HeapObject, b: &HeapObject) -> bool {
+    match (memory_tag(a), memory_tag(b)) {
+        (MemoryTag::String, MemoryTag::String) => {
+            let alignment = std::mem::align_of::<usize>();
+            let lhs = read_string(a, alignment);
+            let rhs = read_string(b, alignment);
+            lhs == rhs
+        }
+        // Check that they are literally the same pointer
+        _ => a == b,
+    }
+}
+
 #[inline(always)]
 fn set_next_header(heap_obj: &mut HeapObject, next: Option<HeapObject>) {
     header_mut(heap_obj).next_header = next;
@@ -200,6 +217,7 @@ impl Heap {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MemoryTag {
     Liteal,  // nothing else to look at (basic types)
     String,  // nothing else to look at
