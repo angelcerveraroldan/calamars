@@ -2,7 +2,7 @@ use std::ops::{BitAnd, BitOr, BitXor};
 
 use crate::{
     errors::{VError, VResult},
-    heap::HeapObject,
+    heap::{self, HeapObject},
 };
 
 /// Stack allocated values
@@ -19,27 +19,31 @@ pub enum Value {
 
 macro_rules! binfuncs {
     (closed $name:ident, $e:expr, $($id:ident),*) => {
-	pub fn $name(&self, other: &Value) -> VResult<Value> {
-	    match (self, other) {
-		$((Value::$id(a), Value::$id(b)) => Ok(Value::$id($e(a, b))),)*
-		_ => Err(VError::TypeMismatchBinary {
-                lhs: self.type_name(),
-                rhs: other.type_name(),
-            }),
-	    }
-	}
+		pub fn $name(&self, other: &Value) -> VResult<Value> {
+			match (self, other) {
+				$((Value::$id(a), Value::$id(b)) => Ok(Value::$id($e(a, b))),)*
+					_ => Err(VError::TypeMismatchBinary {
+						lhs: self.type_name(),
+						rhs: other.type_name(),
+					}),
+			}
+		}
     };
-    (cmp $name:ident, $e:expr, $($id:ident),*) => {
-	pub fn $name(&self, other: &Value) -> VResult<Value> {
-	    match (self, other) {
-		$((Value::$id(a), Value::$id(b)) => Ok(Value::Boolean($e(a, b))),)*
-		_ => Err(VError::TypeMismatchBinary {
-                lhs: self.type_name(),
-                rhs: other.type_name(),
-            }),
-	    }
+	(cmp $name:ident, $( $expr:expr => $($id:ident),+ );+ $(;)?) => {
+		pub fn $name(&self, other: &Value) -> VResult<Value> {
+			match (self, other) {
+				$(
+					$(
+						(Value::$id(a), Value::$id(b)) => Ok(Value::Boolean($expr(a, b))),
+					)+
+				)+
+					_ => Err(VError::TypeMismatchBinary {
+						lhs: self.type_name(),
+						rhs: other.type_name(),
+					}),
+			}
+		}
 	}
-    }
 }
 
 impl Value {
@@ -71,11 +75,14 @@ impl Value {
     binfuncs!(closed div, |a,b| a / b, Integer, Float);
     binfuncs!(closed modulus, |a,b| a % b, Integer, Float);
 
-    binfuncs!(cmp g, |a,b| a >  b, Integer, Float);
-    binfuncs!(cmp l, |a,b| a <  b, Integer, Float);
-    binfuncs!(cmp e, |a,b| a == b, Integer, Float, Boolean);
-    binfuncs!(cmp ge, |a,b| a >= b, Integer, Float);
-    binfuncs!(cmp le, |a,b| a <= b, Integer, Float);
+    binfuncs!(cmp g, |a,b| a >  b => Integer, Float);
+    binfuncs!(cmp l, |a,b| a <  b => Integer, Float);
+    binfuncs!(cmp e,
+              |a,b| a==b => Integer, Float, Boolean;
+              |a, b| heap::heap_ptr_eq(a,b) => HeapPtr;
+    );
+    binfuncs!(cmp ge, |a,b| a >= b => Integer, Float);
+    binfuncs!(cmp le, |a,b| a <= b => Integer, Float);
 
     pub fn xor(&self, other: &Value) -> VResult<Value> {
         match (self, other) {
