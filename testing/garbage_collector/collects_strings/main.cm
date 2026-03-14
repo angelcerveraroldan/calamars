@@ -1,0 +1,18 @@
+-- Run a recursive function that takes up "a lot" of memory
+typ main :: Int
+def main = {
+	recurseOne 100
+}
+
+-- A somewhat long strings that will take up some memory
+typ someStr :: Int -> String
+def someStr _ = "Some string that will use up memeory..."
+
+typ recurseOne :: Int -> Int
+def recurseOne count =
+	if count == 0 then 0
+	else {
+		 typ tmp   :: String def tmp   = someStr 0;
+		 typ other :: String def other = someStr 0;
+		 recurseOne (count - 1)
+	}
