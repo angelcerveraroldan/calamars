@@ -171,13 +171,19 @@ def find_binary() -> Path | None:
 
 
 def ensure_binary() -> Path:
+    features = os.environ.get("CALAMARS_FEATURES", "logs").strip()
     bin_path = find_binary()
-    if bin_path:
+    if bin_path and not features:
         return bin_path
     root = Path(__file__).resolve().parents[1]
-    print("==== BUILDING calamars_cli")
+    if features:
+        print(f"==== BUILDING calamars_cli (features: {features})")
+        feature_args = ["--features", features]
+    else:
+        print("==== BUILDING calamars_cli")
+        feature_args = []
     result = subprocess.run(
-        ["cargo", "build", "-p", "calamars_cli"],
+        ["cargo", "build", "-p", "calamars_cli", *feature_args],
         cwd=root,
         capture_output=True,
         text=True,
