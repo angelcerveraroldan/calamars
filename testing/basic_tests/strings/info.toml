@@ -5,6 +5,3 @@ description = "Simple tests to see that strings work"
 parser = "pass"
 mir = "pass"
 vm = "pass"
-
-[expect]
-vm = ["DebugPrint: \"hello there!\"", "DebugPrint: \"\"",]

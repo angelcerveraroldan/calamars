@@ -1,0 +1,13 @@
+[test]
+name = "collects_strings"
+description = "Allocates many strings to verify GC collections"
+
+parser = "pass"
+mir = "pass"
+vm = "pass"
+
+[expect]
+vm = [
+  "VM Log: De-allocation loop:",
+  "VM Log:\\s+De-allocating object:"
+]
