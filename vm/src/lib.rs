@@ -1,6 +1,6 @@
 //! A virtual machine to run Calamars
 //!
-//! For now, this file is meant to "just sort of work", and thus it is VERY inneficient. Once the
+//! For now, this file is meant to "just sort of work", and thus it is VERY inefficient. Once the
 //! project reaches a state where the front end is semi-stable, and a stdlib exists, much
 //! optimization needs to be done here.
 
@@ -18,6 +18,25 @@ mod function;
 mod heap;
 pub mod lower;
 mod values;
+
+/// When feature logs is enabled, we will print logs
+#[macro_export]
+macro_rules! dbg_log {
+    ($($arg:tt)*) => {
+		#[cfg(feature = "logs")]
+		eprintln!($($arg)*)
+	};
+}
+
+#[macro_export]
+macro_rules! vm_log {
+    ($fmt:literal $(, $arg:tt)*) => {
+        crate::dbg_log!(concat!("VM Log: ", $fmt), $($arg)*)
+    };
+    ($arg:expr) => {
+        crate::dbg_log!("VM Log: {}", $arg)
+    };
+}
 
 // A register
 #[derive(Clone, Debug, Copy)]
