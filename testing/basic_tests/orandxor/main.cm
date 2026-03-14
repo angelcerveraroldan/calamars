@@ -6,16 +6,11 @@ typ bench :: Int -> Int -> Int -> Int
 def bench n x acc =
     if n == 0 then acc
     else {
-        typ x1 :: Int;
-        def x1 = lcg x;
-        typ a :: Int;
-        def a = x1;
-        typ x2 :: Int;
-        def x2 = lcg x1;
-        typ b :: Int;
-        def b = x2;
-        typ g :: Int;
-        def g = gcd a b;
+        def x1 :: Int = lcg x;
+        def a :: Int = x1;
+        def x2 :: Int = lcg x1;
+        def b :: Int = x2;
+        def g :: Int = gcd a b;
         bench (n - 1) x2 (acc + g)
     }
 

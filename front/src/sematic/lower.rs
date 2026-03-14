@@ -160,6 +160,26 @@ impl HirBuilder {
                             Err(err) => self.insert_error(err),
                         }
                     }
+                    Declaration::TypeAndBinding {
+                        docs,
+                        dtype,
+                        name,
+                        body,
+                    } => {
+                        let sb = self.lower_type_declaration(dtype, name, global_ctx);
+                        match self.lower_binding_declaration(
+                            name,
+                            &Vec::new(),
+                            body,
+                            sb,
+                            global_ctx,
+                        ) {
+                            Ok(symbol_id) => {
+                                items.push(hir::ItemId::Symbol(symbol_id));
+                            }
+                            Err(err) => self.insert_error(err),
+                        }
+                    }
                 },
                 ast::Item::Expression(expr) => {
                     let expr_id = self.lower_expression(expr, global_ctx);
