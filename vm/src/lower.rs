@@ -78,11 +78,6 @@ impl<'a> Lowerer<'a> {
                             dst: destination,
                             string_id: *string_id,
                         }];
-                        #[cfg(debug_assertions)] // just for testing now ...
-                        {
-                            let dbginst = Bytecode::DbgPrint { dst: destination };
-                            v.push(dbginst);
-                        }
                         return Ok(v);
                     }
                     ir::Consts::Unit => return Err(VError::UnsupportedConstant),

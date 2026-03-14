@@ -4,7 +4,10 @@ use std::ptr::NonNull;
 
 use calamars_core::{global::GlobalContext, ids, memory::MemLayout};
 
-use crate::errors::{VError, VResult};
+use crate::{
+    errors::{VError, VResult},
+    vm_log,
+};
 
 /// State used to keep track of which pointers are reachable from roots
 ///
@@ -210,7 +213,7 @@ impl Heap {
     }
 
     pub fn shuold_run_gc(&self) -> bool {
-		false
+        true
     }
 
     pub fn alloca_struct() -> VResult<()> {
@@ -250,6 +253,7 @@ impl Heap {
     }
 
     fn deallocate_unmarked(&mut self, ctx: &GlobalContext) {
+        vm_log!("De-allocation loop:");
         if self.head.is_none() {
             return;
         }
@@ -260,6 +264,7 @@ impl Heap {
             let curr_header = header(&current);
             let next = curr_header.next_header;
             if curr_header.marked == SweepState::Unmarked {
+                vm_log!("\tDe-allocating object: {:?}", current);
                 deallocate_heap_object(&mut current, ctx);
                 if let Some(mut l) = last {
                     let last_header = header_mut(&mut l);

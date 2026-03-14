@@ -37,5 +37,5 @@ pub enum Bytecode {
     Ret      { src: Register },
     Phi      { dst: Register, incoming: Box<[(ir::BlockId, Register)]> },
 	/// For debugging purposes only
-	DbgPrint { dst: Register }
+	#[cfg(feature = "logs")] DbgPrint { dst: Register }
 }

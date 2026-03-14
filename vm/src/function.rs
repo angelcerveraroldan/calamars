@@ -17,7 +17,7 @@ pub struct VFunction {
     bytecode: Box<[Bytecode]>,
     /// Block -> BytecodeIndex map
     ///
-    /// bbi_map[i] ~ First bytecode instructio in the ith block
+    /// bbi_map[i] ~ First bytecode instruction in the ith block
     bbi_map: Vec<BytecodeIndex>,
     register_size: u32,
 }
@@ -280,22 +280,22 @@ impl Frame {
                     len: vf.bytecode.len() as u32,
                 })?;
             match bc {
+                #[cfg(feature = "logs")]
                 Bytecode::DbgPrint { dst } => {
-                    print!("DebugPrint: ");
                     // Read the value
-                    match self.read_register(dst)? {
-                        Value::Integer(v) => print!("{:?}", v),
-                        Value::Float(v) => print!("{:?}", v),
-                        Value::Boolean(v) => print!("{:?}", v),
-                        Value::Char(v) => print!("{:?}", v),
-                        Value::Empty => print!("()"),
+                    let f = match self.read_register(dst)? {
+                        Value::Integer(v) => format!("{:?}", v),
+                        Value::Float(v) => format!("{:?}", v),
+                        Value::Boolean(v) => format!("{:?}", v),
+                        Value::Char(v) => format!("{:?}", v),
+                        Value::Empty => format!("()"),
                         Value::HeapPtr(non_null) => {
                             let align = std::mem::align_of::<usize>();
                             let s = read_string(non_null, align);
-                            print!("{:?}", s);
+                            format!("{:?}", s)
                         }
-                    }
-                    println!("");
+                    };
+                    crate::vm_log!(f);
                     self.next_instruction();
                 }
                 // here we have no choice but to clone - we need the value to be stored in the frame, but it lives in the
