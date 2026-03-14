@@ -11,7 +11,7 @@ use crate::errors::{VError, VResult};
 /// The default value *has to be* 0, so that we can delete pointers from the heap while
 /// the programme is running concurrently (while keeping memory safety). If a new pointer
 /// is created, we will not delete it, we assume that it is reachable.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub enum SweepState {
     /// Pointer has been reached, and deletion would lead to memory safety issues
     #[default]
@@ -26,6 +26,8 @@ pub struct Header {
     /// Information about the memory layout
     memlayout_id: ids::MemLayoutId,
     marked: SweepState,
+    /// Total size allocated, including header
+    total_size: usize,
     /// A pointer to the next header
     ///
     /// Will be None if this is the last header.
@@ -38,9 +40,11 @@ impl Header {
         memlayout_id: ids::MemLayoutId,
         marked: SweepState,
         next_header: Option<HeapObject>,
+        total_size: usize,
     ) -> Self {
         Self {
             memtag,
+            total_size,
             memlayout_id,
             marked,
             next_header,
@@ -98,11 +102,11 @@ fn _new_detached_object(
             "When compile time size is not know, a runtime size must be passed to the allocator",
         ));
     };
-    let memory = allocate_memory(memlayout.alignment, size);
+    let (memory, total_size) = allocate_memory(memlayout.alignment, size);
     if memory.is_null() {
         return Err(VError::HeapError("Null memory was returned"));
     }
-    let header = Header::new(memtag, memlayout_id, SweepState::Unmarked, None);
+    let header = Header::new(memtag, memlayout_id, SweepState::Unmarked, None, total_size);
     // Now we can save the raw data to the pointer
     let nnheader = unsafe {
         let header_ptr = memory as *mut Header;
@@ -110,6 +114,17 @@ fn _new_detached_object(
         std::ptr::NonNull::new_unchecked(header_ptr)
     };
     Ok(HeapObject::from(nnheader))
+}
+
+fn deallocate_heap_object(heap_obj: &mut HeapObject, ctx: &GlobalContext) {
+    let h = header(heap_obj);
+    let size = h.total_size;
+    unsafe {
+        let layout_alignment = ctx.memlay.get_unchecked(h.memlayout_id).alignment;
+        let alignment = std::mem::align_of::<Header>().max(layout_alignment);
+        let l = std::alloc::Layout::from_size_align_unchecked(size, alignment);
+        std::alloc::dealloc(heap_obj.as_ptr() as *mut u8, l);
+    }
 }
 
 #[inline(always)]
@@ -124,6 +139,11 @@ fn header_mut(heap_obj: &mut HeapObject) -> &mut Header {
 
 fn memory_tag(heap_obj: &HeapObject) -> &MemoryTag {
     &header(heap_obj).memtag
+}
+
+fn mark(heap_obj: &mut HeapObject) {
+    let h = header_mut(heap_obj);
+    h.marked = SweepState::Marked;
 }
 
 pub fn heap_ptr_eq(a: &HeapObject, b: &HeapObject) -> bool {
@@ -189,6 +209,10 @@ impl Heap {
         Self { head: None }
     }
 
+    pub fn shuold_run_gc(&self) -> bool {
+		false
+    }
+
     pub fn alloca_struct() -> VResult<()> {
         todo!("Leaving this here, but it will be implemented after strings")
     }
@@ -215,6 +239,58 @@ impl Heap {
         self.head = Some(str_obj);
         Ok(self.head.unwrap())
     }
+
+    fn unmark_all(&mut self) {
+        let mut current_heap_object = self.head;
+        while let Some(mut h) = current_heap_object {
+            let current_header = header_mut(&mut h);
+            current_header.marked = SweepState::Unmarked;
+            current_heap_object = current_header.next_header;
+        }
+    }
+
+    fn deallocate_unmarked(&mut self, ctx: &GlobalContext) {
+        if self.head.is_none() {
+            return;
+        }
+
+        let mut last: Option<HeapObject> = None;
+        let mut current: HeapObject = self.head.unwrap();
+        loop {
+            let curr_header = header(&current);
+            let next = curr_header.next_header;
+            if curr_header.marked == SweepState::Unmarked {
+                deallocate_heap_object(&mut current, ctx);
+                if let Some(mut l) = last {
+                    let last_header = header_mut(&mut l);
+                    last_header.next_header = next;
+                } else {
+                    // we just deleted the head, so we must update it here
+                    self.head = next;
+                }
+            } else {
+                last = Some(current);
+            };
+            let Some(n) = next else {
+                return;
+            };
+            current = n;
+        }
+    }
+
+    /// visit_roots is a function passed by the VM that lets us traverse all of the Values
+    /// in the frames without having to clone/copy things around
+    pub fn deallocate_non_visited<F>(&mut self, ctx: &GlobalContext, mut visit_roots: F)
+    where
+        F: FnMut(&mut dyn FnMut(crate::values::Value)),
+    {
+        self.unmark_all();
+        visit_roots(&mut |value| match value {
+            crate::values::Value::HeapPtr(mut non_null) => mark(&mut non_null),
+            _ => (),
+        });
+        self.deallocate_unmarked(ctx);
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -233,14 +309,18 @@ fn size_with_padding(size: usize, alignment: usize) -> usize {
 }
 
 /// Given some needed size, and some desired alignment, allocate memory
-fn allocate_memory(alignment: usize, size: usize) -> *mut u8 {
+fn allocate_memory(alignment: usize, payload_size: usize) -> (*mut u8, usize) {
     let header_size = std::mem::size_of::<Header>();
     let alignment = std::mem::align_of::<Header>().max(alignment);
+    if !alignment.is_power_of_two() {
+        panic!("Cannot set non-power-of-two alignment");
+    }
+
     // We need to make sure that the memory for the payload is aligned correctly, thus we will
     // align to its desired alignment
-    let total_size = size_with_padding(header_size, alignment) + size;
+    let total_size = size_with_padding(header_size, alignment) + payload_size;
     unsafe {
         let l = std::alloc::Layout::from_size_align_unchecked(total_size, alignment);
-        std::alloc::alloc(l)
+        (std::alloc::alloc(l), total_size)
     }
 }

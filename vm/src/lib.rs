@@ -74,6 +74,16 @@ impl VMachine {
 
     pub fn run(&mut self, ctx: &GlobalContext) -> VResult<Value> {
         loop {
+            if self.heap.shuold_run_gc() {
+                self.heap.deallocate_non_visited(ctx, |f| {
+                    for frame in &self.stack {
+                        for register in &frame.registers {
+                            f(*register)
+                        }
+                    }
+                });
+            }
+
             let mut frame = self.stack.pop().ok_or(VError::EmptyStack)?;
             let vfunc =
                 self.functions
