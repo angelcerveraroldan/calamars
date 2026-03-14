@@ -1,11 +1,8 @@
 typ main :: Int
 def main = {
-    typ y :: Int;
-    def y = 3;
-    typ a :: Int;
-    def a = add 2 y;
-    typ res :: Int;
-    def res = if equals y a then 2 else 3;
+    def y :: Int = 3;
+    def a :: Int = add 2 y;
+    def res :: Int = if equals y a then 2 else 3;
     res
 }
 

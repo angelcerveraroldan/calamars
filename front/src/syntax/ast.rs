@@ -430,21 +430,31 @@ pub enum Declaration {
         params: Vec<Ident>,
         body: Expression,
     },
+    /// A single line that both declares the type and defines the body for a *simple expression*
+    /// that is, no inputs.
+    TypeAndBinding {
+        docs: Option<String>,
+        dtype: Type,
+        name: Ident,
+        body: Expression,
+    },
 }
 
 impl Declaration {
     pub fn span(&self) -> Span {
         match self {
             Declaration::TypeSignature { dtype, .. } => dtype.span(),
-            Declaration::Binding { body, .. } => body.span(),
+            Declaration::Binding { body, .. } | Declaration::TypeAndBinding { body, .. } => {
+                body.span()
+            }
         }
     }
 
     pub fn name_span(&self) -> Span {
         match self {
-            Declaration::TypeSignature { name, .. } | Declaration::Binding { name, .. } => {
-                name.span()
-            }
+            Declaration::TypeSignature { name, .. }
+            | Declaration::Binding { name, .. }
+            | Declaration::TypeAndBinding { name, .. } => name.span(),
         }
     }
 }

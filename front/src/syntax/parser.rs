@@ -629,6 +629,42 @@ impl CalamarsParser {
         ast::Declaration::TypeSignature { docs, name, dtype }
     }
 
+    fn parse_declaration_body_or_sugar(&mut self) -> ast::Declaration {
+        #[rustfmt::skip]
+        let docs = if let Token::DocComment(comment) = self.next_token_ref() {
+            Some(comment.clone())
+        } else { None };
+
+        if docs.is_some() {
+            self.advance_one();
+        }
+
+        self.need(Token::Def, "def");
+        let name = self.parse_identifier();
+        match self.next_token_ref() {
+            Token::DoubleColon => self.parse_type_and_declaration_sugar(name, docs),
+            Token::Ident(_) | Token::Equal => self.parse_declaration_body(name),
+            _ => todo!(),
+        }
+    }
+
+    fn parse_type_and_declaration_sugar(
+        &mut self,
+        name: Ident,
+        docs: Option<String>,
+    ) -> ast::Declaration {
+        self.need(Token::DoubleColon, "::");
+        let dtype = self.parse_type();
+        self.need(Token::Equal, "=");
+        let body = self.parse_expression();
+        ast::Declaration::TypeAndBinding {
+            docs,
+            dtype,
+            name,
+            body,
+        }
+    }
+
     /// Parse the body of a declaration. This can be a function definition or a variable.
     ///
     /// Examples are:
@@ -637,9 +673,7 @@ impl CalamarsParser {
     ///
     /// identity x = x
     /// ```
-    fn parse_declaration_body(&mut self) -> ast::Declaration {
-        self.need(Token::Def, "def");
-        let name = self.parse_identifier();
+    fn parse_declaration_body(&mut self, name: Ident) -> ast::Declaration {
         let mut params = vec![];
         loop {
             match self.next_ref() {
@@ -658,7 +692,7 @@ impl CalamarsParser {
 
     fn parse_declaration(&mut self) -> ast::Declaration {
         if self.next_eq(Token::Def) {
-            self.parse_declaration_body()
+            self.parse_declaration_body_or_sugar()
         } else {
             self.parse_declaration_type()
         }

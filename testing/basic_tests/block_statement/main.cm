@@ -1,9 +1,7 @@
 typ main :: Int
 def main = {
-    typ x :: Int;
-    def x = 5;
-    typ y :: Int;
-    def y =
+    def x :: Int = 5;
+    def y :: Int =
         if 2*3 == 9 then 100
         else if 2*3 == 6 then 0
         else 10;
