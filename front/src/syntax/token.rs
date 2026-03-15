@@ -40,25 +40,24 @@ fn parse_doc_comment(lex: &mut Lexer<Token>) -> Option<String> {
 pub enum Token {
     #[token("typ")]    TypeDef, /// Define the type `id :: a -> a`
     #[token("def")]    Def,     /// Define the body `id x = x`
-    #[token("mut")]    Mut,
     #[token("given")]  Given,
     #[token("match")]  Match,
+    #[token("choose")] Choose,
     #[token("if")]     If,
     #[token("then")]   Then,
     #[token("else")]   Else,
-    #[token("let")]    Let,
+    #[token("end")]    End,
+    #[token("with")]   With,
     #[token("return")] Return,
     #[token("module")] Module,
     #[token("import")] Import,
     #[token("struct")] Struct,
+    #[token("enum")]   Enum,
     #[token("trait")]  Trait,
     #[token("and")]    And,
     #[token("or")]     Or,
     #[token("xor")]    Xor,
     #[token("not")]    Not,
-    #[token("enum")]   Enum,
-    #[token("val")]    Val,
-    #[token("var")]    Var,
     #[token("true")]   True,
     #[token("false")]  False,
 
@@ -179,16 +178,16 @@ impl fmt::Display for Token {
         }
 
         match self {
-            // keywords
             Token::Def => write!(f, "def"),
             Token::TypeDef => write!(f, "typ"),
-            Token::Mut => write!(f, "mut"),
             Token::Given => write!(f, "given"),
             Token::Match => write!(f, "match"),
+            Token::Choose => write!(f, "choose"),
+            Token::End => write!(f, "end"),
+            Token::With => write!(f, "with"),
             Token::If => write!(f, "if"),
             Token::Then => write!(f, "then"),
             Token::Else => write!(f, "else"),
-            Token::Let => write!(f, "let"),
             Token::Return => write!(f, "return"),
             Token::Module => write!(f, "module"),
             Token::Import => write!(f, "import"),
@@ -199,12 +198,8 @@ impl fmt::Display for Token {
             Token::Xor => write!(f, "xor"),
             Token::Not => write!(f, "not"),
             Token::Enum => write!(f, "enum"),
-            Token::Val => write!(f, "val"),
-            Token::Var => write!(f, "var"),
             Token::True => write!(f, "true"),
             Token::False => write!(f, "false"),
-
-            // punctuation
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),
             Token::LBrace => write!(f, "{{"),
@@ -216,8 +211,6 @@ impl fmt::Display for Token {
             Token::DoubleColon => write!(f, "::"),
             Token::Colon => write!(f, ":"),
             Token::Semicolon => write!(f, ";"),
-
-            // operators
             Token::Arrow => write!(f, "->"),
             Token::FatArrow => write!(f, "=>"),
             Token::PipeOp => write!(f, "|>"),
@@ -236,18 +229,13 @@ impl fmt::Display for Token {
             Token::Greater => write!(f, ">"),
             Token::Pow => write!(f, "^"),
             Token::Mod => write!(f, "%"),
-
-            // comments
             Token::LineComment => write!(f, "--…"),
             Token::DocComment(s) => write!(f, "--*{s}*--"),
-
-            // identifiers & literals
             Token::Ident(s) => write!(f, "{s}"),
             Token::Int(i) => write!(f, "{i}"),
             Token::Float(x) => write!(f, "{x}"),
             Token::Char(c) => write!(f, "'{}'", escape_char(*c)),
             Token::String(s) => write!(f, "\"{}\"", escape_str(s)),
-
             Token::Error => write!(f, "<ERROR>"),
             Token::EOF => write!(f, "<eof>"),
         }
