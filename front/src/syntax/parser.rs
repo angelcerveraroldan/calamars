@@ -156,7 +156,22 @@ impl CalamarsParser {
 
     /// Get the next token by reference
     fn next_token_ref(&self) -> &Token {
-        &self.tokens[self.n_index()].0
+        self.next_nth_token_ref(0)
+    }
+
+    fn next_token_ref_skip_docs(&self) -> &Token {
+        let should_skip_docs = self.next_matches(|tk| matches!(tk, Token::DocComment(_)));
+        if should_skip_docs {
+            self.next_nth_token_ref(1)
+        } else {
+            self.next_token_ref()
+        }
+    }
+
+    // When n = 0, you will see the current token we are working on
+    // when n = 1, you will skip one token, and see what we would the be working on ...
+    fn next_nth_token_ref(&self, n: usize) -> &Token {
+        &self.tokens[self.n_index() + n].0
     }
 
     fn next_ref(&self) -> &(Token, Span) {
@@ -613,15 +628,7 @@ impl CalamarsParser {
     /// identity :: Int -> Int
     /// ```
     fn parse_declaration_type(&mut self) -> ast::Declaration {
-        #[rustfmt::skip]
-        let docs = if let Token::DocComment(comment) = self.next_token_ref() {
-            Some(comment.clone())
-        } else { None };
-
-        if docs.is_some() {
-            self.advance_one();
-        }
-
+        let docs = self.parse_docs();
         self.need(Token::TypeDef, "typ");
         let name = self.parse_identifier();
         self.need(Token::DoubleColon, "::");
@@ -630,15 +637,7 @@ impl CalamarsParser {
     }
 
     fn parse_declaration_body_or_sugar(&mut self) -> ast::Declaration {
-        #[rustfmt::skip]
-        let docs = if let Token::DocComment(comment) = self.next_token_ref() {
-            Some(comment.clone())
-        } else { None };
-
-        if docs.is_some() {
-            self.advance_one();
-        }
-
+        let docs = self.parse_docs();
         self.need(Token::Def, "def");
         let name = self.parse_identifier();
         match self.next_token_ref() {
@@ -698,6 +697,43 @@ impl CalamarsParser {
         }
     }
 
+    fn parse_docs(&mut self) -> Option<String> {
+        let docs = match self.next_ref() {
+            (Token::DocComment(s), _) => Some(s.clone()),
+            _ => None,
+        };
+        if docs.is_some() {
+            self.advance_one()
+        }
+        docs
+    }
+
+    fn parse_struct(&mut self) -> ast::Definition {
+        let docs = self.parse_docs();
+        self.need(Token::Struct, "struct");
+        let name = self.parse_identifier();
+        self.need(Token::LBrace, "{");
+        let mut params = vec![];
+        while !self.next_eq(Token::RBrace) {
+            // We are finished
+            let name = self.parse_identifier();
+            self.need(Token::DoubleColon, "::");
+            let ty = self.parse_type();
+            params.push((name, ty));
+            // Allow trailing comma, but don't make it necessary
+            if !self.next_eq(Token::RBrace) {
+                self.need(Token::Comma, ",");
+            }
+        }
+        self.need(Token::RBrace, "}");
+        ast::Definition::Struct { docs, name, params }
+    }
+
+    /// Responsible for parsing enums, structs, and trait definitions
+    fn parse_definition(&mut self) -> ast::Definition {
+        self.parse_struct()
+    }
+
     fn is_expr_init(&self, token: &Token) -> bool {
         matches!(
             token,
@@ -729,10 +765,22 @@ impl CalamarsParser {
         }
     }
 
+    /// Declaration starts are typ and def
+    pub fn declaration_start(&self) -> bool {
+        let token = self.next_token_ref_skip_docs();
+        matches!(token, Token::Def | Token::TypeDef)
+    }
+
+    pub fn definition_start(&self) -> bool {
+        let token = self.next_token_ref_skip_docs();
+        matches!(token, Token::Struct | Token::Enum)
+    }
+
     pub fn parse_file(&mut self) -> ast::Module {
-        let mut decs = vec![];
+        let (mut decs, mut defs) = (vec![], vec![]);
         loop {
             // Skip until we find a declaration or EOF
+            // we should be logging errors here ...
             self.skip_until((), |_, tk| {
                 matches!(
                     tk,
@@ -741,6 +789,7 @@ impl CalamarsParser {
                         | Token::Ident(_)
                         | Token::DocComment(_)
                         | Token::EOF
+                        | Token::Struct
                 )
             });
 
@@ -748,12 +797,16 @@ impl CalamarsParser {
                 break;
             }
 
-            let dec = self.parse_declaration();
-            decs.push(dec);
+            if self.declaration_start() {
+                decs.push(self.parse_declaration());
+            } else if self.definition_start() {
+                defs.push(self.parse_definition())
+            }
         }
 
         ast::Module {
             imports: vec![],
+            definitions: defs,
             items: decs,
         }
     }
