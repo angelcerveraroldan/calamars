@@ -27,6 +27,7 @@ impl Ident {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub imports: Vec<Import>,
+    pub definitions: Vec<Definition>,
     pub items: Vec<Declaration>,
 }
 
@@ -416,8 +417,6 @@ impl CompoundExpression {
     }
 }
 
-// DECLARATIONS
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Declaration {
     TypeSignature {
@@ -456,5 +455,27 @@ impl Declaration {
             | Declaration::Binding { name, .. }
             | Declaration::TypeAndBinding { name, .. } => name.span(),
         }
+    }
+}
+
+/// A definition of a new "type"
+#[derive(Debug, Clone, PartialEq)]
+pub enum Definition {
+    Struct {
+        docs: Option<String>,
+        name: Ident,
+        params: Vec<(Ident, Type)>,
+    },
+}
+
+impl Definition {
+    pub fn name(&self) -> &Ident {
+        match self {
+            Definition::Struct { name, .. } => name,
+        }
+    }
+
+    pub fn name_span(&self) -> Span {
+        self.name().span()
     }
 }
