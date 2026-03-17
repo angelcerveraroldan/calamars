@@ -30,7 +30,7 @@ fn lower_str_to_type(s: &str, span: &Span) -> Result<types::Type, SemanticError>
     })
 }
 
-pub struct HirBuilder {
+pub struct HirModuleBuilder {
     pub identifiers: hir::IdentArena,
     pub expressions: hir::ExpressionArena,
     pub symbols: hir::SymbolArena,
@@ -42,7 +42,7 @@ pub struct HirBuilder {
     pub diag_err: Vec<SemanticError>,
 }
 
-impl Default for HirBuilder {
+impl Default for HirModuleBuilder {
     fn default() -> Self {
         let mut d = Self {
             identifiers: hir::IdentArena::new_unchecked(),
@@ -56,7 +56,7 @@ impl Default for HirBuilder {
     }
 }
 
-impl HirBuilder {
+impl HirModuleBuilder {
     pub fn errors(&self) -> &Vec<SemanticError> {
         &self.diag_err
     }
