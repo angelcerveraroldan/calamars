@@ -2,7 +2,7 @@ use calamars_core::ids;
 use clap::{Parser, Subcommand};
 use front::{
     errors::PrettyError,
-    sematic::{hir, lower::HirBuilder, types::TypeHandler},
+    sematic::{hir, lower::HirModuleBuilder, types::TypeHandler},
     syntax::parser::CalamarsParser,
 };
 use ir::printer::MirPrinter;
@@ -72,7 +72,7 @@ fn main() {
                 memlay: calamars_core::memory::MemoryLayoutArena::default(),
             };
 
-            let (mut module, errors) = HirBuilder::default().lower_module(
+            let (mut module, errors) = HirModuleBuilder::default().lower_module(
                 &module,
                 file_id,
                 file_name.clone(),
