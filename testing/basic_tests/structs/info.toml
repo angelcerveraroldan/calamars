@@ -1,0 +1,7 @@
+[test]
+name = "structs"
+description = "Simple structs example"
+
+parser = "fail" # Type issues
+mir = "fail" # Not yet implemented
+vm  = "fail" # Not yet implemented
