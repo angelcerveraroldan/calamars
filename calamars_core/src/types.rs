@@ -39,6 +39,7 @@ pub enum Type {
         input: ids::TypeId,
         output: ids::TypeId,
     },
+    Structure(ids::DStructId),
 }
 
 impl Type {
@@ -78,5 +79,6 @@ pub fn type_id_stringify(arena: &TypeArena, id: ids::TypeId) -> String {
             let out = type_id_stringify(arena, *output);
             format!("{inp} -> ({out})")
         }
+        Type::Structure(_id) => format!("Struct (TODO: name)"),
     }
 }

@@ -1,5 +1,6 @@
 //! Structures and functions that will be used form the front, to the back end of the language
 
+pub mod data_structs;
 pub mod global;
 pub mod ids;
 pub mod memory;
@@ -149,15 +150,35 @@ impl<Ty, Id: Identifier, P: PushPolicy<Ty>> PolicyArena<Ty, Id, P> {
     }
 }
 
+pub enum InternedId<Id> {
+    New(Id),
+    Old(Id),
+}
+
+impl<Id> InternedId<Id>
+where
+    Id: Identifier,
+{
+    pub fn inner(&self) -> Id {
+        match self {
+            InternedId::New(id) | InternedId::Old(id) => *id,
+        }
+    }
+}
+
 impl<Ty: Hash + Eq + Clone, Id: Identifier> InternArena<Ty, Id> {
-    pub fn intern(&mut self, ty: &Ty) -> Id {
+    pub fn intern_checked(&mut self, ty: &Ty) -> InternedId<Id> {
         if let Some(id) = self.map.get(ty) {
-            return *id;
+            return InternedId::Old(*id);
         }
         self.data.push(ty.clone());
         let id = Id::from(self.data.len() - 1);
         self.map.insert(ty.clone(), id);
-        id
+        InternedId::New(id)
+    }
+
+    pub fn intern(&mut self, ty: &Ty) -> Id {
+        self.intern_checked(ty).inner()
     }
 
     pub fn resolve(&self, ty: &Ty) -> Option<&Id> {

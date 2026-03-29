@@ -1,6 +1,6 @@
 //! Lower AST to HIR
 
-use calamars_core::{ids, types};
+use calamars_core::{data_structs::DataStructure, ids, types};
 
 use crate::{
     sematic::{
@@ -13,24 +13,46 @@ use crate::{
     },
 };
 
-fn lower_str_to_type(s: &str, span: &Span) -> Result<types::Type, SemanticError> {
-    Ok(match s {
-        "Int" | "Integer" => types::Type::Integer,
-        "Float" | "Real" => types::Type::Float,
-        "Bool" | "Boolean" => types::Type::Boolean,
-        "String" => types::Type::String,
-        "Char" => types::Type::Char,
-        "Unit" | "()" => types::Type::Unit,
-        other => {
-            return Err(SemanticError::TypeNotFound {
-                type_name: other.to_string(),
-                span: *span,
-            });
-        }
+fn lower_str_to_type_primitive(s: &str) -> Option<types::Type> {
+    match s {
+        "Int" | "Integer" => Some(types::Type::Integer),
+        "Float" | "Real" => Some(types::Type::Float),
+        "Bool" | "Boolean" => Some(types::Type::Boolean),
+        "String" => Some(types::Type::String),
+        "Char" => Some(types::Type::Char),
+        "Unit" | "()" => Some(types::Type::Unit),
+        _ => None,
+    }
+}
+
+fn lower_str_to_type(
+    s: &str,
+    span: &Span,
+    current_file: ids::FileId,
+    global_ctx: &mut calamars_core::global::GlobalContext,
+) -> Result<types::Type, SemanticError> {
+    // We will give simple primitives precedence
+    if let Some(val) = lower_str_to_type_primitive(s) {
+        return Ok(val);
+    };
+
+    let key = DataStructure {
+        name: s.to_string(),
+        module: current_file,
+    };
+
+    if let Some(val) = global_ctx.data_structs.resolve(&key) {
+        return Ok(calamars_core::types::Type::Structure(*val));
+    }
+
+    Err(SemanticError::TypeNotFound {
+        type_name: s.to_string(),
+        span: *span,
     })
 }
 
 pub struct HirModuleBuilder {
+    pub module: ids::FileId,
     pub identifiers: hir::IdentArena,
     pub expressions: hir::ExpressionArena,
     pub symbols: hir::SymbolArena,
@@ -45,6 +67,7 @@ pub struct HirModuleBuilder {
 impl Default for HirModuleBuilder {
     fn default() -> Self {
         let mut d = Self {
+            module: ids::FileId::from(0),
             identifiers: hir::IdentArena::new_unchecked(),
             expressions: hir::ExpressionArena::new_checked(),
             symbols: hir::SymbolArena::new_unchecked(),
@@ -360,7 +383,7 @@ impl HirModuleBuilder {
                     self.insert_error(SemanticError::QualifiedTypeNotSupported { span: *span });
                     break 'path types::Type::Error;
                 }
-                match lower_str_to_type(&segments[0].ident(), span) {
+                match lower_str_to_type(&segments[0].ident(), span, self.module, global_ctx) {
                     Ok(inner) => inner,
                     Err(err) => {
                         self.insert_error(err);
@@ -469,6 +492,26 @@ impl HirModuleBuilder {
         global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> (hir::Module, Vec<SemanticError>) {
         let mut roots = vec![];
+        let mut dsts = vec![];
+
+        // Insert the keys
+        for def in &module.definitions {
+            let key = DataStructure {
+                name: def.name().ident().to_string(),
+                module: self.module,
+            };
+            let id = match global_ctx.data_structs.intern_checked(&key) {
+                calamars_core::InternedId::New(id) => id,
+                calamars_core::InternedId::Old(id) => {
+                    self.insert_error(SemanticError::Redeclaration {
+                        original_span: Span::dummy(),
+                        redec_span: def.name_span(),
+                    });
+                    id
+                }
+            };
+            dsts.push(id)
+        }
 
         // Generate the builders from the type declarations
         let mut builders = hashbrown::HashMap::new();
@@ -519,6 +562,7 @@ impl HirModuleBuilder {
             hir::Module {
                 id,
                 name,
+                data_structs: dsts,
                 idents: self.identifiers,
                 symbols: self.symbols,
                 exprs: self.expressions,
