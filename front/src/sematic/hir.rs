@@ -244,6 +244,7 @@ pub struct Module {
     pub id: ids::FileId,
     pub name: String,
 
+    pub data_structs: Vec<ids::DStructId>,
     pub idents: hir::IdentArena,
     pub symbols: hir::SymbolArena,
     pub exprs: hir::ExpressionArena,

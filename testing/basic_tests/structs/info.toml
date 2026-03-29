@@ -2,6 +2,7 @@
 name = "structs"
 description = "Simple structs example"
 
-parser = "fail" # Type issues
-mir = "fail" # Not yet implemented
-vm  = "fail" # Not yet implemented
+parser = "pass"
+# These dont really "pass" in the sense that we never lower it to mir, so it wont do anything, but it also wont panic
+mir = "pass"
+vm  = "pass"

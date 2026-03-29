@@ -68,6 +68,7 @@ fn main() {
 
             let mut global_ctx = calamars_core::global::GlobalContext {
                 types: calamars_core::types::TypeArena::default(),
+                data_structs: calamars_core::data_structs::DStructArena::new_unchecked(),
                 strings: hir::ConstantStringArena::new_unchecked(),
                 memlay: calamars_core::memory::MemoryLayoutArena::default(),
             };
