@@ -1,6 +1,6 @@
 //! Lower AST to HIR
 
-use calamars_core::{data_structs::DataStructure, ids, types};
+use calamars_core::{data_structs::DataStructureKey, ids, types};
 
 use crate::{
     sematic::{
@@ -36,7 +36,7 @@ fn lower_str_to_type(
         return Ok(val);
     };
 
-    let key = DataStructure {
+    let key = DataStructureKey {
         name: s.to_string(),
         module: current_file,
     };
@@ -496,7 +496,7 @@ impl HirModuleBuilder {
 
         // Insert the keys
         for def in &module.definitions {
-            let key = DataStructure {
+            let key = DataStructureKey {
                 name: def.name().ident().to_string(),
                 module: self.module,
             };
