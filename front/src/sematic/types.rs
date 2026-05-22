@@ -1,6 +1,7 @@
 //! Type checking on the HIR
 
 use calamars_core::{
+    data_structs::StructDef,
     global::GlobalContext,
     ids::{self, ExpressionId},
     types,
@@ -198,6 +199,38 @@ impl<'a> TypeHandler<'a> {
                 // If both branches return the same, then return that type
                 t_ty
             }
+            hir::Expr::StructInit {
+                struct_id,
+                fields,
+                span,
+            } => {
+                let fields: Vec<_> = fields
+                    .iter()
+                    .map(|(name, exprid)| (name, self.type_expression(exprid, global_ctx)))
+                    .collect();
+
+                let struct_def: &StructDef = global_ctx.struct_defs.get_unchecked(*struct_id);
+                let expected_params = &struct_def.fields;
+
+                // check that all the params are the correct type
+                for (fname, exp_type) in fields {
+                    let Some(expected_field) = expected_params.iter().find(|x| &x.name == fname)
+                    else {
+                        // TODO: We need to add an error here - you added a field that is not part of the struct
+                        continue;
+                    };
+
+                    let expected_type = expected_field.ty;
+                    if expected_type != exp_type {
+                        let expected_str =
+                            types::type_id_stringify(&global_ctx.types, expected_type);
+                        self.push_wrong_type(exp_type, &expected_str, *span, global_ctx);
+                    }
+                }
+
+                let ty = types::Type::Structure(*struct_id);
+                *global_ctx.types.resolve_unchecked(&ty)
+            }
         };
 
         self.module.expression_types.insert(*e_id, type_id);
@@ -293,6 +326,8 @@ impl<'a> TypeHandler<'a> {
             }
         }
     }
+
+    fn type_check_struct_init(&mut self, global_ctx: &mut GlobalContext) {}
 
     fn type_check_block(
         &mut self,

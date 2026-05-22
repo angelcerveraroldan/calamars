@@ -343,6 +343,34 @@ impl CalamarsParser {
         ast::Expression::Block(comp)
     }
 
+    /// Parse a single named parameter:
+    /// name = "calamars"
+    fn parse_named_param(&mut self) -> (Ident, ast::Expression) {
+        let name = self.parse_identifier();
+        self.need(Token::Equal, "=");
+        let value = self.parse_expression();
+        (name, value)
+    }
+
+    /// Parse the named parameters
+    /// { name = "calamars", foo = 2 }
+    fn parse_named_params(&mut self) -> Vec<(String, ast::Expression)> {
+        self.need(Token::LBrace, "{");
+        let mut values = vec![];
+        loop {
+            if self.next_eq(Token::RBrace) {
+                break;
+            }
+            let (name, expr) = self.parse_named_param();
+            values.push((name.ident().to_string(), expr));
+            if self.next_eq(Token::Comma) {
+                self.advance_one();
+            }
+        }
+        self.need(Token::RBrace, "}");
+        values
+    }
+
     /// Literals, name/path, bracketed expressions
     fn parse_primary(&mut self) -> ast::Expression {
         // A literal is the simplest case
@@ -352,7 +380,21 @@ impl CalamarsParser {
         }
         let (tk, sp) = self.next_ref().clone();
         match tk {
-            Token::Ident(_) => ast::Expression::Identifier(self.parse_identifier()),
+            Token::Ident(_) => {
+                // finish me please
+                let name = self.parse_identifier();
+                if self.next_eq(Token::With) {
+                    self.advance_one();
+                    let fields = self.parse_named_params();
+                    ast::Expression::StructInit {
+                        span: name.span(),
+                        name: name.ident().to_string(),
+                        fields,
+                    }
+                } else {
+                    ast::Expression::Identifier(name)
+                }
+            }
             Token::LParen => {
                 self.advance_one();
                 let expr = self.parse_expression();
@@ -708,7 +750,7 @@ impl CalamarsParser {
         docs
     }
 
-    fn parse_struct(&mut self) -> ast::Definition {
+    fn parse_struct_def(&mut self) -> ast::Definition {
         let docs = self.parse_docs();
         self.need(Token::Struct, "struct");
         let name = self.parse_identifier();
@@ -731,7 +773,7 @@ impl CalamarsParser {
 
     /// Responsible for parsing enums, structs, and trait definitions
     fn parse_definition(&mut self) -> ast::Definition {
-        self.parse_struct()
+        self.parse_struct_def()
     }
 
     fn is_expr_init(&self, token: &Token) -> bool {

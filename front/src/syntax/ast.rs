@@ -162,6 +162,11 @@ pub enum Expression {
 
     IfStm(IfStm),
     Apply(Apply),
+    StructInit {
+        span: Span,
+        name: String,
+        fields: Vec<(String, Expression)>,
+    },
 
     Block(CompoundExpression),
 }
@@ -177,7 +182,8 @@ impl Expression {
             Expression::Apply(func_call) => func_call.span(),
             Expression::Block(cl_compound_expression) => cl_compound_expression.total_span(),
             // I am not a big fan of this ...
-            Expression::Error(span) => *span,
+            Expression::Error(span)
+            | Expression::StructInit { span, .. } => *span,
         }
     }
 
@@ -419,11 +425,21 @@ impl CompoundExpression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Declaration {
+    /// The type signature for some identifier, such as:
+    ///
+    /// typ person :: Person
+    /// typ name :: String
     TypeSignature {
         docs: Option<String>,
         name: Ident,
         dtype: Type,
     },
+    /// The "actual" declaration of what some identifier should hold
+    /// such as:
+    ///
+    /// def name = "hello"
+    /// def person = Person { age = 20 }
+    /// def get_age person = person.age
     Binding {
         name: Ident,
         params: Vec<Ident>,
@@ -431,6 +447,8 @@ pub enum Declaration {
     },
     /// A single line that both declares the type and defines the body for a *simple expression*
     /// that is, no inputs.
+    ///
+    /// def foo :: String = "bar"
     TypeAndBinding {
         docs: Option<String>,
         dtype: Type,

@@ -56,6 +56,12 @@ pub enum Expr {
         constant: Const,
         span: Span,
     },
+    StructInit {
+        struct_id: ids::DStructId,
+        /// String for now - big refactor coming soon ...
+        fields: Box<[(String, ids::ExpressionId)]>,
+        span: Span,
+    },
     /// A function or a var/val is being used, for example `x`.
     Identifier {
         /// This tells us exactly what "declaration" we are referring to
@@ -99,7 +105,8 @@ impl Expr {
             | Expr::Identifier { span, .. }
             | Expr::BinaryOperation { span, .. }
             | Expr::Block { span, .. }
-            | Expr::Call { span, .. } => Some(*span),
+            | Expr::Call { span, .. }
+            | Expr::StructInit { span, .. } => Some(*span),
         }
     }
 }
