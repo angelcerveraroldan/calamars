@@ -1,6 +1,9 @@
 //! Lower AST to HIR
 
-use calamars_core::{data_structs::DataStructureKey, ids, types};
+use calamars_core::{
+    data_structs::{DataStructureKey, StructDef, StructFieldDef},
+    ids, types,
+};
 
 use crate::{
     sematic::{
@@ -127,6 +130,9 @@ impl HirModuleBuilder {
             ast::Expression::Apply(apply) => self.lower_apply_expr(apply, global_ctx),
             ast::Expression::IfStm(ifstm) => self.lower_if_expr(ifstm, global_ctx),
             ast::Expression::Block(block) => self.lower_block(block, global_ctx),
+            ast::Expression::StructInit { name, span, fields } => {
+                self.lower_struct_init(name, span, fields, global_ctx)
+            }
             ast::Expression::Error(_) => hir::Expr::Err,
             other => {
                 self.insert_error(SemanticError::NotSupported {
@@ -136,6 +142,64 @@ impl HirModuleBuilder {
                 hir::Expr::Err
             }
         }
+    }
+
+    fn lower_struct_init(
+        &mut self,
+        name: &String,
+        span: &Span,
+        fields: &Vec<(String, ast::Expression)>,
+        global_ctx: &mut calamars_core::global::GlobalContext,
+    ) -> hir::Expr {
+        let current_file = self.module;
+        let struct_id = match lower_str_to_type(name, span, current_file, global_ctx) {
+            Ok(types::Type::Structure(id)) => id,
+            _ => {
+                self.insert_error(SemanticError::TypeNotFound {
+                    type_name: name.to_string(),
+                    span: *span,
+                });
+                return hir::Expr::Err;
+            }
+        };
+
+        let fields = fields
+            .iter()
+            // Once again - refactor needs to be done asap, this is just a quick POC, sorry!!!
+            .map(|(name, expr)| (name.clone(), self.lower_expression(&expr, global_ctx)))
+            .collect();
+
+        hir::Expr::StructInit {
+            struct_id,
+            fields,
+            span: *span,
+        }
+    }
+
+    fn lower_struct_definition(
+        &mut self,
+        struct_id: ids::DStructId,
+        definition: &ast::Definition,
+        global_ctx: &mut calamars_core::global::GlobalContext,
+    ) {
+        let ast::Definition::Struct { name, params, .. } = definition;
+
+        let fields = params
+            .iter()
+            .map(|(field_name, field_type)| StructFieldDef {
+                name: field_name.ident().to_string(),
+                ty: self.lower_type(field_type, global_ctx),
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+
+        let key = DataStructureKey {
+            name: name.ident().to_string(),
+            module: self.module,
+        };
+
+        let pushed_id = global_ctx.struct_defs.push(StructDef { key, fields });
+        debug_assert_eq!(pushed_id, struct_id, "struct defs and ids must stay aligned");
     }
 
     fn lower_block(
@@ -491,8 +555,11 @@ impl HirModuleBuilder {
         name: String,
         global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> (hir::Module, Vec<SemanticError>) {
+        self.module = id;
+
         let mut roots = vec![];
         let mut dsts = vec![];
+        let mut struct_definitions = vec![];
 
         // Insert the keys
         for def in &module.definitions {
@@ -500,17 +567,25 @@ impl HirModuleBuilder {
                 name: def.name().ident().to_string(),
                 module: self.module,
             };
-            let id = match global_ctx.data_structs.intern_checked(&key) {
-                calamars_core::InternedId::New(id) => id,
+            let (id, is_new) = match global_ctx.data_structs.intern_checked(&key) {
+                calamars_core::InternedId::New(id) => (id, true),
                 calamars_core::InternedId::Old(id) => {
                     self.insert_error(SemanticError::Redeclaration {
                         original_span: Span::dummy(),
                         redec_span: def.name_span(),
                     });
-                    id
+                    (id, false)
                 }
             };
+            global_ctx.types.intern(&types::Type::Structure(id));
+            if is_new {
+                struct_definitions.push((id, def));
+            }
             dsts.push(id)
+        }
+
+        for (struct_id, definition) in struct_definitions {
+            self.lower_struct_definition(struct_id, definition, global_ctx);
         }
 
         // Generate the builders from the type declarations

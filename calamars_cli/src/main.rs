@@ -69,6 +69,7 @@ fn main() {
             let mut global_ctx = calamars_core::global::GlobalContext {
                 types: calamars_core::types::TypeArena::default(),
                 data_structs: calamars_core::data_structs::DStructArena::new_unchecked(),
+                struct_defs: calamars_core::data_structs::StructDefArena::new_unchecked(),
                 strings: hir::ConstantStringArena::new_unchecked(),
                 memlay: calamars_core::memory::MemoryLayoutArena::default(),
             };
@@ -100,6 +101,8 @@ fn main() {
                 }
                 std::process::exit(1);
             }
+
+            std::process::exit(0);
 
             let mut mir_builder = ir::lower::ModuleBuilder::new(&module);
             mir_builder.lower_entire_module().expect("lowering failed");
