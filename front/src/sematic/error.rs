@@ -86,6 +86,10 @@ pub enum SemanticError {
         msg: &'static str,
         span: Span,
     },
+    StructFieldNotFound {
+        span: Span,
+        name: String,
+    },
     InternalError {
         msg: &'static str,
         span: Span,
@@ -123,6 +127,7 @@ impl PrettyError for SemanticError {
             SemanticError::InternalError { .. } => "Internal error",
             SemanticError::FnWrongReturnType { .. } => "Wrong type returned by function",
             SemanticError::MissingDeclaration { .. } => "Missing declaration",
+            SemanticError::StructFieldNotFound { .. } => "Incorrect field in struct initialization",
         }
     }
 
@@ -316,6 +321,14 @@ impl PrettyError for SemanticError {
                 "Missing declaration for this type signature",
                 Some(Color::Red),
             )],
+            SemanticError::StructFieldNotFound { span, name } => {
+                vec![label_from(
+                    file_name,
+                    *span,
+                    format!("Struct does not have field {}", name),
+                    Some(Color::Red),
+                )]
+            }
         }
     }
 
