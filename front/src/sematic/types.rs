@@ -216,7 +216,11 @@ impl<'a> TypeHandler<'a> {
                 for (fname, exp_type) in fields {
                     let Some(expected_field) = expected_params.iter().find(|x| &x.name == fname)
                     else {
-                        // TODO: We need to add an error here - you added a field that is not part of the struct
+                        // TODO: Add span - better error handing needed
+                        self.errors.push(SemanticError::StructFieldNotFound {
+                            span: Span::from(0..0),
+                            name: fname.clone(),
+                        });
                         continue;
                     };
 
