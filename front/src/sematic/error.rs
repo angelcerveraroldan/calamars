@@ -90,6 +90,15 @@ pub enum SemanticError {
         span: Span,
         name: String,
     },
+    MissingStructFields {
+        span: Span,
+        struct_name: String,
+        missing_fields: Vec<String>,
+    },
+    DuplicateStructField {
+        name: String,
+        spans: Vec<Span>,
+    },
     CannotGetFieldOfNonStruct {
         expr_span: Span,
         field_span: Span,
@@ -133,6 +142,8 @@ impl PrettyError for SemanticError {
             SemanticError::FnWrongReturnType { .. } => "Wrong type returned by function",
             SemanticError::MissingDeclaration { .. } => "Missing declaration",
             SemanticError::StructFieldNotFound { .. } => "Incorrect field for given struct",
+            SemanticError::MissingStructFields { .. } => "Missing required struct fields",
+            SemanticError::DuplicateStructField { .. } => "Duplicate struct field",
             SemanticError::CannotGetFieldOfNonStruct { .. } => {
                 "Cannot acces field of non-struct type"
             }
@@ -337,6 +348,38 @@ impl PrettyError for SemanticError {
                     Some(Color::Red),
                 )]
             }
+            SemanticError::MissingStructFields {
+                span,
+                struct_name,
+                missing_fields,
+            } => vec![label_from(
+                file_name,
+                *span,
+                format!(
+                    "Struct `{}` is missing required fields: {}",
+                    struct_name,
+                    missing_fields.join(", ")
+                ),
+                Some(Color::Red),
+            )],
+            SemanticError::DuplicateStructField { name, spans } => spans
+                .iter()
+                .enumerate()
+                .map(|(idx, span)| {
+                    let (message, color) = if idx == 0 {
+                        (
+                            format!("First `{}` field declared here", name),
+                            Some(Color::Green),
+                        )
+                    } else {
+                        (
+                            format!("Duplicate `{}` field declared here", name),
+                            Some(Color::Red),
+                        )
+                    };
+                    label_from(file_name, *span, message, color)
+                })
+                .collect(),
             SemanticError::CannotGetFieldOfNonStruct {
                 expr_span,
                 field_span,
