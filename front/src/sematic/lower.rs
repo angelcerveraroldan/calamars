@@ -91,6 +91,13 @@ impl HirModuleBuilder {
         self.diag_err.push(err);
     }
 
+    fn insert_duplicate_named_field_error(&mut self, field_name: &str, spans: Vec<Span>) {
+        self.insert_error(SemanticError::DuplicateStructField {
+            name: field_name.to_string(),
+            spans,
+        });
+    }
+
     fn push_scope(&mut self) {
         self.scopes.push(hashbrown::HashMap::default());
     }
@@ -166,11 +173,40 @@ impl HirModuleBuilder {
             }
         };
 
+        let mut seen_fields: hashbrown::HashMap<String, Vec<Span>> = hashbrown::HashMap::new();
+        for (field_name, expr) in fields.iter() {
+            seen_fields
+                .entry(field_name.clone())
+                .or_default()
+                .push(expr.span());
+        }
+        for (field_name, spans) in &seen_fields {
+            if spans.len() > 1 {
+                self.insert_duplicate_named_field_error(&field_name, spans.clone());
+            }
+        }
+
         let fields = fields
             .iter()
             // Once again - refactor needs to be done asap, this is just a quick POC, sorry!!!
             .map(|(name, expr)| (name.clone(), self.lower_expression(&expr, global_ctx)))
             .collect();
+
+        let mut missing_fields = vec![];
+        let expected_fields = &global_ctx.struct_defs.get_unchecked(struct_id).fields;
+        for StructFieldDef { name, .. } in expected_fields {
+            if !seen_fields.contains_key(name) {
+                missing_fields.push(name.clone());
+            }
+        }
+
+        if !missing_fields.is_empty() {
+            self.insert_error(SemanticError::MissingStructFields {
+                span: *span,
+                struct_name: name.clone(),
+                missing_fields,
+            });
+        }
 
         hir::Expr::StructInit {
             struct_id,
@@ -211,6 +247,20 @@ impl HirModuleBuilder {
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
+
+        let mut seen_fields: hashbrown::HashMap<String, Vec<Span>> = hashbrown::HashMap::new();
+        for (field_name, _) in params.iter() {
+            let field_name_str = field_name.ident().to_string();
+            seen_fields
+                .entry(field_name_str)
+                .or_default()
+                .push(field_name.span());
+        }
+        for (field_name, spans) in seen_fields {
+            if spans.len() > 1 {
+                self.insert_duplicate_named_field_error(&field_name, spans);
+            }
+        }
 
         let key = DataStructureKey {
             name: name.ident().to_string(),

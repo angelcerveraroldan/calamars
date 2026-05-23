@@ -1,5 +1,5 @@
 struct Person
-	{ name :: String 
+	{ name :: String
 	, age  :: Int
 	}
 
