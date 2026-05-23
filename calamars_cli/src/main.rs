@@ -102,7 +102,10 @@ fn main() {
                 std::process::exit(1);
             }
 
-            std::process::exit(0);
+            if !emit_mir && !run_vm {
+                println!("OK");
+                return;
+            }
 
             let mut mir_builder = ir::lower::ModuleBuilder::new(&module);
             mir_builder.lower_entire_module().expect("lowering failed");
@@ -129,10 +132,6 @@ fn main() {
                     .expect("Failed to lower to vm");
                 let out = vm.run(&global_ctx);
                 println!("Main fn returns: {:?}", out);
-            }
-
-            if !emit_mir && !run_vm {
-                println!("OK");
             }
         }
     }

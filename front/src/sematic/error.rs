@@ -90,6 +90,11 @@ pub enum SemanticError {
         span: Span,
         name: String,
     },
+    CannotGetFieldOfNonStruct {
+        expr_span: Span,
+        field_span: Span,
+        expr_type: String,
+    },
     InternalError {
         msg: &'static str,
         span: Span,
@@ -127,7 +132,10 @@ impl PrettyError for SemanticError {
             SemanticError::InternalError { .. } => "Internal error",
             SemanticError::FnWrongReturnType { .. } => "Wrong type returned by function",
             SemanticError::MissingDeclaration { .. } => "Missing declaration",
-            SemanticError::StructFieldNotFound { .. } => "Incorrect field in struct initialization",
+            SemanticError::StructFieldNotFound { .. } => "Incorrect field for given struct",
+            SemanticError::CannotGetFieldOfNonStruct { .. } => {
+                "Cannot acces field of non-struct type"
+            }
         }
     }
 
@@ -328,6 +336,26 @@ impl PrettyError for SemanticError {
                     format!("Struct does not have field {}", name),
                     Some(Color::Red),
                 )]
+            }
+            SemanticError::CannotGetFieldOfNonStruct {
+                expr_span,
+                field_span,
+                expr_type,
+            } => {
+                vec![
+                    label_from(
+                        file_name,
+                        *field_span,
+                        format!("Trying to access field here"),
+                        Some(Color::Magenta),
+                    ),
+                    label_from(
+                        file_name,
+                        *expr_span,
+                        format!("Found {} expected a Struct type", expr_type),
+                        Some(Color::Red),
+                    ),
+                ]
             }
         }
     }

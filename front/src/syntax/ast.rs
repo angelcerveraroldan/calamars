@@ -162,6 +162,11 @@ pub enum Expression {
 
     IfStm(IfStm),
     Apply(Apply),
+    FieldAccess {
+        span: Span,
+        base: Box<Expression>,
+        field: Ident,
+    },
     StructInit {
         span: Span,
         name: String,
@@ -180,10 +185,10 @@ impl Expression {
             Expression::BinaryOp(cl_binary_op) => cl_binary_op.span(),
             Expression::IfStm(if_stm) => if_stm.span(),
             Expression::Apply(func_call) => func_call.span(),
+            Expression::FieldAccess { span, .. } => *span,
             Expression::Block(cl_compound_expression) => cl_compound_expression.total_span(),
             // I am not a big fan of this ...
-            Expression::Error(span)
-            | Expression::StructInit { span, .. } => *span,
+            Expression::Error(span) | Expression::StructInit { span, .. } => *span,
         }
     }
 

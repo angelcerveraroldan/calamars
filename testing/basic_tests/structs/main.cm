@@ -4,7 +4,10 @@ struct Person
 	}
 
 typ default :: Unit -> Person
-def default _ = Person with { name = "angel", age = 100 }
+def default _ =
+	Person with
+		{ name = "angel"
+		, age = 100 }
 
--- typ getPersonName :: Person -> String
--- def getPersonName p = p.name
+typ getPersonName :: Person -> String
+def getPersonName p = p . name
