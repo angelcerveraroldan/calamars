@@ -62,6 +62,12 @@ pub enum Expr {
         fields: Box<[(String, ids::ExpressionId)]>,
         span: Span,
     },
+    StructFieldAccess {
+        struct_expr: ids::ExpressionId,
+        struct_span: Span,
+        field_name: String,
+        field_span: Span,
+    },
     /// A function or a var/val is being used, for example `x`.
     Identifier {
         /// This tells us exactly what "declaration" we are referring to
@@ -107,6 +113,7 @@ impl Expr {
             | Expr::Block { span, .. }
             | Expr::Call { span, .. }
             | Expr::StructInit { span, .. } => Some(*span),
+            Expr::StructFieldAccess { field_span, .. } => Some(*field_span),
         }
     }
 }

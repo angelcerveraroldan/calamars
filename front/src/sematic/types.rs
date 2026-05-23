@@ -235,6 +235,38 @@ impl<'a> TypeHandler<'a> {
                 let ty = types::Type::Structure(*struct_id);
                 *global_ctx.types.resolve_unchecked(&ty)
             }
+            hir::Expr::StructFieldAccess {
+                struct_expr,
+                struct_span,
+                field_name,
+                field_span,
+            } => {
+                // first we make sure that we really have a struct ...
+                let struct_tyid = self.type_expression(struct_expr, global_ctx);
+                let calamars_core::types::Type::Structure(struct_id) =
+                    global_ctx.types.get_unchecked(struct_tyid)
+                else {
+                    let expr_type = types::type_id_stringify(&global_ctx.types, struct_tyid);
+                    self.errors.push(SemanticError::CannotGetFieldOfNonStruct {
+                        expr_span: *struct_span,
+                        field_span: *field_span,
+                        expr_type,
+                    });
+                    return self.err_id(global_ctx);
+                };
+
+                let ds = global_ctx.struct_defs.get_unchecked(*struct_id);
+                match ds.fields.iter().find(|field| field.name == *field_name) {
+                    Some(field) => field.ty,
+                    None => {
+                        self.errors.push(SemanticError::StructFieldNotFound {
+                            span: *field_span,
+                            name: field_name.clone(),
+                        });
+                        self.err_id(global_ctx)
+                    }
+                }
+            }
         };
 
         self.module.expression_types.insert(*e_id, type_id);
@@ -330,8 +362,6 @@ impl<'a> TypeHandler<'a> {
             }
         }
     }
-
-    fn type_check_struct_init(&mut self, global_ctx: &mut GlobalContext) {}
 
     fn type_check_block(
         &mut self,

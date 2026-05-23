@@ -133,6 +133,9 @@ impl HirModuleBuilder {
             ast::Expression::StructInit { name, span, fields } => {
                 self.lower_struct_init(name, span, fields, global_ctx)
             }
+            ast::Expression::FieldAccess { span, base, field } => {
+                self.lower_struct_field_access(span, base, field, global_ctx)
+            }
             ast::Expression::Error(_) => hir::Expr::Err,
             other => {
                 self.insert_error(SemanticError::NotSupported {
@@ -176,6 +179,22 @@ impl HirModuleBuilder {
         }
     }
 
+    fn lower_struct_field_access(
+        &mut self,
+        span: &Span,
+        base: &ast::Expression,
+        field: &ast::Ident,
+        global_ctx: &mut calamars_core::global::GlobalContext,
+    ) -> hir::Expr {
+        let struct_expr = self.lower_expression(base, global_ctx);
+        hir::Expr::StructFieldAccess {
+            struct_expr,
+            struct_span: base.span(),
+            field_name: field.ident().to_string(),
+            field_span: field.span(),
+        }
+    }
+
     fn lower_struct_definition(
         &mut self,
         struct_id: ids::DStructId,
@@ -199,7 +218,10 @@ impl HirModuleBuilder {
         };
 
         let pushed_id = global_ctx.struct_defs.push(StructDef { key, fields });
-        debug_assert_eq!(pushed_id, struct_id, "struct defs and ids must stay aligned");
+        debug_assert_eq!(
+            pushed_id, struct_id,
+            "struct defs and ids must stay aligned"
+        );
     }
 
     fn lower_block(

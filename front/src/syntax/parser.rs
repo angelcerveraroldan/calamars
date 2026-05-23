@@ -476,10 +476,24 @@ impl CalamarsParser {
 
     /// Given some expression, apply postfix operations to it.
     ///
-    /// This will handle application such as `f x` and `f (x)`.
+    /// This will handle application such as `f x`, `f (x)`, and field access like `x.name`.
     fn parse_postfix_operation(&mut self, mut expr: ast::Expression) -> ast::Expression {
         loop {
             let token = self.next_token_ref();
+            // Handle "person . name"
+            if *token == Token::Dot {
+                self.advance_one();
+                let field = self.parse_identifier();
+                let span = Span::from(expr.span().start..field.span().end);
+                expr = ast::Expression::FieldAccess {
+                    span,
+                    base: Box::new(expr),
+                    field,
+                };
+                continue;
+            }
+
+            // Handle function inputs
             if !self.is_apply_arg_start(token) {
                 break;
             }
@@ -855,5 +869,83 @@ impl CalamarsParser {
 
     pub fn diag(&self) -> &[ParsingError] {
         &self.diag
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use calamars_core::ids;
+
+    use super::*;
+
+    fn parse_expr(src: &str) -> ast::Expression {
+        let mut parser =
+            CalamarsParser::new(ids::FileId::from(0), Token::tokens_spanned_stream(src));
+        let expr = parser.parse_expression();
+        assert!(
+            parser.diag().is_empty(),
+            "parser diagnostics: {:?}",
+            parser.diag()
+        );
+        expr
+    }
+
+    #[test]
+    fn parses_field_access_after_application() {
+        let expr = parse_expr("foo \"hello\".name");
+
+        let ast::Expression::FieldAccess { base, field, .. } = expr else {
+            panic!("expected field access");
+        };
+        assert_eq!(field.ident(), "name");
+        assert!(matches!(*base, ast::Expression::Apply(_)));
+    }
+
+    #[test]
+    fn parses_nested_field_access() {
+        let expr = parse_expr("person.name.first");
+
+        let ast::Expression::FieldAccess { base, field, .. } = expr else {
+            panic!("expected outer field access");
+        };
+        assert_eq!(field.ident(), "first");
+        assert!(matches!(*base, ast::Expression::FieldAccess { .. }));
+    }
+
+    #[test]
+    fn field_access_binds_tighter_than_binary_ops() {
+        let expr = parse_expr("foo.age + 2");
+
+        let ast::Expression::BinaryOp(binop) = expr else {
+            panic!("expected binary op");
+        };
+        assert_eq!(binop.operator(), &ast::BinaryOperator::Add);
+        assert!(matches!(**binop.lhs(), ast::Expression::FieldAccess { .. }));
+        assert!(matches!(**binop.rhs(), ast::Expression::Literal(_)));
+    }
+
+    #[test]
+    fn field_access_after_grouping_is_preserved() {
+        let expr = parse_expr("(foo + bar).age");
+
+        let ast::Expression::FieldAccess { base, field, .. } = expr else {
+            panic!("expected field access");
+        };
+        assert_eq!(field.ident(), "age");
+        assert!(matches!(*base, ast::Expression::BinaryOp(_)));
+    }
+
+    #[test]
+    fn field_access_then_application_stays_postfix() {
+        let expr = parse_expr("foo.age bar");
+
+        let ast::Expression::Apply(apply) = expr else {
+            panic!("expected application");
+        };
+        assert!(matches!(
+            **apply.callable(),
+            ast::Expression::FieldAccess { .. }
+        ));
+        assert!(matches!(**apply.input(), ast::Expression::Identifier(_)));
     }
 }
