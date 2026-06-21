@@ -13,6 +13,7 @@
 pub mod errors;
 pub mod lower;
 mod optimizations;
+pub mod mdata;
 pub mod printer;
 
 use calamars_core::{UncheckedArena, ids};
@@ -102,11 +103,11 @@ pub enum Types {
     I64,
     Bool,
     Char,
+    Struct,
     // Later:
     // - Tuples
     // - Array (fixed size)
     //
-    // - Struct
     // - Enum
 }
 
@@ -196,7 +197,16 @@ pub enum VInstructionKind {
         ty: ids::TypeId,
         incoming: Box<[(BlockId, ValueId)]>,
     },
-
+    StructInit {
+        ds_id: ids::DStructId,
+        fields: Box<[ValueId]>,
+    },
+    // Load a struct/enums field
+    ExtractField {
+        source: ValueId,
+        ds_id: ids::DStructId,
+        index: usize,
+    },
     Parameter {
         index: u16,
         ty: ids::TypeId,

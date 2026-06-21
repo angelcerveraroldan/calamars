@@ -1,14 +1,14 @@
 //! Lower HIR to MIR
 
 use calamars_core::{
-    Identifier, UncheckedArena,
+    Identifier, UncheckedArena, global::GlobalContext,
     ids::{self, ExpressionId, SymbolId},
 };
 use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolDec, SymbolKind};
 
 use crate::{
-    BBlock, BinaryOperator, BlockId, Callee, Function, FunctionId, Module,
-    VInstruct, VInstructionKind, ValueId, errors::MirErrors, mdata,
+    BBlock, BinaryOperator, BlockId, Function, FunctionId, Module, VInstruct, VInstructionKind,
+    ValueId, errors::MirErrors, mdata,
 };
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
@@ -34,6 +34,8 @@ pub type MirRes<A> = Result<A, MirErrors>;
 
 pub struct FunctionBuilder<'a> {
     ctx: &'a hir::Module,
+    mdata: &'a mdata::MirData,
+    global_ctx: &'a GlobalContext,
 
     current_block: BlockId,
 
@@ -49,10 +51,14 @@ pub struct FunctionBuilder<'a> {
 impl<'a> FunctionBuilder<'a> {
     pub fn new(
         ctx: &'a hir::Module,
+        mdata: &'a mdata::MirData,
+        global_ctx: &'a GlobalContext,
         function_map: &'a hashbrown::HashMap<ids::IdentId, FunctionId>,
     ) -> Self {
         Self {
             ctx,
+            mdata,
+            global_ctx,
             current_block: BlockId(0),
             blocks: vec![],
             instructions: vec![],
@@ -299,6 +305,68 @@ impl<'a> FunctionBuilder<'a> {
 
         self.emit(VInstructionKind::Call { callee, args, return_ty })
     }
+
+    pub fn emit_load(
+        &mut self,
+        struct_expr: &ExpressionId,
+        field_name: &String,
+    ) -> MirRes<(ValueId, BlockId)> {
+        let (source, _) = self.lower_expression_from_id(struct_expr)?;
+        let struct_ty = self
+            .ctx
+            .expression_types
+            .get(struct_expr)
+            .copied()
+            .ok_or(MirErrors::CouldNotGetExpressionType)?;
+        let calamars_core::types::Type::Structure(ds_id) =
+            self.global_ctx.types.get_unchecked(struct_ty)
+        else {
+            return Err(MirErrors::LoweringErr {
+                msg: "field access on non-struct expression reached MIR lowering".to_string(),
+            });
+        };
+        let index = self
+            .mdata
+            .get_field_index_by_name(ds_id, field_name)
+            .ok_or_else(|| MirErrors::LoweringErr {
+                msg: format!("field `{field_name}` missing from struct metadata"),
+            })?;
+
+        self.emit(VInstructionKind::ExtractField { source, ds_id: *ds_id, index })
+    }
+
+    fn emit_struct_init(
+        &mut self,
+        ds_id: &ids::DStructId,
+        fields: &Box<[(String, ExpressionId)]>,
+    ) -> MirRes<(ValueId, BlockId)> {
+        let mut ordered_fields = vec![None; fields.len()];
+        for (field_name, expr_id) in fields.iter() {
+            let (value, _) = self.lower_expression_from_id(expr_id)?;
+            let index = self
+                .mdata
+                .get_field_index_by_name(ds_id, field_name)
+                .ok_or_else(|| MirErrors::LoweringErr {
+                    msg: format!("field `{field_name}` missing from struct metadata"),
+                })?;
+            let Some(slot) = ordered_fields.get_mut(index) else {
+                return Err(MirErrors::LoweringErr {
+                    msg: format!("field `{field_name}` index is out of bounds"),
+                });
+            };
+            *slot = Some(value);
+        }
+
+        let fields = ordered_fields
+            .into_iter()
+            .map(|field| {
+                field.ok_or_else(|| MirErrors::LoweringErr {
+                    msg: "struct initializer missing lowered field".to_string(),
+                })
+            })
+            .collect::<MirRes<Vec<_>>>()?;
+
+        self.emit(VInstructionKind::StructInit { ds_id: *ds_id, fields: fields.into_boxed_slice() })
     }
 
     /// Given some expression, turn it into a series of instructions, and return the ValueId where
@@ -331,6 +399,12 @@ impl<'a> FunctionBuilder<'a> {
             hir::Expr::Call { f, input, .. } => {
                 self.emit_function_call(f, input)
             }
+            hir::Expr::StructInit { struct_id, fields, .. } => {
+                self.emit_struct_init(struct_id, fields)
+            }
+            hir::Expr::StructFieldAccess {
+                struct_expr, field_name, ..
+            } => self.emit_load(struct_expr, field_name),
             hir::Expr::Err => {
                 unreachable!("Errors should stop at semantic lowering")
             }
@@ -383,6 +457,8 @@ impl<'a> FunctionBuilder<'a> {
 
 pub struct ModuleBuilder<'a> {
     ctx: &'a hir::Module,
+    mdata: &'a mdata::MirData,
+    global_ctx: &'a GlobalContext,
     functions: UncheckedArena<Function, FunctionId>,
 
     // internal values for building
@@ -390,9 +466,15 @@ pub struct ModuleBuilder<'a> {
 }
 
 impl<'a> ModuleBuilder<'a> {
-    pub fn new(ctx: &'a hir::Module) -> Self {
+    pub fn new(
+        ctx: &'a hir::Module,
+        mdata: &'a mdata::MirData,
+        global_ctx: &'a GlobalContext,
+    ) -> Self {
         Self {
             ctx,
+            mdata,
+            global_ctx,
             functions: UncheckedArena::new_unchecked(),
             function_map: hashbrown::HashMap::new(),
         }
@@ -430,7 +512,7 @@ impl<'a> ModuleBuilder<'a> {
             let id =
                 *self.function_map.get(&name).expect("Function id missing");
             let mut builder =
-                FunctionBuilder::new(self.ctx, self.mdata, &self.function_map);
+                FunctionBuilder::new(self.ctx, self.mdata, self.global_ctx, &self.function_map);
             let func = builder.lower(name, return_ty, params, body, id)?;
             self.functions.push(func);
         }
@@ -447,7 +529,7 @@ impl<'a> ModuleBuilder<'a> {
     ) -> MirRes<FunctionId> {
         let id = FunctionId::from(self.functions.len());
         let mut builder =
-            FunctionBuilder::new(&self.ctx, self.mdata, &self.function_map);
+            FunctionBuilder::new(self.ctx, self.mdata, self.global_ctx, &self.function_map);
         let lower = builder.lower(name, return_ty, params, body, id)?;
         self.functions.push(lower);
         Ok(id)
