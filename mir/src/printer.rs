@@ -100,9 +100,21 @@ impl<'a> MirPrinter<'a> {
 
                 format!("phi ty#{} [{}]", ty.inner_id(), cs)
             }
+            VInstructionKind::StructInit { ds_id, fields } => {
+                let fields_s = fields
+                    .iter()
+                    .map(|field| self.v(*field))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("struct #{} {{{fields_s}}}", ds_id.inner_id())
+            }
             VInstructionKind::Parameter { index, .. } => {
                 format!("param #{index}")
             }
+            VInstructionKind::ExtractField { source, ds_id, index } => {
+                format!("load {} #{}->#{index}", self.v(*source), ds_id.inner_id())
+            }
+
         }
     }
 

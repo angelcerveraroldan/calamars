@@ -3,5 +3,5 @@ name = "structs"
 description = "Simple structs example"
 
 parser = "pass"
-mir = "ignore"
+mir = "pass"
 vm  = "ignore"
