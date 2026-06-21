@@ -7,8 +7,8 @@ use calamars_core::{
 use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolDec, SymbolKind};
 
 use crate::{
-    BBlock, BinaryOperator, BlockId, Callee, Function, FunctionId, Module, VInstruct,
-    VInstructionKind, ValueId, errors::MirErrors,
+    BBlock, BinaryOperator, BlockId, Callee, Function, FunctionId, Module,
+    VInstruct, VInstructionKind, ValueId, errors::MirErrors, mdata,
 };
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
@@ -63,9 +63,7 @@ impl<'a> FunctionBuilder<'a> {
 
     pub fn block_mut(&mut self) -> MirRes<&mut BBlock> {
         let blockid = self.current_block.inner_id();
-        self.blocks
-            .get_mut(blockid)
-            .ok_or(MirErrors::NoWorkingBlock)
+        self.blocks.get_mut(blockid).ok_or(MirErrors::NoWorkingBlock)
     }
 
     fn new_block(&mut self) -> BlockId {
@@ -98,11 +96,8 @@ impl<'a> FunctionBuilder<'a> {
         then_target: BlockId,
         else_target: BlockId,
     ) -> MirRes<()> {
-        let term = crate::Terminator::BrIf {
-            condition,
-            then_target,
-            else_target,
-        };
+        let term =
+            crate::Terminator::BrIf { condition, then_target, else_target };
         self.terminate(term)
     }
 
@@ -111,7 +106,10 @@ impl<'a> FunctionBuilder<'a> {
         self.terminate(term)
     }
 
-    pub fn emit(&mut self, inst_kind: VInstructionKind) -> MirRes<(ValueId, BlockId)> {
+    pub fn emit(
+        &mut self,
+        inst_kind: VInstructionKind,
+    ) -> MirRes<(ValueId, BlockId)> {
         let vid = self.push_instuction_get_index(VInstruct { kind: inst_kind });
         self.block_mut()?.with_instruct(vid);
         Ok((vid, self.current_block))
@@ -173,7 +171,8 @@ impl<'a> FunctionBuilder<'a> {
         self.terminate_br(joinb)?;
 
         self.switch_to_block(elb);
-        let (otherwise_vid, otherwise_block) = self.lower_expression_from_id(&otherwise)?;
+        let (otherwise_vid, otherwise_block) =
+            self.lower_expression_from_id(&otherwise)?;
         self.terminate_br(joinb)?;
 
         self.switch_to_block(joinb);
@@ -193,7 +192,8 @@ impl<'a> FunctionBuilder<'a> {
                     self.lower_expression_from_id(expression_id)?;
                 }
                 ItemId::Symbol(symbol_id) => {
-                    let x = self.ctx.symbols.get_unchecked(*symbol_id).kind.clone();
+                    let x =
+                        self.ctx.symbols.get_unchecked(*symbol_id).kind.clone();
                     if let SymbolKind::Defn {
                         declaration: SymbolDec { inputs, body },
                         ..
@@ -203,7 +203,9 @@ impl<'a> FunctionBuilder<'a> {
                         let (v, _) = self.lower_expression_from_id(&body)?;
                         self.locals.insert(*symbol_id, v);
                     } else {
-                        panic!("Function declarations are not allowed in blocks yet, sorry :(");
+                        panic!(
+                            "Function declarations are not allowed in blocks yet, sorry :("
+                        );
                     }
                 }
             }
@@ -261,12 +263,9 @@ impl<'a> FunctionBuilder<'a> {
         input: &ExpressionId,
     ) -> (SymbolId, Vec<ExpressionId>) {
         match self.ctx.exprs.get_unchecked(*f) {
-            hir::Expr::Call {
-                f,
-                input: nested_input,
-                ..
-            } => {
-                let (callee, mut inputs) = self.flatten_function_calls(f, nested_input);
+            hir::Expr::Call { f, input: nested_input, .. } => {
+                let (callee, mut inputs) =
+                    self.flatten_function_calls(f, nested_input);
                 inputs.push(*input);
                 (callee, inputs)
             }
@@ -298,11 +297,8 @@ impl<'a> FunctionBuilder<'a> {
             .get(f)
             .expect("function expression should have had a type ...");
 
-        self.emit(VInstructionKind::Call {
-            callee,
-            args,
-            return_ty,
-        })
+        self.emit(VInstructionKind::Call { callee, args, return_ty })
+    }
     }
 
     /// Given some expression, turn it into a series of instructions, and return the ValueId where
@@ -323,20 +319,21 @@ impl<'a> FunctionBuilder<'a> {
                 Ok((vid, self.current_block))
             }
             hir::Expr::Literal { constant, .. } => self.emit_literal(constant),
-            hir::Expr::BinaryOperation {
-                operator, lhs, rhs, ..
-            } => self.emit_binary(operator, lhs, rhs),
-            hir::Expr::If {
-                predicate,
-                then,
-                otherwise,
-                ..
-            } => self.emit_if(ty, predicate, then, otherwise),
-            hir::Expr::Block {
-                items, final_expr, ..
-            } => self.emit_block(ty, items, final_expr),
-            hir::Expr::Call { f, input, .. } => self.emit_function_call(f, input),
-            _ => todo!("Cannot yet handle: {:?}", expression),
+            hir::Expr::BinaryOperation { operator, lhs, rhs, .. } => {
+                self.emit_binary(operator, lhs, rhs)
+            }
+            hir::Expr::If { predicate, then, otherwise, .. } => {
+                self.emit_if(ty, predicate, then, otherwise)
+            }
+            hir::Expr::Block { items, final_expr, .. } => {
+                self.emit_block(ty, items, final_expr)
+            }
+            hir::Expr::Call { f, input, .. } => {
+                self.emit_function_call(f, input)
+            }
+            hir::Expr::Err => {
+                unreachable!("Errors should stop at semantic lowering")
+            }
         }
     }
 
@@ -359,16 +356,11 @@ impl<'a> FunctionBuilder<'a> {
 
         let mut params_inst = Vec::with_capacity(params.len());
         for (index, param) in params.iter().enumerate() {
-            let sym = self
-                .ctx
-                .symbols
-                .get(*param)
-                .ok_or(MirErrors::ParamNotFound)?;
+            let sym =
+                self.ctx.symbols.get(*param).ok_or(MirErrors::ParamNotFound)?;
 
-            let kind = VInstructionKind::Parameter {
-                index: index as u16,
-                ty: sym.ty,
-            };
+            let kind =
+                VInstructionKind::Parameter { index: index as u16, ty: sym.ty };
             let vid = self.push_instuction_get_index(VInstruct { kind });
             self.block_mut()?.with_instruct(vid);
             self.locals.insert(*param, vid);
@@ -411,10 +403,8 @@ impl<'a> ModuleBuilder<'a> {
     pub fn handle_headers(&mut self) {
         for symbol_id in &self.ctx.roots {
             let symbol = self.ctx.symbols.get_unchecked(*symbol_id);
-            if let SymbolKind::Defn {
-                declaration: SymbolDec { .. },
-                ..
-            } = &symbol.kind
+            if let SymbolKind::Defn { declaration: SymbolDec { .. }, .. } =
+                &symbol.kind
             {
                 let id = FunctionId::from(self.function_map.len());
                 self.function_map.insert(symbol.name, id);
@@ -431,12 +421,16 @@ impl<'a> ModuleBuilder<'a> {
             let return_ty = symbol.ty;
 
             let (params, body) = match &symbol.kind {
-                SymbolKind::Defn { declaration, .. } => (&declaration.inputs, declaration.body),
+                SymbolKind::Defn { declaration, .. } => {
+                    (&declaration.inputs, declaration.body)
+                }
                 _ => continue,
             };
 
-            let id = *self.function_map.get(&name).expect("Function id missing");
-            let mut builder = FunctionBuilder::new(self.ctx, &self.function_map);
+            let id =
+                *self.function_map.get(&name).expect("Function id missing");
+            let mut builder =
+                FunctionBuilder::new(self.ctx, self.mdata, &self.function_map);
             let func = builder.lower(name, return_ty, params, body, id)?;
             self.functions.push(func);
         }
@@ -452,7 +446,8 @@ impl<'a> ModuleBuilder<'a> {
         body: ExpressionId,
     ) -> MirRes<FunctionId> {
         let id = FunctionId::from(self.functions.len());
-        let mut builder = FunctionBuilder::new(&self.ctx, &self.function_map);
+        let mut builder =
+            FunctionBuilder::new(&self.ctx, self.mdata, &self.function_map);
         let lower = builder.lower(name, return_ty, params, body, id)?;
         self.functions.push(lower);
         Ok(id)
