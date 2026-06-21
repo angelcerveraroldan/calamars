@@ -45,12 +45,9 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Build {
-            emit_mir,
-            run_vm,
-            path,
-        } => {
-            let sf = SourceFile::try_from((0, path)).expect("Failed to read source file");
+        Command::Build { emit_mir, run_vm, path } => {
+            let sf = SourceFile::try_from((0, path))
+                .expect("Failed to read source file");
             let tokens = sf.as_spanned_token_stream();
 
             let file_id = ids::FileId::from(0);
@@ -68,18 +65,21 @@ fn main() {
 
             let mut global_ctx = calamars_core::global::GlobalContext {
                 types: calamars_core::types::TypeArena::default(),
-                data_structs: calamars_core::data_structs::DStructArena::new_unchecked(),
-                struct_defs: calamars_core::data_structs::StructDefArena::new_unchecked(),
+                data_structs:
+                    calamars_core::data_structs::DStructArena::new_unchecked(),
+                struct_defs:
+                    calamars_core::data_structs::StructDefArena::new_unchecked(),
                 strings: hir::ConstantStringArena::new_unchecked(),
                 memlay: calamars_core::memory::MemoryLayoutArena::default(),
             };
 
-            let (mut module, errors) = HirModuleBuilder::default().lower_module(
-                &module,
-                file_id,
-                file_name.clone(),
-                &mut global_ctx,
-            );
+            let (mut module, errors) = HirModuleBuilder::default()
+                .lower_module(
+                    &module,
+                    file_id,
+                    file_name.clone(),
+                    &mut global_ctx,
+                );
 
             if !errors.is_empty() {
                 for err in errors {
@@ -89,10 +89,8 @@ fn main() {
             }
 
             // Type checking
-            let mut type_handler = TypeHandler {
-                module: &mut module,
-                errors: vec![],
-            };
+            let mut type_handler =
+                TypeHandler { module: &mut module, errors: vec![] };
             type_handler.type_check_module(&mut global_ctx);
 
             if !type_handler.errors.is_empty() {
@@ -107,7 +105,8 @@ fn main() {
                 return;
             }
 
-            let mut mir_builder = ir::lower::ModuleBuilder::new(&module);
+            let mdata = ir::mdata::MirData::generate_mirdata(&module, &global_ctx);
+            let mut mir_builder = ir::lower::ModuleBuilder::new(&module, &mdata, &global_ctx);
             mir_builder.lower_entire_module().expect("lowering failed");
             let irmodule = mir_builder.finish();
 
@@ -128,8 +127,11 @@ fn main() {
                     })
                     .unwrap();
 
-                let mut vm = VMachine::new(functions.into_boxed_slice(), ir::FunctionId::from(0))
-                    .expect("Failed to lower to vm");
+                let mut vm = VMachine::new(
+                    functions.into_boxed_slice(),
+                    ir::FunctionId::from(0),
+                )
+                .expect("Failed to lower to vm");
                 let out = vm.run(&global_ctx);
                 println!("Main fn returns: {:?}", out);
             }

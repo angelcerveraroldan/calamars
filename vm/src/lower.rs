@@ -144,6 +144,7 @@ impl<'a> Lowerer<'a> {
             }
             ir::VInstructionKind::Parameter { .. } => Ok(vec![]),
             ir::VInstructionKind::ConstDataPointer { .. } => Err(VError::UnsupportedInstruction),
+            _ => todo!(),
         }
     }
 
