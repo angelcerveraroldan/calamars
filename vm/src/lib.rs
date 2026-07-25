@@ -17,6 +17,7 @@ mod errors;
 mod function;
 mod heap;
 pub mod lower;
+pub mod memlayout;
 mod values;
 
 /// When feature logs is enabled, we will print logs
