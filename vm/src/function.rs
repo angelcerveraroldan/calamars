@@ -2,10 +2,13 @@ use crate::{
     Register,
     bytecode::{BinOp, Bytecode, UnOp},
     errors::{VError, VResult},
-    heap::read_string,
+    heap::{HeapObject, read_string},
     values::Value,
 };
-use calamars_core::{Identifier, ids};
+use calamars_core::{
+    Identifier,
+    ids::{self, MemLayoutId},
+};
 use ir;
 
 type BytecodeIndex = u16;
@@ -100,9 +103,20 @@ pub enum FrameOut {
         dst: Register,
     },
     /// Ask the vm to save some data in the heap for us, and save a pointer in some register
-    HeapWrite {
+    HeapWriteStr {
         string_id: ids::StringId,
         dst: Register,
+    },
+    HeapWriteStruct {
+        fields: Box<[Value]>,
+        memlay_id: MemLayoutId,
+        dst: Register,
+    },
+    ReadStructIndex {
+        heap_obj: HeapObject,
+        memlay_id: MemLayoutId,
+        dst: Register,
+        index: usize,
     },
     /// Ask the vm to call a function for us, and return that value (tail call)
     TailCallPls {
@@ -308,7 +322,7 @@ impl Frame {
                 Bytecode::ConstString { dst, string_id } => {
                     // we will move on after the function returns the heap value
                     self.next_instruction();
-                    break FrameOut::HeapWrite {
+                    break FrameOut::HeapWriteStr {
                         dst: *dst,
                         string_id: *string_id,
                     };
@@ -367,6 +381,40 @@ impl Frame {
                 Bytecode::Phi { dst, incoming } => {
                     self.phi_join_values_to_dest(incoming, dst)?;
                     self.next_instruction();
+                }
+                Bytecode::StructInit {
+                    dst,
+                    fields,
+                    memlay_id,
+                } => {
+                    self.next_instruction();
+                    let fields = fields
+                        .iter()
+                        .map(|reg| self.read_register(reg).copied())
+                        .collect::<VResult<Vec<_>>>()?;
+                    break FrameOut::HeapWriteStruct {
+                        fields: fields.into(),
+                        memlay_id: *memlay_id,
+                        dst: *dst,
+                    };
+                }
+                Bytecode::ExtractField {
+                    dst,
+                    source,
+                    index,
+                    memlay_id,
+                } => {
+                    self.next_instruction();
+                    let nonnull: &HeapObject = match self.read_register(source)? {
+                        Value::HeapPtr(non_null) => non_null,
+                        _ => return Err(VError::HeapError("Cannot extract field from non-string")),
+                    };
+                    break FrameOut::ReadStructIndex {
+                        heap_obj: *nonnull,
+                        memlay_id: *memlay_id,
+                        index: *index,
+                        dst: *dst,
+                    };
                 }
             };
         };

@@ -7,10 +7,10 @@
 use crate::{
     errors::{VError, VResult},
     function::{Frame, VFunction},
-    heap::Heap,
+    heap::{Heap, HeapObject, read_field_index},
     values::Value,
 };
-use calamars_core::{Identifier, global::GlobalContext};
+use calamars_core::{Identifier, global::GlobalContext, memory::MemLayout};
 
 mod bytecode;
 mod errors;
@@ -125,11 +125,34 @@ impl VMachine {
                     newfn.load_inputs(args);
                     self.stack.push(newfn);
                 }
-                function::FrameOut::HeapWrite { dst, string_id } => {
+                function::FrameOut::HeapWriteStr { dst, string_id } => {
                     let heap_obj = self.heap.alloca_string(ctx, string_id)?;
                     let value = Value::HeapPtr(heap_obj);
                     frame.store_value(value, &dst)?;
                     self.stack.push(frame); // we need to return to the same function and continue
+                }
+                function::FrameOut::HeapWriteStruct {
+                    fields,
+                    memlay_id,
+                    dst,
+                } => {
+                    let heap_obj = self.heap.alloca_struct(fields, memlay_id, ctx)?;
+                    let value = Value::HeapPtr(heap_obj);
+                    frame.store_value(value, &dst)?;
+                    self.stack.push(frame);
+                }
+                function::FrameOut::ReadStructIndex {
+                    heap_obj,
+                    memlay_id,
+                    dst,
+                    index,
+                } => {
+                    // find the type of the i'th element
+                    let memlay = ctx.memlay.get_unchecked(memlay_id);
+                    let kind = &memlay.field_info[index].kind;
+                    let value = read_field_value(&heap_obj, memlay, index, *kind);
+                    frame.store_value(value, &dst)?;
+                    self.stack.push(frame);
                 }
                 function::FrameOut::Return(register) => {
                     let value = *frame.read_register(&register)?;
@@ -142,6 +165,35 @@ impl VMachine {
                     let lf = self.stack.last_mut().ok_or(VError::EmptyStack)?;
                     lf.store_value(value, &dst)?;
                 }
+            }
+        }
+    }
+}
+
+fn read_field_value(
+    heap_obj: &HeapObject,
+    memlay: &MemLayout,
+    index: usize,
+    kind: calamars_core::memory::FieldKindTy,
+) -> Value {
+    unsafe {
+        match kind {
+            calamars_core::memory::FieldKindTy::Integer => {
+                Value::Integer(read_field_index::<i64>(heap_obj, memlay, index))
+            }
+            calamars_core::memory::FieldKindTy::Float => {
+                Value::Float(read_field_index::<f64>(heap_obj, memlay, index))
+            }
+            calamars_core::memory::FieldKindTy::Boolean => {
+                Value::Boolean(read_field_index::<bool>(heap_obj, memlay, index))
+            }
+            calamars_core::memory::FieldKindTy::Char => {
+                Value::Char(read_field_index::<char>(heap_obj, memlay, index))
+            }
+            calamars_core::memory::FieldKindTy::Unit => Value::Empty,
+            calamars_core::memory::FieldKindTy::StructPtr
+            | calamars_core::memory::FieldKindTy::StringPtr => {
+                Value::HeapPtr(read_field_index::<HeapObject>(heap_obj, memlay, index))
             }
         }
     }
