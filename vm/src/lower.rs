@@ -5,7 +5,7 @@ use crate::{
     function::VFunction,
     values::Value,
 };
-use calamars_core::Identifier;
+use calamars_core::{Identifier, global::GlobalContext};
 use ir::{self, FunctionId, ValueId};
 
 fn callee_fnid(callee: &ir::Callee) -> VResult<FunctionId> {
@@ -18,11 +18,12 @@ fn callee_fnid(callee: &ir::Callee) -> VResult<FunctionId> {
 /// Lower MIR to VM bytecode
 pub struct Lowerer<'a> {
     ctx: &'a ir::Module,
+    gctx: &'a GlobalContext,
 }
 
 impl<'a> Lowerer<'a> {
-    pub fn new(ctx: &'a ir::Module) -> Self {
-        Self { ctx }
+    pub fn new(ctx: &'a ir::Module, gctx: &'a GlobalContext) -> Self {
+        Self { ctx, gctx }
     }
 
     fn register_dest(&self, vid: ValueId) -> Register {
@@ -144,7 +145,29 @@ impl<'a> Lowerer<'a> {
             }
             ir::VInstructionKind::Parameter { .. } => Ok(vec![]),
             ir::VInstructionKind::ConstDataPointer { .. } => Err(VError::UnsupportedInstruction),
-            _ => todo!(),
+            ir::VInstructionKind::StructInit { ds_id, fields } => {
+                let regs = fields.iter().map(|vid| self.register_dest(*vid));
+                let memlay_id = *self.gctx.struct_mem.get(ds_id).unwrap();
+                Ok(vec![Bytecode::StructInit {
+                    dst: destination,
+                    fields: regs.collect(),
+                    memlay_id,
+                }])
+            }
+            ir::VInstructionKind::ExtractField {
+                source,
+                ds_id,
+                index,
+            } => {
+                let memlay_id = *self.gctx.struct_mem.get(ds_id).unwrap();
+                let source = self.register_dest(*source);
+                Ok(vec![Bytecode::ExtractField {
+                    dst: destination,
+                    source,
+                    memlay_id,
+                    index: *index,
+                }])
+            }
         }
     }
 

@@ -36,6 +36,12 @@ pub enum Bytecode {
     /// Return the value in some register
     Ret      { src: Register },
     Phi      { dst: Register, incoming: Box<[(ir::BlockId, Register)]> },
+    // Struct and enum operations
+    /// Initialize a struct and save a pointer to it
+    StructInit   { dst: Register, fields: Box<[Register]>, memlay_id: ids::MemLayoutId },
+    /// Read a struct from a reguster, and load a field by index
+    ExtractField { dst: Register, source: Register, index: usize, memlay_id: ids::MemLayoutId },
+
 	/// For debugging purposes only
 	#[cfg(feature = "logs")] DbgPrint { dst: Register }
 }

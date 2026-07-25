@@ -6,6 +6,7 @@ use calamars_core::{global::GlobalContext, ids, memory::MemLayout};
 
 use crate::{
     errors::{VError, VResult},
+    values::Value,
     vm_log,
 };
 
@@ -274,8 +275,53 @@ impl Heap {
         true
     }
 
-    pub fn alloca_struct() -> VResult<()> {
-        todo!("Leaving this here, but it will be implemented after strings")
+    pub fn alloca_struct(
+        &mut self,
+        fields: Box<[Value]>,
+        memlayout_id: ids::MemLayoutId,
+        ctx: &GlobalContext,
+    ) -> VResult<HeapObject> {
+        let mut struct_obj = new_detached_object_struct(ctx, MemoryTag::Struct, memlayout_id)?;
+        header_mut(&mut struct_obj).next_header = self.head;
+        let memlayout = ctx.memlay.get_unchecked(memlayout_id);
+
+        debug_assert_eq!(fields.len(), memlayout.field_info.len());
+        debug_assert_eq!(fields.len(), memlayout.offsets.len());
+
+        let payload = _payload_ptr(&struct_obj, memlayout.alignment);
+        for (i, value) in fields.iter().enumerate() {
+            let field = &memlayout.field_info[i];
+            let offset = memlayout.offsets[i];
+            let dst = unsafe { payload.add(offset) };
+            unsafe {
+                match value {
+                    Value::Integer(v) => std::ptr::write(dst as *mut i64, *v),
+                    Value::Float(v) => std::ptr::write(dst as *mut f64, *v),
+                    Value::Boolean(v) => std::ptr::write(dst as *mut bool, *v),
+                    Value::Char(v) => std::ptr::write(dst as *mut char, *v),
+                    Value::HeapPtr(v) => std::ptr::write(dst as *mut HeapObject, *v),
+                    Value::Empty => {
+                        return Err(VError::HeapError(
+                            "cannot store empty value in struct field",
+                        ));
+                    }
+                }
+            }
+
+            debug_assert_eq!(
+                field.size,
+                match value {
+                    Value::Integer(_) => std::mem::size_of::<i64>(),
+                    Value::Float(_) => std::mem::size_of::<f64>(),
+                    Value::Boolean(_) => std::mem::size_of::<bool>(),
+                    Value::Char(_) => std::mem::size_of::<char>(),
+                    Value::HeapPtr(_) => std::mem::size_of::<HeapObject>(),
+                    Value::Empty => 0,
+                }
+            );
+        }
+        self.head = Some(struct_obj);
+        Ok(struct_obj)
     }
 
     pub fn alloca_string(

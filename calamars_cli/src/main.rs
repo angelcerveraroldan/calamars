@@ -120,7 +120,7 @@ fn main() {
 
             if run_vm {
                 vm::memlayout::generate_structs_mem_layout(&mut global_ctx);
-                let mut vmlower = vm::lower::Lowerer::new(&irmodule);
+                let mut vmlower = vm::lower::Lowerer::new(&irmodule, &global_ctx);
                 let functions = vmlower
                     .lower_module()
                     .map_err(|err| {
