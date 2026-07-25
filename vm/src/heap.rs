@@ -224,6 +224,32 @@ fn save_data_to_payload<T>(heap_obj: &mut HeapObject, src: T, alignment: usize) 
     unsafe { std::ptr::write(ptr, src) }
 }
 
+/// # Safety
+///
+/// Since this is casting to type T, you need to make sure that the type *really* is T
+pub unsafe fn read_field_index_ref<T>(
+    heap_obj: &HeapObject,
+    heap_obj_memlayout: &MemLayout,
+    index: usize,
+) -> *mut T {
+    let alignment = heap_obj_memlayout.alignment;
+    debug_assert!(index <= heap_obj_memlayout.offsets.len());
+    let offset = heap_obj_memlayout.offsets[index];
+    let payload = _payload_ptr(heap_obj, alignment);
+    unsafe { payload.add(offset) as *mut T }
+}
+
+pub unsafe fn read_field_index<T>(
+    heap_obj: &HeapObject,
+    heap_obj_memlayout: &MemLayout,
+    index: usize,
+) -> T {
+    unsafe {
+        let r = read_field_index_ref::<T>(heap_obj, heap_obj_memlayout, index);
+        std::ptr::read(r)
+    }
+}
+
 /// Read a heap object as a string
 pub fn read_string(heap_obj: &HeapObject, alignment: usize) -> &str {
     unsafe {
