@@ -2,11 +2,23 @@ use crate::{UncheckedArena, ids};
 
 pub type MemoryLayoutArena = UncheckedArena<MemLayout, ids::MemLayoutId>;
 
+#[derive(Debug, Copy, Clone)]
+pub enum FieldKindTy {
+    Integer,
+    Float,
+    Boolean,
+    Char,
+    Unit,
+    StructPtr,
+    StringPtr,
+}
+
 /// A types layout informaton, all sizes in bytes
 pub struct FieldMemInfo {
     pub size: usize,
     pub align: usize,
     pub is_pointer: bool,
+    pub kind: FieldKindTy,
 }
 
 /// A descriptor table for memory layouts

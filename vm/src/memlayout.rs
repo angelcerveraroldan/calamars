@@ -1,10 +1,8 @@
-use std::ops::AddAssign;
-
 use calamars_core::{
     data_structs::StructDef,
     global::GlobalContext,
     ids::{DStructId, TypeId},
-    memory::{FieldMemInfo, MemLayout, MemoryLayoutArena},
+    memory::{FieldKindTy, FieldMemInfo, MemLayout},
     types::TypeArena,
 };
 
@@ -20,27 +18,45 @@ fn type_layout(ty: TypeId, types: &TypeArena) -> FieldMemInfo {
             size: 4,
             align: 4,
             is_pointer: false,
+            kind: FieldKindTy::Char,
         },
-        calamars_core::types::Type::Boolean | calamars_core::types::Type::Unit => FieldMemInfo {
+        calamars_core::types::Type::Boolean => FieldMemInfo {
             size: 1,
             align: 1,
             is_pointer: false,
+            kind: FieldKindTy::Boolean,
         },
-        calamars_core::types::Type::Integer | calamars_core::types::Type::Float => FieldMemInfo {
+        calamars_core::types::Type::Unit => FieldMemInfo {
+            size: 1,
+            align: 1,
+            is_pointer: false,
+            kind: FieldKindTy::Unit,
+        },
+        calamars_core::types::Type::Integer => FieldMemInfo {
             size: 8,
             align: 8,
             is_pointer: false,
+            kind: FieldKindTy::Integer,
         },
-        // these are pointers, so even if we don't know their size at compile time (for example string)
-        // we will give them the space needed for a pointer.
-        calamars_core::types::Type::String
-        | calamars_core::types::Type::Structure(_)
-        | calamars_core::types::Type::Array(_)
-        | calamars_core::types::Type::Function { .. } => FieldMemInfo {
+        calamars_core::types::Type::Float => FieldMemInfo {
+            size: 8,
+            align: 8,
+            is_pointer: false,
+            kind: FieldKindTy::Float,
+        },
+        calamars_core::types::Type::String => FieldMemInfo {
             size: size_of::<HeapObject>(),
             align: align_of::<HeapObject>(),
             is_pointer: true,
+            kind: FieldKindTy::StringPtr,
         },
+        calamars_core::types::Type::Structure(_) => FieldMemInfo {
+            size: size_of::<HeapObject>(),
+            align: align_of::<HeapObject>(),
+            is_pointer: true,
+            kind: FieldKindTy::StructPtr,
+        },
+        _ => todo!("memory info for this is not supported"),
     }
 }
 
