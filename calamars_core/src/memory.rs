@@ -2,6 +2,13 @@ use crate::{UncheckedArena, ids};
 
 pub type MemoryLayoutArena = UncheckedArena<MemLayout, ids::MemLayoutId>;
 
+/// A types layout informaton, all sizes in bytes
+pub struct FieldMemInfo {
+    pub size: usize,
+    pub align: usize,
+    pub is_pointer: bool,
+}
+
 /// A descriptor table for memory layouts
 pub struct MemLayout {
     /// Total size
@@ -13,10 +20,10 @@ pub struct MemLayout {
     /// If the size is not know at compile time, then we will set this to None.
     pub comp_size: Option<usize>,
     pub alignment: usize,
-    /// Offsets to each of the pointers.
-    ///
-    /// This will help traverse pointers when doing sweep.
-    pub pointer_offsets: Box<[usize]>,
+    /// Memory information about each of the fields
+    pub field_info: Box<[FieldMemInfo]>,
+    //// The offset of each of the fields
+    pub offsets: Box<[usize]>,
 }
 
 impl MemLayout {
@@ -24,7 +31,8 @@ impl MemLayout {
         MemLayout {
             comp_size: None,
             alignment: std::mem::align_of::<usize>(),
-            pointer_offsets: [].into(),
+            field_info: [].into(),
+            offsets: [].into(),
         }
     }
 
