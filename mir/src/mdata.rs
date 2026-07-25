@@ -20,11 +20,7 @@ pub struct MirData {
 }
 
 impl MirData {
-    pub fn get_field_index_by_name(
-        &self,
-        dstructid: &DStructId,
-        name: &str,
-    ) -> Option<FieldIndex> {
+    pub fn get_field_index_by_name(&self, dstructid: &DStructId, name: &str) -> Option<FieldIndex> {
         self.struct_indices
             .get(&(*dstructid, name.to_string()))
             .copied()
@@ -38,14 +34,12 @@ impl MirData {
         ordered_fields: impl Iterator<Item = String>,
     ) -> crate::lower::MirRes<()> {
         for (index, field) in ordered_fields.enumerate() {
-            let k =
-                self.struct_indices.insert((dstructid, field.clone()), index);
+            let k = self
+                .struct_indices
+                .insert((dstructid, field.clone()), index);
             // This should never happen, if it does, then there is an
             // issue in the front end
-            debug_assert!(
-                k.is_none(),
-                "Struct had the same key more than once"
-            );
+            debug_assert!(k.is_none(), "Struct had the same key more than once");
         }
 
         Ok(())
@@ -56,8 +50,7 @@ impl MirData {
         dstructid: &DStructId,
         structure: &StructDef,
     ) -> crate::lower::MirRes<()> {
-        let ordered_fields =
-            structure.fields.iter().map(|field| field.name.clone());
+        let ordered_fields = structure.fields.iter().map(|field| field.name.clone());
         self.generate_struct_indices(*dstructid, ordered_fields)
     }
 

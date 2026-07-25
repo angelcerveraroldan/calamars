@@ -1,5 +1,9 @@
 use crate::{
-    StringArena, data_structs::{DStructArena, StructDefArena}, ids, memory::MemoryLayoutArena, types::TypeArena
+    StringArena,
+    data_structs::{DStructArena, StructDefArena},
+    ids,
+    memory::MemoryLayoutArena,
+    types::TypeArena,
 };
 
 /// Context and information that needs to be filled and

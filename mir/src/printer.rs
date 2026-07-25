@@ -111,10 +111,13 @@ impl<'a> MirPrinter<'a> {
             VInstructionKind::Parameter { index, .. } => {
                 format!("param #{index}")
             }
-            VInstructionKind::ExtractField { source, ds_id, index } => {
+            VInstructionKind::ExtractField {
+                source,
+                ds_id,
+                index,
+            } => {
                 format!("load {} #{}->#{index}", self.v(*source), ds_id.inner_id())
             }
-
         }
     }
 

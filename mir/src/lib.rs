@@ -12,8 +12,8 @@
 
 pub mod errors;
 pub mod lower;
-mod optimizations;
 pub mod mdata;
+mod optimizations;
 pub mod printer;
 
 use calamars_core::{UncheckedArena, ids};
