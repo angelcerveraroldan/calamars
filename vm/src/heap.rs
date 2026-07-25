@@ -144,6 +144,38 @@ fn memory_tag(heap_obj: &HeapObject) -> &MemoryTag {
     &header(heap_obj).memtag
 }
 
+fn rec_mark(heap_obj: &mut HeapObject, gctx: &GlobalContext) {
+    let h = header_mut(heap_obj);
+
+    // If its already been marked, we can exit early. No need to
+    // iterate children etc ...
+    if h.marked == SweepState::Marked {
+        return;
+    }
+    h.marked = SweepState::Marked;
+    match h.memtag {
+        // They don't contain children
+        MemoryTag::String | MemoryTag::Liteal | MemoryTag::Closure => return,
+        MemoryTag::Struct | MemoryTag::Enum => (),
+    }
+
+    let mem_layout = gctx.memlay.get_unchecked(h.memlayout_id);
+    let payload = _payload_ptr(heap_obj, mem_layout.alignment);
+    for (field, offset) in mem_layout.field_info.iter().zip(mem_layout.offsets.iter()) {
+        if !field.is_pointer {
+            continue;
+        }
+        // This is safe since we checked that the memory tag was
+        // struct or enum, which are always HeapObjects when inside
+        // another struct or enum
+        let mut child = unsafe {
+            let field_ptr = payload.add(*offset) as *mut HeapObject;
+            std::ptr::read(field_ptr)
+        };
+        rec_mark(&mut child, gctx);
+    }
+}
+
 fn mark(heap_obj: &mut HeapObject) {
     let h = header_mut(heap_obj);
     h.marked = SweepState::Marked;
@@ -291,7 +323,8 @@ impl Heap {
     {
         self.unmark_all();
         visit_roots(&mut |value| match value {
-            crate::values::Value::HeapPtr(mut non_null) => mark(&mut non_null),
+            crate::values::Value::HeapPtr(mut non_null) => rec_mark(&mut non_null, ctx),
+            // If its not a pointer, then the GC does not need to deallocate this at all
             _ => (),
         });
         self.deallocate_unmarked(ctx);
