@@ -71,6 +71,7 @@ fn main() {
                     calamars_core::data_structs::StructDefArena::new_unchecked(),
                 strings: hir::ConstantStringArena::new_unchecked(),
                 memlay: calamars_core::memory::MemoryLayoutArena::default(),
+                struct_mem: hashbrown::HashMap::new(),
             };
 
             let (mut module, errors) = HirModuleBuilder::default()
@@ -116,6 +117,7 @@ fn main() {
             }
 
             if run_vm {
+                vm::memlayout::generate_structs_mem_layout(&mut global_ctx);
                 let mut vmlower = vm::lower::Lowerer::new(&irmodule);
                 let functions = vmlower
                     .lower_module()
