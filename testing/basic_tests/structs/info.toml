@@ -4,4 +4,4 @@ description = "Simple structs example"
 
 parser = "pass"
 mir = "pass"
-vm  = "ignore"
+vm  = "pass"
