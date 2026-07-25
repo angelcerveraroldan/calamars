@@ -3,11 +3,18 @@ struct Person
 	, age  :: Int
 	}
 
-typ default :: Unit -> Person
-def default _ =
+typ main :: Unit -> Int
+def main _ = {
+	def p :: Person = default 100;
+	def name :: String = getPersonName p;
+	p . age
+}
+
+typ default :: Int -> Person
+def default age =
 	Person with
 		{ name = "angel"
-		, age = 100 }
+		, age = age }
 
 typ getPersonName :: Person -> String
 def getPersonName p = p . name
