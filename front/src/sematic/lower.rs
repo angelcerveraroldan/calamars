@@ -16,15 +16,16 @@ use crate::{
     },
 };
 
+#[rustfmt::skip]
 fn lower_str_to_type_primitive(s: &str) -> Option<types::Type> {
     match s {
-        "Int" | "Integer" => Some(types::Type::Integer),
-        "Float" | "Real" => Some(types::Type::Float),
-        "Bool" | "Boolean" => Some(types::Type::Boolean),
+        "Int"   | "Integer" => Some(types::Type::Integer),
+        "Float" | "Real"    => Some(types::Type::Float),
+        "Bool"  | "Boolean" => Some(types::Type::Boolean),
+        "Unit"  | "()"      => Some(types::Type::Unit),
         "String" => Some(types::Type::String),
-        "Char" => Some(types::Type::Char),
-        "Unit" | "()" => Some(types::Type::Unit),
-        _ => None,
+        "Char"   => Some(types::Type::Char),
+        _        => None,
     }
 }
 
