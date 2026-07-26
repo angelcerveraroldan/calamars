@@ -1,5 +1,4 @@
-use calamars_core::global::GlobalContext;
-use calamars_core::{MaybeErr, ids, types};
+use calamars_core::{MaybeErr, ids, types, types::TypeArena};
 
 use crate::{
     sematic::{error::SemanticError, hir},
@@ -217,7 +216,7 @@ impl Symbol {
 pub fn take_inputs(
     type_id: ids::TypeId,
     mut n: usize,
-    global_ctx: &GlobalContext,
+    types: &TypeArena,
     span: Span,
 ) -> Result<(Vec<ids::TypeId>, ids::TypeId), SemanticError> {
     let expected = n;
@@ -225,7 +224,7 @@ pub fn take_inputs(
     let mut curr_type_id = type_id;
 
     while n != 0 {
-        let curr_type = global_ctx.types.get_unchecked(curr_type_id);
+        let curr_type = types.get_unchecked(curr_type_id);
         match curr_type {
             types::Type::Function { input, output } => {
                 v.push(*input);

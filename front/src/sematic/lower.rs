@@ -2,6 +2,7 @@
 
 use calamars_core::{
     data_structs::{DataStructureKey, StructDef, StructFieldDef},
+    global::FrontendCtx,
     ids, types,
 };
 
@@ -120,29 +121,29 @@ impl HirModuleBuilder {
     fn lower_expression(
         &mut self,
         expr: &ast::Expression,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) -> ids::ExpressionId {
-        let lowered = self.lower_expression_inner(expr, global_ctx);
+        let lowered = self.lower_expression_inner(expr, ctx);
         self.expressions.push(lowered)
     }
 
     fn lower_expression_inner(
         &mut self,
         expr: &ast::Expression,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) -> hir::Expr {
         match expr {
-            ast::Expression::Literal(literal) => self.lower_literal(literal, global_ctx),
+            ast::Expression::Literal(literal) => self.lower_literal(literal, ctx.strings),
             ast::Expression::Identifier(ident) => self.lower_identifier_expr(ident),
-            ast::Expression::BinaryOp(binary_op) => self.lower_binary_expr(binary_op, global_ctx),
-            ast::Expression::Apply(apply) => self.lower_apply_expr(apply, global_ctx),
-            ast::Expression::IfStm(ifstm) => self.lower_if_expr(ifstm, global_ctx),
-            ast::Expression::Block(block) => self.lower_block(block, global_ctx),
+            ast::Expression::BinaryOp(binary_op) => self.lower_binary_expr(binary_op, ctx),
+            ast::Expression::Apply(apply) => self.lower_apply_expr(apply, ctx),
+            ast::Expression::IfStm(ifstm) => self.lower_if_expr(ifstm, ctx),
+            ast::Expression::Block(block) => self.lower_block(block, ctx),
             ast::Expression::StructInit { name, span, fields } => {
-                self.lower_struct_init(name, span, fields, global_ctx)
+                self.lower_struct_init(name, span, fields, ctx)
             }
             ast::Expression::FieldAccess { span, base, field } => {
-                self.lower_struct_field_access(span, base, field, global_ctx)
+                self.lower_struct_field_access(span, base, field, ctx)
             }
             ast::Expression::Error(_) => hir::Expr::Err,
             other => {
@@ -160,20 +161,19 @@ impl HirModuleBuilder {
         name: &String,
         span: &Span,
         fields: &Vec<(String, ast::Expression)>,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) -> hir::Expr {
         let current_file = self.module;
-        let struct_id =
-            match lower_str_to_type(name, span, current_file, &mut global_ctx.data_structs) {
-                Ok(types::Type::Structure(id)) => id,
-                _ => {
-                    self.insert_error(SemanticError::TypeNotFound {
-                        type_name: name.to_string(),
-                        span: *span,
-                    });
-                    return hir::Expr::Err;
-                }
-            };
+        let struct_id = match lower_str_to_type(name, span, current_file, ctx.data_structs) {
+            Ok(types::Type::Structure(id)) => id,
+            _ => {
+                self.insert_error(SemanticError::TypeNotFound {
+                    type_name: name.to_string(),
+                    span: *span,
+                });
+                return hir::Expr::Err;
+            }
+        };
 
         let mut seen_fields: hashbrown::HashMap<String, Vec<Span>> = hashbrown::HashMap::new();
         for (field_name, expr) in fields.iter() {
@@ -191,11 +191,11 @@ impl HirModuleBuilder {
         let fields = fields
             .iter()
             // Once again - refactor needs to be done asap, this is just a quick POC, sorry!!!
-            .map(|(name, expr)| (name.clone(), self.lower_expression(&expr, global_ctx)))
+            .map(|(name, expr)| (name.clone(), self.lower_expression(&expr, ctx)))
             .collect();
 
         let mut missing_fields = vec![];
-        let expected_fields = &global_ctx.struct_defs.get_unchecked(struct_id).fields;
+        let expected_fields = &ctx.struct_defs.get_unchecked(struct_id).fields;
         for StructFieldDef { name, .. } in expected_fields {
             if !seen_fields.contains_key(name) {
                 missing_fields.push(name.clone());
@@ -222,9 +222,9 @@ impl HirModuleBuilder {
         span: &Span,
         base: &ast::Expression,
         field: &ast::Ident,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) -> hir::Expr {
-        let struct_expr = self.lower_expression(base, global_ctx);
+        let struct_expr = self.lower_expression(base, ctx);
         hir::Expr::StructFieldAccess {
             struct_expr,
             struct_span: base.span(),
@@ -237,7 +237,7 @@ impl HirModuleBuilder {
         &mut self,
         struct_id: ids::DStructId,
         definition: &ast::Definition,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) {
         let ast::Definition::Struct { name, params, .. } = definition;
 
@@ -245,7 +245,7 @@ impl HirModuleBuilder {
             .iter()
             .map(|(field_name, field_type)| StructFieldDef {
                 name: field_name.ident().to_string(),
-                ty: self.lower_type(field_type, global_ctx),
+                ty: self.lower_type(field_type, ctx.types, ctx.data_structs),
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
@@ -269,18 +269,14 @@ impl HirModuleBuilder {
             module: self.module,
         };
 
-        let pushed_id = global_ctx.struct_defs.push(StructDef { key, fields });
+        let pushed_id = ctx.struct_defs.push(StructDef { key, fields });
         debug_assert_eq!(
             pushed_id, struct_id,
             "struct defs and ids must stay aligned"
         );
     }
 
-    fn lower_block(
-        &mut self,
-        block: &ast::CompoundExpression,
-        global_ctx: &mut calamars_core::global::GlobalContext,
-    ) -> hir::Expr {
+    fn lower_block(&mut self, block: &ast::CompoundExpression, ctx: &mut FrontendCtx) -> hir::Expr {
         self.push_scope();
 
         let mut items = vec![];
@@ -293,7 +289,7 @@ impl HirModuleBuilder {
                         name,
                         dtype,
                     } => {
-                        let sb = self.lower_type_declaration(dtype, name, global_ctx);
+                        let sb = self.lower_type_declaration(dtype, name, ctx);
                         let old = builders.insert(sb.ident_id(), sb);
                         if let Some(original) = old {
                             self.insert_error(SemanticError::Redeclaration {
@@ -312,9 +308,7 @@ impl HirModuleBuilder {
                             continue;
                         };
 
-                        match self
-                            .lower_binding_declaration(name, params, body, builder, global_ctx)
-                        {
+                        match self.lower_binding_declaration(name, params, body, builder, ctx) {
                             Ok(symbol_id) => {
                                 items.push(hir::ItemId::Symbol(symbol_id));
                             }
@@ -327,14 +321,8 @@ impl HirModuleBuilder {
                         name,
                         body,
                     } => {
-                        let sb = self.lower_type_declaration(dtype, name, global_ctx);
-                        match self.lower_binding_declaration(
-                            name,
-                            &Vec::new(),
-                            body,
-                            sb,
-                            global_ctx,
-                        ) {
+                        let sb = self.lower_type_declaration(dtype, name, ctx);
+                        match self.lower_binding_declaration(name, &Vec::new(), body, sb, ctx) {
                             Ok(symbol_id) => {
                                 items.push(hir::ItemId::Symbol(symbol_id));
                             }
@@ -343,7 +331,7 @@ impl HirModuleBuilder {
                     }
                 },
                 ast::Item::Expression(expr) => {
-                    let expr_id = self.lower_expression(expr, global_ctx);
+                    let expr_id = self.lower_expression(expr, ctx);
                     items.push(hir::ItemId::Expr(expr_id));
                 }
             }
@@ -359,7 +347,7 @@ impl HirModuleBuilder {
         let final_expr = block
             .final_expr
             .as_ref()
-            .map(|expr| self.lower_expression(expr, global_ctx));
+            .map(|expr| self.lower_expression(expr, ctx));
 
         self.pop_scope();
         hir::Expr::Block {
@@ -372,12 +360,12 @@ impl HirModuleBuilder {
     fn lower_literal(
         &mut self,
         literal: &ast::Literal,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        strings: &mut hir::ConstantStringArena,
     ) -> hir::Expr {
         let constant = match literal.kind() {
             ast::LiteralKind::Integer(i) => hir::Const::I64(*i),
             ast::LiteralKind::Boolean(b) => hir::Const::Bool(*b),
-            ast::LiteralKind::String(s) => hir::Const::String(global_ctx.strings.intern(s)),
+            ast::LiteralKind::String(s) => hir::Const::String(strings.intern(s)),
             _ => return hir::Expr::Err,
         };
         hir::Expr::Literal {
@@ -433,11 +421,7 @@ impl HirModuleBuilder {
         }
     }
 
-    fn lower_binary_expr(
-        &mut self,
-        binary_op: &ast::BinaryOp,
-        global_ctx: &mut calamars_core::global::GlobalContext,
-    ) -> hir::Expr {
+    fn lower_binary_expr(&mut self, binary_op: &ast::BinaryOp, ctx: &mut FrontendCtx) -> hir::Expr {
         let operator = match binary_op.operator() {
             ast::BinaryOperator::Add => hir::BinOp::Add,
             ast::BinaryOperator::Sub => hir::BinOp::Sub,
@@ -455,8 +439,8 @@ impl HirModuleBuilder {
             ast::BinaryOperator::And => hir::BinOp::And,
             _ => return hir::Expr::Err,
         };
-        let lhs = self.lower_expression(binary_op.lhs(), global_ctx);
-        let rhs = self.lower_expression(binary_op.rhs(), global_ctx);
+        let lhs = self.lower_expression(binary_op.lhs(), ctx);
+        let rhs = self.lower_expression(binary_op.rhs(), ctx);
         hir::Expr::BinaryOperation {
             operator,
             lhs,
@@ -465,14 +449,10 @@ impl HirModuleBuilder {
         }
     }
 
-    fn lower_apply_expr(
-        &mut self,
-        apply: &ast::Apply,
-        global_ctx: &mut calamars_core::global::GlobalContext,
-    ) -> hir::Expr {
-        let f = self.lower_expression(apply.callable(), global_ctx);
+    fn lower_apply_expr(&mut self, apply: &ast::Apply, ctx: &mut FrontendCtx) -> hir::Expr {
+        let f = self.lower_expression(apply.callable(), ctx);
         let input_expr = apply.input();
-        let input = self.lower_expression(&input_expr, global_ctx);
+        let input = self.lower_expression(&input_expr, ctx);
         hir::Expr::Call {
             f,
             input,
@@ -480,14 +460,10 @@ impl HirModuleBuilder {
         }
     }
 
-    fn lower_if_expr(
-        &mut self,
-        ifstm: &ast::IfStm,
-        global_ctx: &mut calamars_core::global::GlobalContext,
-    ) -> hir::Expr {
-        let predicate = self.lower_expression(ifstm.pred().as_ref(), global_ctx);
-        let then = self.lower_expression(ifstm.then_expr().as_ref(), global_ctx);
-        let otherwise = self.lower_expression(ifstm.else_expr().as_ref(), global_ctx);
+    fn lower_if_expr(&mut self, ifstm: &ast::IfStm, ctx: &mut FrontendCtx) -> hir::Expr {
+        let predicate = self.lower_expression(ifstm.pred().as_ref(), ctx);
+        let then = self.lower_expression(ifstm.then_expr().as_ref(), ctx);
+        let otherwise = self.lower_expression(ifstm.else_expr().as_ref(), ctx);
         hir::Expr::If {
             predicate,
             then,
@@ -502,18 +478,19 @@ impl HirModuleBuilder {
     fn lower_type(
         &mut self,
         ast_type: &ast::Type,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        types: &mut calamars_core::types::TypeArena,
+        data_structs: &mut calamars_core::data_structs::DStructArena,
     ) -> ids::TypeId {
         let lowered = match ast_type {
             ast::Type::Error(_) => types::Type::Error,
             ast::Type::Unit(_) => types::Type::Unit,
             ast::Type::Array { elem_type, .. } => {
-                let inner = self.lower_type(elem_type, global_ctx);
+                let inner = self.lower_type(elem_type, types, data_structs);
                 types::Type::Array(inner)
             }
             ast::Type::Func { input, output, .. } => {
-                let input = self.lower_type(input, global_ctx);
-                let output = self.lower_type(output, global_ctx);
+                let input = self.lower_type(input, types, data_structs);
+                let output = self.lower_type(output, types, data_structs);
                 types::Type::Function { input, output }
             }
             ast::Type::Path { segments, span } => 'path: {
@@ -521,12 +498,7 @@ impl HirModuleBuilder {
                     self.insert_error(SemanticError::QualifiedTypeNotSupported { span: *span });
                     break 'path types::Type::Error;
                 }
-                match lower_str_to_type(
-                    &segments[0].ident(),
-                    span,
-                    self.module,
-                    &mut global_ctx.data_structs,
-                ) {
+                match lower_str_to_type(&segments[0].ident(), span, self.module, data_structs) {
                     Ok(inner) => inner,
                     Err(err) => {
                         self.insert_error(err);
@@ -535,7 +507,7 @@ impl HirModuleBuilder {
                 }
             }
         };
-        global_ctx.types.intern(&lowered)
+        types.intern(&lowered)
     }
 
     /// Given the type declaration parameters of some symbol, generate a symbol builder.
@@ -547,12 +519,12 @@ impl HirModuleBuilder {
         &mut self,
         declared_type: &ast::Type,
         declared_name: &ast::Ident,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) -> hir::SymbolBuilder {
-        let lowered_ty = self.lower_type(declared_type, global_ctx);
+        let lowered_ty = self.lower_type(declared_type, ctx.types, ctx.data_structs);
         let name_span = declared_name.span();
         let lowered_id = self.lower_ident(declared_name);
-        let err_expr = self.lower_expression(&ast::Expression::Error(Span::from(0..0)), global_ctx);
+        let err_expr = self.lower_expression(&ast::Expression::Error(Span::from(0..0)), ctx);
         let symbol_kind = SymbolKind::Defn {
             span_type: name_span,
             span_decl: Span::from(0..0),
@@ -594,10 +566,10 @@ impl HirModuleBuilder {
         params: &Vec<ast::Ident>,
         body: &ast::Expression,
         mut builder: SymbolBuilder,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) -> Result<ids::SymbolId, SemanticError> {
         // Lower the inputs to symbols
-        let (input_types, _) = take_inputs(builder.ty, params.len(), global_ctx, name.span())?;
+        let (input_types, _) = take_inputs(builder.ty, params.len(), ctx.types, name.span())?;
         let inputs: Box<[ids::SymbolId]> = params
             .iter()
             .zip(input_types)
@@ -618,7 +590,7 @@ impl HirModuleBuilder {
             let symbol = self.symbols.get_unchecked(*symbol_id);
             let _ = self.insert_symbol_to_current_scope(symbol.name, *symbol_id, symbol.span());
         }
-        let body = self.lower_expression(body, global_ctx);
+        let body = self.lower_expression(body, ctx);
         self.pop_scope();
 
         builder.span_name_decl = Some(name.span());
@@ -632,7 +604,7 @@ impl HirModuleBuilder {
         module: &ast::Module,
         id: ids::FileId,
         name: String,
-        global_ctx: &mut calamars_core::global::GlobalContext,
+        ctx: &mut FrontendCtx,
     ) -> (hir::Module, Vec<SemanticError>) {
         self.module = id;
 
@@ -646,7 +618,7 @@ impl HirModuleBuilder {
                 name: def.name().ident().to_string(),
                 module: self.module,
             };
-            let (id, is_new) = match global_ctx.data_structs.intern_checked(&key) {
+            let (id, is_new) = match ctx.data_structs.intern_checked(&key) {
                 calamars_core::InternedId::New(id) => (id, true),
                 calamars_core::InternedId::Old(id) => {
                     self.insert_error(SemanticError::Redeclaration {
@@ -656,7 +628,7 @@ impl HirModuleBuilder {
                     (id, false)
                 }
             };
-            global_ctx.types.intern(&types::Type::Structure(id));
+            ctx.types.intern(&types::Type::Structure(id));
             if is_new {
                 struct_definitions.push((id, def));
             }
@@ -664,7 +636,7 @@ impl HirModuleBuilder {
         }
 
         for (struct_id, definition) in struct_definitions {
-            self.lower_struct_definition(struct_id, definition, global_ctx);
+            self.lower_struct_definition(struct_id, definition, ctx);
         }
 
         // Generate the builders from the type declarations
@@ -673,7 +645,7 @@ impl HirModuleBuilder {
             let Declaration::TypeSignature { name, dtype, .. } = declaration else {
                 continue;
             };
-            let sb = self.lower_type_declaration(dtype, name, global_ctx);
+            let sb = self.lower_type_declaration(dtype, name, ctx);
             let old = builders.insert(sb.ident_id(), sb);
             if let Some(original) = old {
                 self.insert_error(SemanticError::Redeclaration {
@@ -693,7 +665,7 @@ impl HirModuleBuilder {
 
             match builder {
                 Some(builder) => {
-                    match self.lower_binding_declaration(name, params, body, builder, global_ctx) {
+                    match self.lower_binding_declaration(name, params, body, builder, ctx) {
                         Ok(symbol_id) => roots.push(symbol_id),
                         Err(err) => self.insert_error(err),
                     }
