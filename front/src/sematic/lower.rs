@@ -33,7 +33,7 @@ fn lower_str_to_type(
     s: &str,
     span: &Span,
     current_file: ids::FileId,
-    global_ctx: &mut calamars_core::global::GlobalContext,
+    data_structs: &mut calamars_core::data_structs::DStructArena,
 ) -> Result<types::Type, SemanticError> {
     // We will give simple primitives precedence
     if let Some(val) = lower_str_to_type_primitive(s) {
@@ -45,7 +45,7 @@ fn lower_str_to_type(
         module: current_file,
     };
 
-    if let Some(val) = global_ctx.data_structs.resolve(&key) {
+    if let Some(val) = data_structs.resolve(&key) {
         return Ok(calamars_core::types::Type::Structure(*val));
     }
 
@@ -163,16 +163,17 @@ impl HirModuleBuilder {
         global_ctx: &mut calamars_core::global::GlobalContext,
     ) -> hir::Expr {
         let current_file = self.module;
-        let struct_id = match lower_str_to_type(name, span, current_file, global_ctx) {
-            Ok(types::Type::Structure(id)) => id,
-            _ => {
-                self.insert_error(SemanticError::TypeNotFound {
-                    type_name: name.to_string(),
-                    span: *span,
-                });
-                return hir::Expr::Err;
-            }
-        };
+        let struct_id =
+            match lower_str_to_type(name, span, current_file, &mut global_ctx.data_structs) {
+                Ok(types::Type::Structure(id)) => id,
+                _ => {
+                    self.insert_error(SemanticError::TypeNotFound {
+                        type_name: name.to_string(),
+                        span: *span,
+                    });
+                    return hir::Expr::Err;
+                }
+            };
 
         let mut seen_fields: hashbrown::HashMap<String, Vec<Span>> = hashbrown::HashMap::new();
         for (field_name, expr) in fields.iter() {
@@ -520,7 +521,12 @@ impl HirModuleBuilder {
                     self.insert_error(SemanticError::QualifiedTypeNotSupported { span: *span });
                     break 'path types::Type::Error;
                 }
-                match lower_str_to_type(&segments[0].ident(), span, self.module, global_ctx) {
+                match lower_str_to_type(
+                    &segments[0].ident(),
+                    span,
+                    self.module,
+                    &mut global_ctx.data_structs,
+                ) {
                     Ok(inner) => inner,
                     Err(err) => {
                         self.insert_error(err);
