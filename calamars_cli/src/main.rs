@@ -75,12 +75,15 @@ fn main() {
                 struct_mem: hashbrown::HashMap::new(),
             };
 
-            let (mut module, errors) = HirModuleBuilder::default().lower_module(
-                &module,
-                file_id,
-                file_name.clone(),
-                &mut global_ctx,
-            );
+            let (mut module, errors) = {
+                let mut ctx = global_ctx.frontend();
+                HirModuleBuilder::default().lower_module(
+                    &module,
+                    file_id,
+                    file_name.clone(),
+                    &mut ctx,
+                )
+            };
 
             if !errors.is_empty() {
                 for err in errors {
@@ -94,7 +97,10 @@ fn main() {
                 module: &mut module,
                 errors: vec![],
             };
-            type_handler.type_check_module(&mut global_ctx);
+            {
+                let mut ctx = global_ctx.type_ctx();
+                type_handler.type_check_module(&mut ctx);
+            }
 
             if !type_handler.errors.is_empty() {
                 for err in type_handler.errors {
