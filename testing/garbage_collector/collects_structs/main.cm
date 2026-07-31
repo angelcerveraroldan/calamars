@@ -1,0 +1,27 @@
+-- Run a recursive function that takes up "a lot" of memory
+typ main :: Int
+def main = recurseOne 1000
+
+struct StructA
+	{ name :: String
+	, strb :: StructB }
+
+struct StructB
+	{ a :: Int , b :: Int }
+
+-- A somewhat long strings that will take up some memory
+typ someStr :: Int -> String
+def someStr _ = "Some string that will use up memeory..."
+
+typ recurseOne :: Int -> Int
+def recurseOne count =
+	if count == 0 then 0
+	else {
+		 def tmp :: String = someStr 0;
+		 def other :: String = someStr 0;
+		 def stb :: StructB = StructB with
+			{ a = 100, b = 200 };
+		 def sta :: StructA = StructA with
+			{ name = tmp, strb = stb };
+		 recurseOne (count - 1)
+	}
