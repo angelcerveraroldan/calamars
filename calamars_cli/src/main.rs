@@ -2,7 +2,11 @@ use calamars_core::ids;
 use clap::{Parser, Subcommand};
 use front::{
     errors::PrettyError,
-    sematic::{hir, lower::HirModuleBuilder, types::TypeHandler},
+    sematic::{
+        hir::{self, TypedModule},
+        lower::HirModuleBuilder,
+        types::type_check_module,
+    },
     syntax::parser::CalamarsParser,
 };
 use ir::printer::MirPrinter;
@@ -93,29 +97,29 @@ fn main() {
             }
 
             // Type checking
-            let mut type_handler = TypeHandler {
-                module: &mut module,
-                errors: vec![],
-            };
-            {
-                let mut ctx = global_ctx.type_ctx();
-                type_handler.type_check_module(&mut ctx);
-            }
-
-            if !type_handler.errors.is_empty() {
-                for err in type_handler.errors {
-                    err.log_error(&file_name, &sf.src);
+            let mut tctx = global_ctx.type_ctx();
+            let type_info = match type_check_module(&module, &mut tctx) {
+                Ok(type_info) => type_info,
+                Err(errors) => {
+                    for err in errors {
+                        err.log_error(&file_name, &sf.src);
+                    }
+                    std::process::exit(1);
                 }
-                std::process::exit(1);
-            }
+            };
+
+            let tmodule = TypedModule {
+                hir: module,
+                type_info,
+            };
 
             if !emit_mir && !run_vm {
                 println!("OK");
                 return;
             }
 
-            let mdata = ir::mdata::MirData::generate_mirdata(&module, &global_ctx);
-            let mut mir_builder = ir::lower::ModuleBuilder::new(&module, &mdata, &global_ctx);
+            let mdata = ir::mdata::MirData::generate_mirdata(&tmodule, &global_ctx);
+            let mut mir_builder = ir::lower::ModuleBuilder::new(&tmodule, &mdata, &global_ctx);
             mir_builder.lower_entire_module().expect("lowering failed");
             let irmodule = mir_builder.finish();
 

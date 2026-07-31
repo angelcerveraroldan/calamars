@@ -54,10 +54,13 @@ impl MirData {
         self.generate_struct_indices(*dstructid, ordered_fields)
     }
 
-    pub fn generate_mirdata<'a>(hir_module: &'a hir::Module, global_ctx: &GlobalContext) -> Self {
+    pub fn generate_mirdata<'a>(
+        hir_tmodule: &'a hir::TypedModule,
+        global_ctx: &GlobalContext,
+    ) -> Self {
         let mut s = Self::default();
 
-        for dstructid in &hir_module.data_structs {
+        for dstructid in &hir_tmodule.hir.data_structs {
             let foo = global_ctx.struct_defs.get_unchecked(*dstructid);
             let _ = s.generate_struct_data(dstructid, foo);
         }

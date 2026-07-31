@@ -34,7 +34,7 @@ fn operator_map(op: &hir::BinOp) -> BinaryOperator {
 pub type MirRes<A> = Result<A, MirErrors>;
 
 pub struct FunctionBuilder<'a> {
-    ctx: &'a hir::Module,
+    ctx: &'a hir::TypedModule,
     mdata: &'a mdata::MirData,
     global_ctx: &'a GlobalContext,
 
@@ -51,7 +51,7 @@ pub struct FunctionBuilder<'a> {
 
 impl<'a> FunctionBuilder<'a> {
     pub fn new(
-        ctx: &'a hir::Module,
+        ctx: &'a hir::TypedModule,
         mdata: &'a mdata::MirData,
         global_ctx: &'a GlobalContext,
         function_map: &'a hashbrown::HashMap<ids::IdentId, FunctionId>,
@@ -200,7 +200,7 @@ impl<'a> FunctionBuilder<'a> {
                     self.lower_expression_from_id(expression_id)?;
                 }
                 ItemId::Symbol(symbol_id) => {
-                    let x = self.ctx.symbols.get_unchecked(*symbol_id).kind.clone();
+                    let x = self.ctx.hir.symbols.get_unchecked(*symbol_id).kind.clone();
                     if let SymbolKind::Defn {
                         declaration: SymbolDec { inputs, body },
                         ..
@@ -230,13 +230,14 @@ impl<'a> FunctionBuilder<'a> {
     ) -> MirRes<(ValueId, BlockId)> {
         let expression = self
             .ctx
+            .hir
             .exprs
             .get(*expressionid)
             .ok_or(MirErrors::ExpressionNotFound)?;
 
         let ty = self
             .ctx
-            .expression_types
+            .type_info
             .get(expressionid)
             .copied()
             .ok_or(MirErrors::CouldNotGetExpressionType)?;
@@ -267,7 +268,7 @@ impl<'a> FunctionBuilder<'a> {
         f: &ExpressionId,
         input: &ExpressionId,
     ) -> (SymbolId, Vec<ExpressionId>) {
-        match self.ctx.exprs.get_unchecked(*f) {
+        match self.ctx.hir.exprs.get_unchecked(*f) {
             hir::Expr::Call {
                 f,
                 input: nested_input,
@@ -288,7 +289,7 @@ impl<'a> FunctionBuilder<'a> {
         input: &ExpressionId,
     ) -> MirRes<(ValueId, BlockId)> {
         let (fn_symbol_id, inputs) = self.flatten_function_calls(f, input);
-        let fn_symbol = self.ctx.symbols.get_unchecked(fn_symbol_id);
+        let fn_symbol = self.ctx.hir.symbols.get_unchecked(fn_symbol_id);
         let fn_ident = fn_symbol.name;
         let fn_id = self.function_map.get(&fn_ident).expect("Did not lower fn");
         let callee = crate::Callee::Function(*fn_id);
@@ -301,7 +302,7 @@ impl<'a> FunctionBuilder<'a> {
 
         let return_ty = *self
             .ctx
-            .expression_types
+            .type_info
             .get(f)
             .expect("function expression should have had a type ...");
 
@@ -320,7 +321,7 @@ impl<'a> FunctionBuilder<'a> {
         let (source, _) = self.lower_expression_from_id(struct_expr)?;
         let struct_ty = self
             .ctx
-            .expression_types
+            .type_info
             .get(struct_expr)
             .copied()
             .ok_or(MirErrors::CouldNotGetExpressionType)?;
@@ -448,6 +449,7 @@ impl<'a> FunctionBuilder<'a> {
         for (index, param) in params.iter().enumerate() {
             let sym = self
                 .ctx
+                .hir
                 .symbols
                 .get(*param)
                 .ok_or(MirErrors::ParamNotFound)?;
@@ -477,7 +479,7 @@ impl<'a> FunctionBuilder<'a> {
 }
 
 pub struct ModuleBuilder<'a> {
-    ctx: &'a hir::Module,
+    ctx: &'a hir::TypedModule,
     mdata: &'a mdata::MirData,
     global_ctx: &'a GlobalContext,
     functions: UncheckedArena<Function, FunctionId>,
@@ -488,7 +490,7 @@ pub struct ModuleBuilder<'a> {
 
 impl<'a> ModuleBuilder<'a> {
     pub fn new(
-        ctx: &'a hir::Module,
+        ctx: &'a hir::TypedModule,
         mdata: &'a mdata::MirData,
         global_ctx: &'a GlobalContext,
     ) -> Self {
@@ -504,8 +506,8 @@ impl<'a> ModuleBuilder<'a> {
     /// Generate the functionids before we starts lowering, so that you don't need
     /// to define before use.
     pub fn handle_headers(&mut self) {
-        for symbol_id in &self.ctx.roots {
-            let symbol = self.ctx.symbols.get_unchecked(*symbol_id);
+        for symbol_id in &self.ctx.hir.roots {
+            let symbol = self.ctx.hir.symbols.get_unchecked(*symbol_id);
             if let SymbolKind::Defn {
                 declaration: SymbolDec { .. },
                 ..
@@ -520,8 +522,8 @@ impl<'a> ModuleBuilder<'a> {
     pub fn lower_entire_module(&mut self) -> MirRes<()> {
         self.handle_headers();
 
-        for symbol_id in &self.ctx.roots {
-            let symbol = self.ctx.symbols.get_unchecked(*symbol_id);
+        for symbol_id in &self.ctx.hir.roots {
+            let symbol = self.ctx.hir.symbols.get_unchecked(*symbol_id);
             let name = symbol.name;
             let return_ty = symbol.ty;
 

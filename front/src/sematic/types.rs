@@ -10,21 +10,49 @@ use calamars_core::{
 use crate::{
     sematic::{
         error::SemanticError,
-        hir::{self, ItemId, take_inputs},
+        hir::{self, ItemId, TypeInfo, take_inputs},
     },
     syntax::span::Span,
 };
 
+pub fn type_check_module(
+    module: &hir::Module,
+    ctx: &mut TypeCtx,
+) -> Result<TypeInfo, Vec<SemanticError>> {
+    let mut type_handler = TypeHandler::new(module);
+
+    let nroots = module.roots.len();
+    for idx in 0..nroots {
+        let symbol = module.roots[idx];
+        type_handler.type_check_declaration(symbol, ctx);
+    }
+
+    type_handler
+        .errors
+        .is_empty()
+        .then_some(type_handler.type_info)
+        .ok_or(type_handler.errors)
+}
+
 /// `TypeHandler` is responsible for checking that the HIR's type semantics are correct.
 ///
 /// It should identify errors such as `x :: Int` followed by `x = "hello"`, and return pretty diagnostics.
-pub struct TypeHandler<'a> {
-    pub module: &'a mut hir::Module,
+struct TypeHandler<'a> {
+    module: &'a hir::Module,
+    type_info: TypeInfo,
     /// Collection of semantic errors encountered while type checking
-    pub errors: Vec<SemanticError>,
+    errors: Vec<SemanticError>,
 }
 
 impl<'a> TypeHandler<'a> {
+    pub fn new(module: &'a hir::Module) -> Self {
+        Self {
+            module,
+            type_info: TypeInfo::default(),
+            errors: vec![],
+        }
+    }
+
     fn match_type(
         &mut self,
         id: ids::TypeId,
@@ -109,7 +137,7 @@ impl<'a> TypeHandler<'a> {
     /// This function will also memoize each expressions type id to the `expression_types` map in
     /// the module.
     fn type_expression(&mut self, e_id: &ids::ExpressionId, ctx: &mut TypeCtx) -> ids::TypeId {
-        if let Some(ty) = self.module.expression_types.get(e_id) {
+        if let Some(ty) = self.type_info.get(e_id) {
             return *ty;
         }
 
@@ -263,7 +291,7 @@ impl<'a> TypeHandler<'a> {
             }
         };
 
-        self.module.expression_types.insert(*e_id, type_id);
+        self.type_info.set(*e_id, type_id);
         type_id
     }
 
@@ -451,15 +479,6 @@ impl<'a> TypeHandler<'a> {
         if output_type != body_actual_type {
             let expected_str = types::type_id_stringify(ctx.types, output_type);
             self.push_wrong_type(body_actual_type, &expected_str, span_decl, ctx.types);
-        }
-    }
-
-    /// Type check all declarations in the module.
-    pub fn type_check_module(&mut self, ctx: &mut TypeCtx) {
-        let roots_len = self.module.roots.len();
-        for idx in 0..roots_len {
-            let symbol = self.module.roots[idx];
-            self.type_check_declaration(symbol, ctx);
         }
     }
 }
