@@ -693,7 +693,6 @@ impl HirModuleBuilder {
                 symbols: self.symbols,
                 exprs: self.expressions,
                 roots: roots.into_boxed_slice(),
-                expression_types: hashbrown::HashMap::new(),
             },
             self.diag_err,
         )

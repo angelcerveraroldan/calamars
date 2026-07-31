@@ -252,6 +252,26 @@ pub fn take_inputs(
     Ok((v, curr_type_id))
 }
 
+#[derive(Debug, Default)]
+pub struct TypeInfo {
+    expression_types: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
+}
+
+impl TypeInfo {
+    pub fn get(&self, k: &ids::ExpressionId) -> Option<&ids::TypeId> {
+        self.expression_types.get(k)
+    }
+
+    pub fn set(&mut self, k: ids::ExpressionId, v: ids::TypeId) -> Option<ids::TypeId> {
+        self.expression_types.insert(k, v)
+    }
+}
+
+pub struct TypedModule {
+    pub hir: hir::Module,
+    pub type_info: TypeInfo,
+}
+
 pub struct Module {
     /// For now, ModuleId is the same as FileId, as each file is exactly a module.
     pub id: ids::FileId,
@@ -264,6 +284,4 @@ pub struct Module {
 
     /// Top level symbols defined in the module
     pub roots: Box<[ids::SymbolId]>,
-    /// Expression types
-    pub expression_types: hashbrown::HashMap<ids::ExpressionId, ids::TypeId>,
 }
