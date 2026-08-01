@@ -6,13 +6,6 @@ use crate::{
     types::TypeArena,
 };
 
-pub struct FrontendCtx<'a> {
-    pub types: &'a mut TypeArena,
-    pub data_structs: &'a mut DStructArena,
-    pub struct_defs: &'a mut StructDefArena,
-    pub strings: &'a mut StringArena,
-}
-
 pub struct TypeCtx<'a> {
     pub types: &'a mut TypeArena,
     pub struct_defs: &'a StructDefArena,
@@ -30,15 +23,6 @@ pub struct GlobalContext {
 }
 
 impl GlobalContext {
-    pub fn frontend(&mut self) -> FrontendCtx<'_> {
-        FrontendCtx {
-            types: &mut self.types,
-            data_structs: &mut self.data_structs,
-            struct_defs: &mut self.struct_defs,
-            strings: &mut self.strings,
-        }
-    }
-
     pub fn type_ctx(&mut self) -> TypeCtx<'_> {
         TypeCtx {
             types: &mut self.types,
