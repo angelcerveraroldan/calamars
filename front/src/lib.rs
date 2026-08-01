@@ -1,4 +1,4 @@
 pub mod errors;
 
-pub mod sematic;
+pub mod semantic;
 pub mod syntax;

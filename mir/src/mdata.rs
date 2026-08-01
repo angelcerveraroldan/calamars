@@ -8,7 +8,7 @@ use calamars_core::{
     global::GlobalContext,
     ids::{self, DStructId},
 };
-use front::sematic::hir;
+use front::semantic::hir;
 
 pub type FieldIndex = usize;
 pub type FieldName = String;
