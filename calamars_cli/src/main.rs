@@ -2,7 +2,7 @@ use calamars_core::ids;
 use clap::{Parser, Subcommand};
 use front::{
     errors::PrettyError,
-    sematic::{
+    semantic::{
         FrontendCtx,
         hir::{self, TypedModule},
         lower::HirModuleBuilder,

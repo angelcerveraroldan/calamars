@@ -1,7 +1,7 @@
 use calamars_core::{MaybeErr, ids, types, types::TypeArena};
 
 use crate::{
-    sematic::{error::SemanticError, hir},
+    semantic::{error::SemanticError, hir},
     syntax::span::Span,
 };
 

@@ -5,7 +5,7 @@ use calamars_core::{
     global::GlobalContext,
     ids::{self, ExpressionId, SymbolId},
 };
-use front::sematic::hir::{self, BinOp, Const, ItemId, SymbolDec, SymbolKind};
+use front::semantic::hir::{self, BinOp, Const, ItemId, SymbolDec, SymbolKind};
 
 use crate::{
     BBlock, BinaryOperator, BlockId, Function, FunctionId, Module, VInstruct, VInstructionKind,

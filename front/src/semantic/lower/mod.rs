@@ -6,7 +6,7 @@ use calamars_core::{
 };
 
 use crate::{
-    sematic::{
+    semantic::{
         FrontendCtx,
         error::SemanticError,
         hir::{self, Symbol, SymbolBuilder, SymbolDec, SymbolKind, take_inputs},

@@ -8,7 +8,7 @@ use calamars_core::{
 };
 
 use crate::{
-    sematic::{
+    semantic::{
         error::SemanticError,
         hir::{self, ItemId, TypeInfo, take_inputs},
     },
