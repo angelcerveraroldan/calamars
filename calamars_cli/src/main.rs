@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use front::{
     errors::PrettyError,
     sematic::{
+        FrontendCtx,
         hir::{self, TypedModule},
         lower::HirModuleBuilder,
         types::type_check_module,
@@ -80,7 +81,7 @@ fn main() {
             };
 
             let (mut module, errors) = {
-                let mut ctx = global_ctx.frontend();
+                let mut ctx = FrontendCtx::from(&mut global_ctx);
                 HirModuleBuilder::default().lower_module(
                     &module,
                     file_id,

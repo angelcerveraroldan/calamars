@@ -2,12 +2,12 @@
 
 use calamars_core::{
     data_structs::{DataStructureKey, StructDef, StructFieldDef},
-    global::FrontendCtx,
     ids, types,
 };
 
 use crate::{
     sematic::{
+        FrontendCtx,
         error::SemanticError,
         hir::{self, Symbol, SymbolBuilder, SymbolDec, SymbolKind, take_inputs},
     },
