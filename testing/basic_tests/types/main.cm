@@ -1,0 +1,10 @@
+typ main :: Int
+def main = {
+	-- Call a function with Unit as the input
+	def bar :: Int = foo {};
+	def str :: String = "hello!";
+	2
+}
+
+typ foo :: Unit -> Int
+def foo _ = 2

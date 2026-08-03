@@ -1,0 +1,7 @@
+[test]
+name = "Basic types"
+description = "A basic program that assigns the basic types to make sure there is nothing weird going on"
+
+parser = "pass"
+mir = "pass"
+vm = "pass"
