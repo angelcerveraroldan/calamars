@@ -1,5 +1,7 @@
 //! Lower AST to HIR
 
+mod typedefn;
+
 use calamars_core::{
     data_structs::{DataStructureKey, StructDef, StructFieldDef},
     ids, types,
