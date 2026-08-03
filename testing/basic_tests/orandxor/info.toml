@@ -1,0 +1,7 @@
+[test]
+name = "andorxor"
+description = "Many and, or, and xor operations"
+
+parser = "pass"
+mir = "pass"
+vm = "pass"

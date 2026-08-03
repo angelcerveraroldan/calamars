@@ -81,7 +81,8 @@ impl<'a> Lowerer<'a> {
                         }];
                         return Ok(v);
                     }
-                    ir::Consts::Unit => return Err(VError::UnsupportedConstant),
+                    // For unit types, we just do nothing.
+                    ir::Consts::Unit => return Ok(vec![]),
                 };
                 Ok(vec![Bytecode::Const {
                     dst: destination,

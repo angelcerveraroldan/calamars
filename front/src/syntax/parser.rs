@@ -891,6 +891,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_unit_expression() {
+        let expr = parse_expr("{}");
+        let ast::Expression::Block(comp) = expr else {
+            panic!("Unit type should be treated like a literal");
+        };
+
+        // Since the last expression is none, this will have unit return type.
+        // A little different than other languages that use (), this is because
+        // right now, ( must be followed by an expression, then ), this can be
+        // revisited later, not a big deal
+        assert!(comp.final_expr.is_none());
+    }
+
+    #[test]
     fn parses_field_access_after_application() {
         let expr = parse_expr("foo \"hello\".name");
 
