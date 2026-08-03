@@ -48,6 +48,10 @@ impl TypeDefn {
             module: self.module_id,
         }
     }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl From<(&ast::Definition, ids::FileId)> for TypeDefn {
