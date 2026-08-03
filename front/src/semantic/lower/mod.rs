@@ -611,31 +611,31 @@ impl HirModuleBuilder {
         self.module = id;
 
         let mut roots = vec![];
+        let top_lvl_types = typedefn::TopLvlTypes::new(module, id);
+        let top_lvl_types_ctx = typedefn::TopLvlTypesCtx::from_modules([top_lvl_types]);
         let mut dsts = vec![];
         let mut struct_definitions = vec![];
 
-        // Insert the keys
+        // Bridge the new typedef stage back into the old lowering context.
         for def in &module.definitions {
             let key = DataStructureKey {
                 name: def.name().ident().to_string(),
                 module: self.module,
             };
-            let (id, is_new) = match ctx.data_structs.intern_checked(&key) {
-                calamars_core::InternedId::New(id) => (id, true),
-                calamars_core::InternedId::Old(id) => {
-                    self.insert_error(SemanticError::Redeclaration {
-                        original_span: Span::dummy(),
-                        redec_span: def.name_span(),
-                    });
-                    (id, false)
-                }
+            let Some(struct_id) = top_lvl_types_ctx.data_structs.resolve(&key).copied() else {
+                continue;
             };
-            ctx.types.intern(&types::Type::Structure(id));
-            if is_new {
-                struct_definitions.push((id, def));
+            let Some(type_defn) = top_lvl_types_ctx.rich_typedefn_info.get(&struct_id) else {
+                continue;
+            };
+            if type_defn.span() == def.name_span() {
+                struct_definitions.push((struct_id, def));
+                dsts.push(struct_id);
             }
-            dsts.push(id)
         }
+        self.diag_err.extend(top_lvl_types_ctx.errors);
+        *ctx.types = top_lvl_types_ctx.type_arena;
+        *ctx.data_structs = top_lvl_types_ctx.data_structs;
 
         for (struct_id, definition) in struct_definitions {
             self.lower_struct_definition(struct_id, definition, ctx);
