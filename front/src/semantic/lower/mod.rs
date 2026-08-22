@@ -1,8 +1,10 @@
 //! Lower AST to HIR
 
+mod func_types;
 mod typedefn;
 
 use calamars_core::{
+    Logger,
     data_structs::{DataStructureKey, StructDef, StructFieldDef},
     ids, types,
 };
@@ -36,7 +38,7 @@ fn lower_str_to_type(
     s: &str,
     span: &Span,
     current_file: ids::FileId,
-    data_structs: &mut calamars_core::data_structs::DStructArena,
+    data_structs: &calamars_core::data_structs::DStructArena,
 ) -> Result<types::Type, SemanticError> {
     // We will give simple primitives precedence
     if let Some(val) = lower_str_to_type_primitive(s) {
@@ -56,6 +58,40 @@ fn lower_str_to_type(
         type_name: s.to_string(),
         span: *span,
     })
+}
+
+/// Lower ast type to a stable type id. If a new type is encountered (mainly function types), intern it.
+pub fn lower_type(
+    ast_type: &ast::Type,
+    types: &mut calamars_core::types::TypeArena,
+    data_structs: &calamars_core::data_structs::DStructArena,
+    module: ids::FileId,
+) -> Logger<ids::TypeId, SemanticError> {
+    let lowered = match ast_type {
+        ast::Type::Error(_) => Logger::ok(types::Type::Error),
+        ast::Type::Unit(_) => Logger::ok(types::Type::Unit),
+        ast::Type::Array { elem_type, .. } => {
+            lower_type(elem_type, types, data_structs, module).map(types::Type::Array)
+        }
+        ast::Type::Func { input, output, .. } => {
+            let input_lowered = lower_type(input, types, data_structs, module);
+            let outpu_lowered = lower_type(output, types, data_structs, module);
+            input_lowered
+                .join(outpu_lowered)
+                .map(|(input, output)| types::Type::Function { input, output })
+        }
+        ast::Type::Path { segments, span } => 'path: {
+            if segments.len() != 1 {
+                let err = SemanticError::QualifiedTypeNotSupported { span: *span };
+                break 'path Logger::new(types::Type::Error, vec![err]);
+            }
+            match lower_str_to_type(&segments[0].ident(), span, module, data_structs) {
+                Ok(inner) => Logger::ok(inner),
+                Err(err) => Logger::new(types::Type::Error, vec![err]),
+            }
+        }
+    };
+    lowered.map(|t| types.intern(&t))
 }
 
 pub struct HirModuleBuilder {
