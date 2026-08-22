@@ -20,8 +20,7 @@ much in development, but with some clear goals:
 # Usage
 
 Today the CLI parses Calamars source to AST, lowers to HIR,
-type-checks, and prints MIR. There is a basic VM that can be used to
-run some calamars files, see the `testing/` directory for examples.
+type-checks, and prints MIR, and can run basic programs using the VM
 
 ## Quickstart
 
@@ -102,6 +101,54 @@ Things that I want to work on soon, but are not yet implemented:
   something like cranelift will be used for this)
 - Imports / modules (Currently, we just support one file, need to
   think about how to handle many files)
+
+# Goals
+
+The main goal behind this project is to learn. For this reason, we
+have a couple of goals for the language, it should be simple so that
+it can reasonably de developed by on person on their free
+time. Keeping the feature set small will make it so that multiple back
+ends can be developed. Ideally we will have some of the following:
+- VM (maybe JIT)
+- LLVM
+- Native (just basic x86 support, to get to play around with lowering
+  to assembly)
+
+To keep all of these rather simple, most optimizations will be focused
+on the MIR, as this will be shared between all of the back ends. The
+back end we will focus on the most is the VM, which should be kept
+minimal, small, and relatively fast.
+
+For now, and this can change *a lot* the goals of the language are:
+- Clean syntax - this may drastically change between versions, we are
+  sill in an exploratory phase
+- Traits
+- Generics
+- Type inference using HM
+-
+  [HKT's](https://reasonablypolymorphic.com/blog/higher-kinded-data/)*,
+  tho this may be adding too much. Tho I do think it is a feature that makes
+  Haskell specially beautiful.
+
+\* tho this may be adding too much ... as long as its just in the
+   front end, it may be ok since we dont need to add things to each
+   of the back ends
+
+## LLM usage
+
+Since the aim of this project is to learn, LLM usage should be kept
+_reasonable_, the definition of which may vary between people, so I
+will rought state my own (ever changing) opinion...
+
+As of right now, I have not used it to write any code other than some
+of the golden.py file. This file is temporary, as I plan to re-write
+it in `calamars` as soon as it has some basic IO working.
+
+I think that it is important to not use LLMS to write any of the core
+code, as you give up understanding of the code in exchange for
+development speed, and when the goal is learning, speed does not
+matter, understanding does. However, the usage of LLMs to find
+sources, docs, and to undersand concepts is one I consider acceptable.
 
 # Syntax Highlighting
 
