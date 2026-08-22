@@ -8,6 +8,65 @@ pub mod types;
 
 use std::{hash::Hash, marker::PhantomData};
 
+pub struct Logger<Typ, Log> {
+    t: Typ,
+    l: Vec<Log>,
+}
+
+impl<Typ, Log> Logger<Typ, Log> {
+    pub fn flatten(loggers: Vec<Logger<Typ, Log>>) -> Logger<Vec<Typ>, Log> {
+        let err_size = loggers.iter().map(|logger| logger.l.len()).sum::<usize>();
+        let mut logs = Vec::with_capacity(err_size);
+        let mut t = Vec::with_capacity(loggers.len());
+        for mut logger in loggers {
+            logs.append(&mut logger.l);
+            t.push(logger.t);
+        }
+        Logger::new(t, logs)
+    }
+
+    pub fn ok(t: Typ) -> Self {
+        Self { t, l: vec![] }
+    }
+
+    pub fn new(t: Typ, l: Vec<Log>) -> Self {
+        Self { t, l }
+    }
+
+    pub fn map<NewTyp>(self, f: impl FnOnce(Typ) -> NewTyp) -> Logger<NewTyp, Log> {
+        Logger {
+            t: f(self.t),
+            l: self.l,
+        }
+    }
+
+    pub fn map_werrs<NewTyp>(
+        mut self,
+        f: impl FnOnce(Typ) -> Logger<NewTyp, Log>,
+    ) -> Logger<NewTyp, Log> {
+        let mut n = f(self.t);
+        self.l.append(&mut n.l); // lets keep the order of the errors, in case that matters
+        n.l = self.l;
+        n
+    }
+
+    pub fn value(&self) -> &Typ {
+        &self.t
+    }
+
+    pub fn errors(&self) -> &Vec<Log> {
+        &self.l
+    }
+
+    pub fn join<BTyp>(mut self, mut other: Logger<BTyp, Log>) -> Logger<(Typ, BTyp), Log> {
+        self.l.append(&mut other.l);
+        Logger {
+            t: (self.t, other.t),
+            l: self.l,
+        }
+    }
+}
+
 pub type StringArena = InternArena<String, ids::StringId>;
 
 pub trait Identifier
