@@ -5,10 +5,14 @@ use calamars_core::{
     types::TypeArena,
 };
 
+use crate::semantic::error::SemanticError;
+
 pub mod error;
 pub mod hir;
 pub mod lower;
 pub mod types;
+
+pub(crate) type SemLogger<Typ> = calamars_core::Logger<Typ, SemanticError>;
 
 pub struct FrontendCtx<'a> {
     pub types: &'a mut TypeArena,
