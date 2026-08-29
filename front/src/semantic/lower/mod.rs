@@ -13,7 +13,7 @@ use crate::{
     semantic::{
         FrontendCtx,
         error::SemanticError,
-        hir::{self, Symbol, SymbolBuilder, SymbolDec, SymbolKind, take_inputs},
+        hir::{self, Symbol, SymbolDec, SymbolKind, take_inputs},
     },
     syntax::{
         ast::{self, Declaration},
@@ -95,11 +95,12 @@ impl ReservedSymbols {
         self.slots.get(id.inner()).and_then(Option::as_ref)
     }
 
-    fn missing_body_declarations(&self) -> impl Iterator<Item = DeclarationReservation> + '_ {
+    fn missing_body_declarations(&self) -> Vec<DeclarationReservation> {
         self.declarations
             .values()
             .copied()
             .filter(|reservation| !reservation.body_seen)
+            .collect()
     }
 
     fn finish(self) -> Result<hir::SymbolArena, Vec<ids::SymbolId>> {
@@ -198,10 +199,11 @@ pub struct HirModuleBuilder {
     pub module: ids::FileId,
     pub identifiers: hir::IdentArena,
     pub expressions: hir::ExpressionArena,
-    pub symbols: hir::SymbolArena,
+    /// A builder with complete symbols, and reservatoins for a later symbol
+    symbols: ReservedSymbols,
 
     /// Scopes are used for shadowing. When in the same scope we do not allow shadowing.
-    scopes: Vec<hashbrown::HashMap<ids::IdentId, ids::SymbolId>>,
+    scopes: Vec<hashbrown::HashMap<ids::IdentId, (ids::SymbolId, Span)>>,
 
     /// Errors, if any are present, we cannot proceed with compilation
     pub diag_err: Vec<SemanticError>,
@@ -213,7 +215,7 @@ impl Default for HirModuleBuilder {
             module: ids::FileId::from(0),
             identifiers: hir::IdentArena::new_unchecked(),
             expressions: hir::ExpressionArena::new_checked(),
-            symbols: hir::SymbolArena::new_unchecked(),
+            symbols: ReservedSymbols::default(),
             scopes: vec![],
             diag_err: vec![],
         };
@@ -418,7 +420,7 @@ impl HirModuleBuilder {
         self.push_scope();
 
         let mut items = vec![];
-        let mut builders = hashbrown::HashMap::new();
+        let mut reservations = hashbrown::HashMap::new();
         for item in block.items.iter() {
             match item {
                 ast::Item::Declaration(decl) => match decl {
@@ -427,42 +429,63 @@ impl HirModuleBuilder {
                         name,
                         dtype,
                     } => {
-                        let sb = self.lower_type_declaration(dtype, name, ctx);
-                        let old = builders.insert(sb.ident_id(), sb);
-                        if let Some(original) = old {
+                        let name_id = self.lower_ident(name);
+                        if let Some((_, _, original_span)) = reservations.get(&name_id) {
                             self.insert_error(SemanticError::Redeclaration {
-                                original_span: original.span_name_type,
+                                original_span: *original_span,
                                 redec_span: name.span(),
-                            })
+                            });
+                            continue;
                         }
+
+                        let ty = self.lower_type(dtype, ctx.types, ctx.data_structs);
+                        let symbol = self.symbols.reserve();
+                        let _ = self.insert_symbol_to_current_scope(name_id, symbol, name.span());
+                        reservations.insert(name_id, (symbol, ty, name.span()));
                     }
                     Declaration::Binding { name, params, body } => {
                         let name_id = self.lower_ident(name);
-                        let builder = builders.remove(&name_id);
-                        let Some(builder) = builder else {
+                        let Some((reserved, ty, type_span)) = reservations.remove(&name_id) else {
                             self.insert_error(SemanticError::TypeMissing {
                                 for_identifier: name.span(),
                             });
                             continue;
                         };
 
-                        match self.lower_binding_declaration(name, params, body, builder, ctx) {
-                            Ok(symbol_id) => {
-                                items.push(hir::ItemId::Symbol(symbol_id));
+                        match self.lower_binding_symbol(name, params, body, ty, type_span, ctx) {
+                            Ok(symbol) => {
+                                self.symbols
+                                    .fill(reserved, symbol)
+                                    .expect("a local reservation must only be filled once");
+                                items.push(hir::ItemId::Symbol(reserved));
                             }
                             Err(err) => self.insert_error(err),
                         }
                     }
                     Declaration::TypeAndBinding {
-                        docs,
+                        docs: _,
                         dtype,
                         name,
                         body,
                     } => {
-                        let sb = self.lower_type_declaration(dtype, name, ctx);
-                        match self.lower_binding_declaration(name, &Vec::new(), body, sb, ctx) {
-                            Ok(symbol_id) => {
-                                items.push(hir::ItemId::Symbol(symbol_id));
+                        let name_id = self.lower_ident(name);
+                        if let Some((_, _, original_span)) = reservations.get(&name_id) {
+                            self.insert_error(SemanticError::Redeclaration {
+                                original_span: *original_span,
+                                redec_span: name.span(),
+                            });
+                            continue;
+                        }
+
+                        let ty = self.lower_type(dtype, ctx.types, ctx.data_structs);
+                        let reserved = self.symbols.reserve();
+                        let _ = self.insert_symbol_to_current_scope(name_id, reserved, name.span());
+                        match self.lower_binding_symbol(name, &[], body, ty, name.span(), ctx) {
+                            Ok(symbol) => {
+                                self.symbols
+                                    .fill(reserved, symbol)
+                                    .expect("a local reservation must only be filled once");
+                                items.push(hir::ItemId::Symbol(reserved));
                             }
                             Err(err) => self.insert_error(err),
                         }
@@ -475,10 +498,10 @@ impl HirModuleBuilder {
             }
         }
 
-        for (_, builder) in builders {
+        for (name, (_, _, name_span)) in reservations {
             self.insert_error(SemanticError::MissingDeclaration {
-                name: builder.name,
-                type_declaration: builder.span_name_type,
+                name,
+                type_declaration: name_span,
             });
         }
 
@@ -514,7 +537,7 @@ impl HirModuleBuilder {
 
     fn resolve(&self, ident_id: ids::IdentId, span: Span) -> Result<ids::SymbolId, SemanticError> {
         for scope in self.scopes.iter().rev() {
-            if let Some(id) = scope.get(&ident_id) {
+            if let Some((id, _)) = scope.get(&ident_id) {
                 return Ok(*id);
             }
         }
@@ -536,10 +559,9 @@ impl HirModuleBuilder {
             span,
         })?;
         // If the name was already in use, then we will log an error
-        if let Some(original) = scope.insert(ident, symbol_id) {
-            let original = self.symbols.get_unchecked(original);
+        if let Some((_, original_span)) = scope.insert(ident, (symbol_id, span)) {
             self.insert_error(SemanticError::Redeclaration {
-                original_span: original.span(),
+                original_span,
                 redec_span: span,
             });
         }
@@ -648,66 +670,19 @@ impl HirModuleBuilder {
         types.intern(&lowered)
     }
 
-    /// Given the type declaration parameters of some symbol, generate a symbol builder.
-    ///
-    /// ```cm
-    /// foo :: Int -> Int
-    /// ```
-    fn lower_type_declaration(
-        &mut self,
-        declared_type: &ast::Type,
-        declared_name: &ast::Ident,
-        ctx: &mut FrontendCtx,
-    ) -> hir::SymbolBuilder {
-        let lowered_ty = self.lower_type(declared_type, ctx.types, ctx.data_structs);
-        let name_span = declared_name.span();
-        let lowered_id = self.lower_ident(declared_name);
-        let err_expr = self.lower_expression(&ast::Expression::Error(Span::from(0..0)), ctx);
-        let symbol_kind = SymbolKind::Defn {
-            span_type: name_span,
-            span_decl: Span::from(0..0),
-            declaration: SymbolDec {
-                inputs: Box::new([]),
-                body: err_expr,
-            },
-        };
-        let reserved = self.symbols.push(Symbol {
-            ty: lowered_ty,
-            name: lowered_id,
-            kind: symbol_kind,
-        });
-        let _ = self.insert_symbol_to_current_scope(lowered_id, reserved, name_span);
-        hir::SymbolBuilder::new(lowered_ty, lowered_id, name_span, None, None, reserved)
-    }
-
-    fn finish_builder(&mut self, builder: SymbolBuilder) -> Result<ids::SymbolId, SemanticError> {
-        let symbol = self.symbols.get_unchecked_mut(builder.reserved_spot);
-        if let SymbolKind::Defn {
-            span_decl,
-            declaration,
-            ..
-        } = &mut symbol.kind
-        {
-            *span_decl = builder.span_name_decl.unwrap();
-            *declaration = builder.symbol_declaration.unwrap();
-            return Ok(builder.reserved_spot);
-        }
-        Err(SemanticError::InternalError {
-            msg: "finish_builder should only be used to build calamars values",
-            span: symbol.span(),
-        })
-    }
-
-    fn lower_binding_declaration(
+    /// Lower a complete definition. Its final arena slot is filled by the
+    /// caller, after this method has successfully produced a real symbol.
+    fn lower_binding_symbol(
         &mut self,
         name: &ast::Ident,
-        params: &Vec<ast::Ident>,
+        params: &[ast::Ident],
         body: &ast::Expression,
-        mut builder: SymbolBuilder,
+        ty: ids::TypeId,
+        type_span: Span,
         ctx: &mut FrontendCtx,
-    ) -> Result<ids::SymbolId, SemanticError> {
+    ) -> Result<Symbol, SemanticError> {
         // Lower the inputs to symbols
-        let (input_types, _) = take_inputs(builder.ty, params.len(), ctx.types, name.span())?;
+        let (input_types, _) = take_inputs(ty, params.len(), ctx.types, name.span())?;
         let inputs: Box<[ids::SymbolId]> = params
             .iter()
             .zip(input_types)
@@ -724,16 +699,22 @@ impl HirModuleBuilder {
 
         self.push_scope();
         // Add inputs to the functions scope
-        for symbol_id in inputs.iter() {
-            let symbol = self.symbols.get_unchecked(*symbol_id);
-            let _ = self.insert_symbol_to_current_scope(symbol.name, *symbol_id, symbol.span());
+        for (param, symbol_id) in params.iter().zip(inputs.iter()) {
+            let name = self.lower_ident(param);
+            let _ = self.insert_symbol_to_current_scope(name, *symbol_id, param.span());
         }
         let body = self.lower_expression(body, ctx);
         self.pop_scope();
 
-        builder.span_name_decl = Some(name.span());
-        builder.symbol_declaration = Some(SymbolDec { inputs, body });
-        self.finish_builder(builder)
+        Ok(Symbol {
+            ty,
+            name: self.lower_ident(name),
+            kind: SymbolKind::Defn {
+                span_type: type_span,
+                span_decl: name.span(),
+                declaration: SymbolDec { inputs, body },
+            },
+        })
     }
 
     /// Given some module, lower it and return any errors that were generated along the way
@@ -777,50 +758,101 @@ impl HirModuleBuilder {
             self.lower_struct_definition(struct_id, definition, ctx);
         }
 
-        // Generate the builders from the type declarations
-        let mut builders = hashbrown::HashMap::new();
-        for declaration in &module.items {
-            let Declaration::TypeSignature { name, dtype, .. } = declaration else {
-                continue;
-            };
-            let sb = self.lower_type_declaration(dtype, name, ctx);
-            let old = builders.insert(sb.ident_id(), sb);
-            if let Some(original) = old {
-                self.insert_error(SemanticError::Redeclaration {
-                    original_span: original.span_name_type,
-                    redec_span: name.span(),
-                })
-            }
-        }
+        // Lower all headers first. The declaration context owns their types;
+        // this stage only reserves stable HIR symbol ids for them.
+        let declaration_logger =
+            func_types::ModuleDeclCtx::lower_module(id, &module.items, ctx.types, ctx.data_structs);
+        self.diag_err
+            .extend(declaration_logger.errors().iter().cloned());
+        let declaration_ctx = declaration_logger.value();
 
-        // Attach the body to the symbol builders
         for declaration in &module.items {
-            let Declaration::Binding { name, params, body } = declaration else {
-                continue;
+            let name = match declaration {
+                Declaration::TypeSignature { name, .. }
+                | Declaration::TypeAndBinding { name, .. } => name,
+                Declaration::Binding { .. } => continue,
             };
+            let declaration_id = declaration_ctx
+                .declaration_id_from_name(name.ident())
+                .expect("every typed declaration must be present in ModuleDeclCtx");
+            if self.symbols.declaration(declaration_id).is_some() {
+                continue;
+            }
+
             let name_id = self.lower_ident(name);
-            let builder = builders.remove(&name_id);
+            let symbol = self
+                .symbols
+                .reserve_declaration(declaration_id, name_id, name.span());
+            let _ = self.insert_symbol_to_current_scope(name_id, symbol, name.span());
+        }
 
-            match builder {
-                Some(builder) => {
-                    match self.lower_binding_declaration(name, params, body, builder, ctx) {
-                        Ok(symbol_id) => roots.push(symbol_id),
-                        Err(err) => self.insert_error(err),
-                    }
-                }
-                None => self.insert_error(SemanticError::TypeMissing {
+        // Lower each body into a complete symbol and fill its reserved slot.
+        for declaration in &module.items {
+            let (name, params, body) = match declaration {
+                Declaration::Binding { name, params, body } => (name, params.as_slice(), body),
+                // remember, type and binding sugar does work for functions for now.
+                Declaration::TypeAndBinding { name, body, .. } => (name, &[][..], body),
+                Declaration::TypeSignature { .. } => continue,
+            };
+
+            let Some(declaration_id) = declaration_ctx.declaration_id_from_name(name.ident())
+            else {
+                self.insert_error(SemanticError::TypeMissing {
                     for_identifier: name.span(),
-                }),
+                });
+                continue;
+            };
+            let reservation = self
+                .symbols
+                .declaration(declaration_id)
+                .expect("every declaration must have a symbol reservation");
+            self.symbols.mark_body_seen(declaration_id);
+
+            /// Check if a body already exists
+            if let Some(original) = self.symbols.get(reservation.symbol) {
+                self.insert_error(SemanticError::Redeclaration {
+                    original_span: original.span(),
+                    redec_span: name.span(),
+                });
+                continue;
+            }
+
+            let signature = declaration_ctx
+                .declaration(declaration_id)
+                .expect("a declaration id must resolve to its signature");
+
+            match self.lower_binding_symbol(
+                name,
+                params,
+                body,
+                signature.dtyp,
+                signature.name_span,
+                ctx,
+            ) {
+                Ok(symbol) => {
+                    self.symbols
+                        .fill(reservation.symbol, symbol)
+                        .expect("a declaration reservation must only be filled once");
+                    roots.push(reservation.symbol);
+                }
+                Err(err) => self.insert_error(err),
             }
         }
 
-        // these are the ones that had a type declaration but no body
-        for (_, builder) in builders {
+        for reservation in &self.symbols.missing_body_declarations() {
             self.insert_error(SemanticError::MissingDeclaration {
-                name: builder.name,
-                type_declaration: builder.span_name_type,
+                name: reservation.name,
+                type_declaration: reservation.name_span,
             });
         }
+
+        let symbols = match std::mem::take(&mut self.symbols).finish() {
+            Ok(symbols) => symbols,
+            Err(_) => {
+                roots.clear();
+                hir::SymbolArena::new_unchecked()
+            }
+        };
 
         (
             hir::Module {
@@ -828,7 +860,7 @@ impl HirModuleBuilder {
                 name,
                 data_structs: dsts,
                 idents: self.identifiers,
-                symbols: self.symbols,
+                symbols,
                 exprs: self.expressions,
                 roots: roots.into_boxed_slice(),
             },
