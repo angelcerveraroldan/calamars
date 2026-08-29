@@ -21,6 +21,106 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy)]
+struct DeclarationReservation {
+    symbol: ids::SymbolId,
+    name: ids::IdentId,
+    name_span: Span,
+    body_seen: bool,
+}
+
+/// Temporary symbol storage used while lowering a module. Reserved slots make
+/// recursive and forward references possible without constructing dummy HIR.
+#[derive(Default)]
+struct ReservedSymbols {
+    slots: Vec<Option<Symbol>>,
+    declarations: hashbrown::HashMap<func_types::DeclKeyId, DeclarationReservation>,
+}
+
+impl ReservedSymbols {
+    fn reserve(&mut self) -> ids::SymbolId {
+        let id = ids::SymbolId::from(self.slots.len());
+        self.slots.push(None);
+        id
+    }
+
+    fn reserve_declaration(
+        &mut self,
+        declaration: func_types::DeclKeyId,
+        name: ids::IdentId,
+        name_span: Span,
+    ) -> ids::SymbolId {
+        let symbol = self.reserve();
+        let old = self.declarations.insert(
+            declaration,
+            DeclarationReservation {
+                symbol,
+                name,
+                name_span,
+                body_seen: false,
+            },
+        );
+        debug_assert!(old.is_none(), "a declaration must only be reserved once");
+        symbol
+    }
+
+    fn push(&mut self, symbol: Symbol) -> ids::SymbolId {
+        let id = ids::SymbolId::from(self.slots.len());
+        self.slots.push(Some(symbol));
+        id
+    }
+
+    fn fill(&mut self, id: ids::SymbolId, symbol: Symbol) -> Result<(), ()> {
+        let Some(slot) = self.slots.get_mut(id.inner()) else {
+            return Err(());
+        };
+        if slot.is_some() {
+            return Err(());
+        }
+        *slot = Some(symbol);
+        Ok(())
+    }
+
+    fn declaration(&self, id: func_types::DeclKeyId) -> Option<DeclarationReservation> {
+        self.declarations.get(&id).copied()
+    }
+
+    fn mark_body_seen(&mut self, id: func_types::DeclKeyId) {
+        if let Some(reservation) = self.declarations.get_mut(&id) {
+            reservation.body_seen = true;
+        }
+    }
+
+    fn get(&self, id: ids::SymbolId) -> Option<&Symbol> {
+        self.slots.get(id.inner()).and_then(Option::as_ref)
+    }
+
+    fn missing_body_declarations(&self) -> impl Iterator<Item = DeclarationReservation> + '_ {
+        self.declarations
+            .values()
+            .copied()
+            .filter(|reservation| !reservation.body_seen)
+    }
+
+    fn finish(self) -> Result<hir::SymbolArena, Vec<ids::SymbolId>> {
+        let missing = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| slot.is_none().then_some(ids::SymbolId::from(index)))
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(missing);
+        }
+
+        let mut arena = hir::SymbolArena::new_unchecked();
+        for symbol in self.slots {
+            arena.push(symbol.expect("all slots were checked above"));
+        }
+        Ok(arena)
+    }
+}
+
 #[rustfmt::skip]
 fn lower_str_to_type_primitive(s: &str) -> Option<types::Type> {
     match s {
