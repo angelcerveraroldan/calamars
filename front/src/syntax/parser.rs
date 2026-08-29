@@ -685,11 +685,20 @@ impl CalamarsParser {
     /// ```
     fn parse_declaration_type(&mut self) -> ast::Declaration {
         let docs = self.parse_docs();
-        self.need(Token::TypeDef, "typ");
+        let is_ffi = match self.next_token_ref() {
+            Token::TypeDef => false,
+            Token::FFI => true,
+            x => unreachable!("Next token needs to be either ffi or typ, but it was {}", x),
+        };
+        self.advance_one();
         let name = self.parse_identifier();
         self.need(Token::DoubleColon, "::");
         let dtype = self.parse_type();
-        ast::Declaration::TypeSignature { docs, name, dtype }
+        if is_ffi {
+            ast::Declaration::FFISignature { docs, name, dtype }
+        } else {
+            ast::Declaration::TypeSignature { docs, name, dtype }
+        }
     }
 
     fn parse_declaration_body_or_sugar(&mut self) -> ast::Declaration {
@@ -821,10 +830,10 @@ impl CalamarsParser {
         }
     }
 
-    /// Declaration starts are typ and def
+    /// Is the next token one that starts a new declaration
     pub fn declaration_start(&self) -> bool {
         let token = self.next_token_ref_skip_docs();
-        matches!(token, Token::Def | Token::TypeDef)
+        matches!(token, Token::Def | Token::TypeDef | Token::FFI)
     }
 
     pub fn definition_start(&self) -> bool {
@@ -842,6 +851,7 @@ impl CalamarsParser {
                     tk,
                     Token::Def
                         | Token::TypeDef
+                        | Token::FFI
                         | Token::Ident(_)
                         | Token::DocComment(_)
                         | Token::EOF
