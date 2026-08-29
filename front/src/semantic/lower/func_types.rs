@@ -18,6 +18,12 @@ use crate::{
 /// not defined of ill-defined
 pub type DeclKeyId = usize;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum DeclKind {
+    Defn,
+    FFI,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeclKey {
     module: ids::FileId,
@@ -39,6 +45,7 @@ impl DeclKey {
 pub struct DeclSignature {
     pub dtyp: ids::TypeId,
     pub dkey: DeclKey,
+    pub dkind: DeclKind,
     pub name_span: Span,
     pub type_span: Span,
 }
@@ -46,6 +53,7 @@ pub struct DeclSignature {
 fn declsign_from_ast_info<'a>(
     declaration_type: &ast::Type,
     name: &ast::Ident,
+    dkind: DeclKind,
     types: &'a mut types::TypeArena,
     data_structs: &data_structs::DStructArena,
     module: ids::FileId,
@@ -54,6 +62,7 @@ fn declsign_from_ast_info<'a>(
     let type_span = declaration_type.span();
     lower_type(declaration_type, types, data_structs, module).map(|dtyp| DeclSignature {
         dkey: DeclKey::new(module, name.ident()),
+        dkind,
         dtyp,
         name_span,
         type_span,
@@ -70,9 +79,14 @@ fn lower_all_declarations(
     let vsem = module_declarations
         .iter()
         .filter_map(|dec| match dec {
+            ast::Declaration::FFISignature { name, dtype, .. } => {
+                declsign_from_ast_info(dtype, name, DeclKind::FFI, types, data_structs, module)
+                    .into()
+            }
             ast::Declaration::TypeSignature { name, dtype, .. }
             | ast::Declaration::TypeAndBinding { name, dtype, .. } => {
-                declsign_from_ast_info(dtype, name, types, data_structs, module).into()
+                declsign_from_ast_info(dtype, name, DeclKind::Defn, types, data_structs, module)
+                    .into()
             }
             ast::Declaration::Binding { .. } => None,
         })

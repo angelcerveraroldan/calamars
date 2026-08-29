@@ -430,6 +430,13 @@ impl CompoundExpression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Declaration {
+    /// Similar to a standard signature, but underlying details may be
+    /// diff enough that its worth making it its own branch
+    FFISignature {
+        docs: Option<String>,
+        name: Ident,
+        dtype: Type,
+    },
     /// The type signature for some identifier, such as:
     ///
     /// typ person :: Person
@@ -465,7 +472,9 @@ pub enum Declaration {
 impl Declaration {
     pub fn span(&self) -> Span {
         match self {
-            Declaration::TypeSignature { dtype, .. } => dtype.span(),
+            Declaration::TypeSignature { dtype, .. } | Declaration::FFISignature { dtype, .. } => {
+                dtype.span()
+            }
             Declaration::Binding { body, .. } | Declaration::TypeAndBinding { body, .. } => {
                 body.span()
             }
@@ -475,6 +484,7 @@ impl Declaration {
     pub fn name_span(&self) -> Span {
         match self {
             Declaration::TypeSignature { name, .. }
+            | Declaration::FFISignature { name, .. }
             | Declaration::Binding { name, .. }
             | Declaration::TypeAndBinding { name, .. } => name.span(),
         }

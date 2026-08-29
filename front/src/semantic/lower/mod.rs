@@ -14,6 +14,7 @@ use crate::{
         FrontendCtx,
         error::SemanticError,
         hir::{self, Symbol, SymbolDec, SymbolKind, take_inputs},
+        lower::func_types::DeclKind,
     },
     syntax::{
         ast::{self, Declaration},
@@ -27,6 +28,7 @@ struct DeclarationReservation {
     name: ids::IdentId,
     name_span: Span,
     body_seen: bool,
+    dkind: DeclKind,
 }
 
 /// Temporary symbol storage used while lowering a module. Reserved slots make
@@ -49,6 +51,7 @@ impl ReservedSymbols {
         declaration: func_types::DeclKeyId,
         name: ids::IdentId,
         name_span: Span,
+        dkind: DeclKind,
     ) -> ids::SymbolId {
         let symbol = self.reserve();
         let old = self.declarations.insert(
@@ -58,6 +61,7 @@ impl ReservedSymbols {
                 name,
                 name_span,
                 body_seen: false,
+                dkind,
             },
         );
         debug_assert!(old.is_none(), "a declaration must only be reserved once");
@@ -99,7 +103,9 @@ impl ReservedSymbols {
         self.declarations
             .values()
             .copied()
-            .filter(|reservation| !reservation.body_seen)
+            .filter(|reservation| {
+                !reservation.body_seen && matches!(reservation.dkind, DeclKind::Defn)
+            })
             .collect()
     }
 
@@ -424,6 +430,12 @@ impl HirModuleBuilder {
         for item in block.items.iter() {
             match item {
                 ast::Item::Declaration(decl) => match decl {
+                    Declaration::FFISignature { name, .. } => {
+                        self.insert_error(SemanticError::NotSupported {
+                            span: name.span(),
+                            msg: "FFI declarations must be top-level",
+                        });
+                    }
                     Declaration::TypeSignature {
                         docs: _,
                         name,
@@ -767,9 +779,10 @@ impl HirModuleBuilder {
         let declaration_ctx = declaration_logger.value();
 
         for declaration in &module.items {
-            let name = match declaration {
+            let (name, dkind) = match declaration {
+                Declaration::FFISignature { name, .. } => (name, DeclKind::FFI),
                 Declaration::TypeSignature { name, .. }
-                | Declaration::TypeAndBinding { name, .. } => name,
+                | Declaration::TypeAndBinding { name, .. } => (name, DeclKind::Defn),
                 Declaration::Binding { .. } => continue,
             };
             let declaration_id = declaration_ctx
@@ -780,9 +793,9 @@ impl HirModuleBuilder {
             }
 
             let name_id = self.lower_ident(name);
-            let symbol = self
-                .symbols
-                .reserve_declaration(declaration_id, name_id, name.span());
+            let symbol =
+                self.symbols
+                    .reserve_declaration(declaration_id, name_id, name.span(), dkind);
             let _ = self.insert_symbol_to_current_scope(name_id, symbol, name.span());
         }
 
@@ -792,7 +805,7 @@ impl HirModuleBuilder {
                 Declaration::Binding { name, params, body } => (name, params.as_slice(), body),
                 // remember, type and binding sugar does work for functions for now.
                 Declaration::TypeAndBinding { name, body, .. } => (name, &[][..], body),
-                Declaration::TypeSignature { .. } => continue,
+                Declaration::TypeSignature { .. } | Declaration::FFISignature { .. } => continue,
             };
 
             let Some(declaration_id) = declaration_ctx.declaration_id_from_name(name.ident())
