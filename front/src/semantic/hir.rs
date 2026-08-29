@@ -127,44 +127,6 @@ pub struct SymbolDec {
     pub body: ids::ExpressionId,
 }
 
-/// A builder for calamars declarations
-///
-/// This should not be used for things like FFI, a body must be had.
-pub struct SymbolBuilder {
-    pub ty: ids::TypeId,
-    pub name: ids::IdentId,
-    /// A span to the name of the symbol in its type declaration
-    pub span_name_type: Span,
-    /// A span to the name of the symbol in its body declaration
-    pub span_name_decl: Option<Span>,
-    pub symbol_declaration: Option<SymbolDec>,
-    pub reserved_spot: ids::SymbolId,
-}
-
-impl SymbolBuilder {
-    pub fn new(
-        ty: ids::TypeId,
-        name: ids::IdentId,
-        span_name_type: Span,
-        span_name_decl: Option<Span>,
-        symbol_declaration: Option<SymbolDec>,
-        reserved_spot: ids::SymbolId,
-    ) -> Self {
-        Self {
-            ty,
-            name,
-            span_name_type,
-            span_name_decl,
-            symbol_declaration,
-            reserved_spot,
-        }
-    }
-
-    pub fn ident_id(&self) -> ids::IdentId {
-        self.name
-    }
-}
-
 /// A symbol such as:
 /// ```txt
 /// foo :: Int
