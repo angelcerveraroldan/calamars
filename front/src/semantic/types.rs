@@ -2,7 +2,7 @@
 
 use calamars_core::{
     data_structs::StructDef,
-    global::TypeCtx,
+    global::TypeInterner,
     ids::{self, ExpressionId},
     types,
 };
@@ -17,7 +17,7 @@ use crate::{
 
 pub fn type_check_module(
     module: &hir::Module,
-    ctx: &mut TypeCtx,
+    ctx: &mut TypeInterner,
 ) -> Result<TypeInfo, Vec<SemanticError>> {
     let mut type_handler = TypeHandler::new(module);
 
@@ -100,7 +100,7 @@ impl<'a> TypeHandler<'a> {
     }
 
     /// Check that some expression has a numerical type. Otherwise, log an error.
-    fn ensure_numeric(&mut self, expr: ids::ExpressionId, t: ids::TypeId, ctx: &mut TypeCtx) {
+    fn ensure_numeric(&mut self, expr: ids::ExpressionId, t: ids::TypeId, ctx: &mut TypeInterner) {
         if self.match_type(t, &types::Type::Integer, ctx.types)
             || self.match_type(t, &types::Type::Float, ctx.types)
         {
@@ -136,7 +136,7 @@ impl<'a> TypeHandler<'a> {
     ///
     /// This function will also memoize each expressions type id to the `expression_types` map in
     /// the module.
-    fn type_expression(&mut self, e_id: &ids::ExpressionId, ctx: &mut TypeCtx) -> ids::TypeId {
+    fn type_expression(&mut self, e_id: &ids::ExpressionId, ctx: &mut TypeInterner) -> ids::TypeId {
         if let Some(ty) = self.type_info.get(e_id) {
             return *ty;
         }
@@ -301,7 +301,7 @@ impl<'a> TypeHandler<'a> {
         lhs: &ExpressionId,
         rhs: &ExpressionId,
         span: Span,
-        ctx: &mut TypeCtx,
+        ctx: &mut TypeInterner,
     ) -> ids::TypeId {
         let lhs_type_id = self.type_expression(lhs, ctx);
         let rhs_type_id = self.type_expression(rhs, ctx);
@@ -388,7 +388,7 @@ impl<'a> TypeHandler<'a> {
         &mut self,
         items: &[ItemId],
         final_expr: &Option<ids::ExpressionId>,
-        ctx: &mut TypeCtx,
+        ctx: &mut TypeInterner,
     ) -> ids::TypeId {
         // Start by analysing each of the items
         for item in items {
@@ -416,7 +416,7 @@ impl<'a> TypeHandler<'a> {
         name_span: Span,
         body: ids::ExpressionId,
         expected_type: ids::TypeId,
-        ctx: &mut TypeCtx,
+        ctx: &mut TypeInterner,
     ) {
         let body_ty = self.type_expression(&body, ctx);
         if body_ty != expected_type && body_ty != self.err_id(ctx.types) {
@@ -438,7 +438,7 @@ impl<'a> TypeHandler<'a> {
         name_span: Span,
         body: ids::ExpressionId,
         expected_type: ids::TypeId,
-        ctx: &mut TypeCtx,
+        ctx: &mut TypeInterner,
     ) {
         let body_ty = self.type_expression(&body, ctx);
         if body_ty != expected_type && body_ty != self.err_id(ctx.types) {
@@ -454,7 +454,7 @@ impl<'a> TypeHandler<'a> {
     }
 
     /// Make sure that a declarations types make sense semantically.
-    pub fn type_check_declaration(&mut self, dec: ids::SymbolId, ctx: &mut TypeCtx) {
+    pub fn type_check_declaration(&mut self, dec: ids::SymbolId, ctx: &mut TypeInterner) {
         let hir::Symbol { ty, name, kind } = self.module.symbols.get(dec).unwrap();
         let hir::SymbolKind::Defn {
             span_decl,
