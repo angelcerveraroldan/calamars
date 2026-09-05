@@ -95,22 +95,6 @@ pub enum Callee {
     Extern(String),
 }
 
-/// Basic types for the language
-#[derive(Debug, Clone)]
-pub enum Types {
-    Unit,
-
-    I64,
-    Bool,
-    Char,
-    Struct,
-    // Later:
-    // - Tuples
-    // - Array (fixed size)
-    //
-    // - Enum
-}
-
 /// Constants that are known at compile time
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Consts {
