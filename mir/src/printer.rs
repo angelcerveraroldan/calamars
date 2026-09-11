@@ -1,4 +1,8 @@
-use calamars_core::{Identifier, ids::TypeId};
+use calamars_core::{
+    Identifier,
+    ids::TypeId,
+    types::{TypeArena, type_id_stringify},
+};
 
 use std::fmt::Write;
 
@@ -9,11 +13,15 @@ use crate::{
 
 pub struct MirPrinter<'a> {
     functions: &'a [Function],
+    type_arena: &'a TypeArena,
 }
 
 impl<'a> MirPrinter<'a> {
-    pub fn new(functions: &'a [Function]) -> Self {
-        Self { functions }
+    pub fn new(functions: &'a [Function], type_arena: &'a TypeArena) -> Self {
+        Self {
+            functions,
+            type_arena,
+        }
     }
 
     #[inline]
@@ -26,7 +34,7 @@ impl<'a> MirPrinter<'a> {
         format!("bb{}", id.0)
     }
 
-    pub fn fmt_call(&self, callee: &Callee, args: &Vec<ValueId>, return_ty: &TypeId) -> String {
+    pub fn fmt_call(&self, callee: &Callee, args: &Vec<ValueId>) -> String {
         let callee_s = match callee {
             Callee::Function(fid) => format!("fn#{}", fid.inner_id()),
             Callee::Extern(name) => format!("@{name}"),
@@ -36,7 +44,7 @@ impl<'a> MirPrinter<'a> {
             .map(|a| self.v(*a))
             .collect::<Vec<_>>()
             .join(", ");
-        format!("call {callee_s}({args_s}) : ty#{}", return_ty.inner_id())
+        format!("call {callee_s}({args_s})")
     }
 
     /// Format a Value Producing instruction
@@ -86,19 +94,15 @@ impl<'a> MirPrinter<'a> {
                 };
                 format!("{} {op_s} {}", self.v(*lhs), self.v(*rhs))
             }
-            VInstructionKind::Call {
-                callee,
-                args,
-                return_ty,
-            } => self.fmt_call(callee, args, return_ty),
-            VInstructionKind::Phi { ty, incoming } => {
+            VInstructionKind::Call { callee, args } => self.fmt_call(callee, args),
+            VInstructionKind::Phi { incoming } => {
                 let cs = incoming
                     .iter()
                     .map(|(b, v)| format!("{}: {}", self.bb(*b), self.v(*v)))
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                format!("phi ty#{} [{}]", ty.inner_id(), cs)
+                format!("phi [{}]", cs)
             }
             VInstructionKind::StructInit { ds_id, fields } => {
                 let fields_s = fields
@@ -126,11 +130,7 @@ impl<'a> MirPrinter<'a> {
         match t {
             Terminator::Return(Some(v)) => format!("return {}", self.v(*v)),
             Terminator::Return(None) => "return".to_string(),
-            Terminator::Call {
-                callee,
-                args,
-                return_ty,
-            } => format!("return {}", self.fmt_call(callee, args, return_ty)),
+            Terminator::Call { callee, args } => format!("return {}", self.fmt_call(callee, args)),
             Terminator::Br { target } => {
                 format!("br {}", self.bb(*target))
             }
@@ -157,7 +157,8 @@ impl<'a> MirPrinter<'a> {
         for inst in &block.instructs {
             let val = func.instructions.get(inst.inner_id()).unwrap();
             let rhs = self.fmt_vinst(&val.kind);
-            let _ = writeln!(s, "  {} = {}", self.v(*inst), rhs);
+            let tystr = type_id_stringify(self.type_arena, val.vtype);
+            let _ = writeln!(s, "  {} :: {} = {}", self.v(*inst), tystr, rhs);
         }
         if let Some(t) = &block.finally {
             let _ = writeln!(s, "  {}", self.fmt_term(t));

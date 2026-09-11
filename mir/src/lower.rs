@@ -2,14 +2,14 @@
 
 use calamars_core::{
     Identifier, UncheckedArena,
-    global::GlobalContext,
+    global::TypeDb,
     ids::{self, ExpressionId, SymbolId},
 };
 use front::semantic::hir::{self, BinOp, Const, ItemId, SymbolDec, SymbolKind};
 
 use crate::{
-    BBlock, BinaryOperator, BlockId, Function, FunctionId, Module, VInstruct, VInstructionKind,
-    ValueId, errors::MirErrors, mdata,
+    BBlock, BinaryOperator, BlockId, DirectSignature, Function, FunctionId, Module, VInstruct,
+    VInstructionKind, ValueId, errors::MirErrors, mdata,
 };
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
@@ -36,8 +36,7 @@ pub type MirRes<A> = Result<A, MirErrors>;
 pub struct FunctionBuilder<'a> {
     ctx: &'a hir::TypedModule,
     mdata: &'a mdata::MirData,
-    global_ctx: &'a GlobalContext,
-
+    typedb: &'a TypeDb<'a>,
     current_block: BlockId,
 
     blocks: Vec<BBlock>,
@@ -53,13 +52,13 @@ impl<'a> FunctionBuilder<'a> {
     pub fn new(
         ctx: &'a hir::TypedModule,
         mdata: &'a mdata::MirData,
-        global_ctx: &'a GlobalContext,
+        typedb: &'a TypeDb,
         function_map: &'a hashbrown::HashMap<ids::IdentId, FunctionId>,
     ) -> Self {
         Self {
             ctx,
             mdata,
-            global_ctx,
+            typedb,
             current_block: BlockId(0),
             blocks: vec![],
             instructions: vec![],
@@ -118,14 +117,24 @@ impl<'a> FunctionBuilder<'a> {
         self.terminate(term)
     }
 
-    pub fn emit(&mut self, inst_kind: VInstructionKind) -> MirRes<(ValueId, BlockId)> {
-        let vid = self.push_instuction_get_index(VInstruct { kind: inst_kind });
+    pub fn emit(
+        &mut self,
+        inst_kind: VInstructionKind,
+        vtype: ids::TypeId,
+    ) -> MirRes<(ValueId, BlockId)> {
+        let vid = self.push_instuction_get_index(VInstruct {
+            kind: inst_kind,
+            vtype,
+        });
         self.block_mut()?.with_instruct(vid);
         Ok((vid, self.current_block))
     }
 
     fn emit_unit(&mut self) -> MirRes<(ValueId, BlockId)> {
-        self.emit(VInstructionKind::Constant(crate::Consts::Unit))
+        let unit_ty = self
+            .typedb
+            .get_typeid_unchecked(&calamars_core::types::Type::Unit);
+        self.emit(VInstructionKind::Constant(crate::Consts::Unit), *unit_ty)
     }
 
     fn emit_phi(
@@ -133,17 +142,17 @@ impl<'a> FunctionBuilder<'a> {
         ty: ids::TypeId,
         incoming: Box<[(BlockId, ValueId)]>,
     ) -> MirRes<(ValueId, BlockId)> {
-        let kind = VInstructionKind::Phi { ty, incoming };
-        self.emit(kind)
+        let kind = VInstructionKind::Phi { incoming };
+        self.emit(kind, ty)
     }
 
-    fn emit_literal(&mut self, constant: &Const) -> MirRes<(ValueId, BlockId)> {
+    fn emit_literal(&mut self, constant: &Const, ty: ids::TypeId) -> MirRes<(ValueId, BlockId)> {
         let kind = VInstructionKind::Constant(match constant {
             hir::Const::I64(i) => crate::Consts::I64(*i),
             hir::Const::Bool(b) => crate::Consts::Bool(*b),
             hir::Const::String(sid) => crate::Consts::String(*sid),
         });
-        self.emit(kind)
+        self.emit(kind, ty)
     }
 
     fn emit_binary(
@@ -151,12 +160,13 @@ impl<'a> FunctionBuilder<'a> {
         operator: &BinOp,
         lhs: &ExpressionId,
         rhs: &ExpressionId,
+        ty: ids::TypeId,
     ) -> MirRes<(ValueId, BlockId)> {
         let (lhs, _) = self.lower_expression_from_id(lhs)?;
         let (rhs, _) = self.lower_expression_from_id(rhs)?;
         let op = operator_map(operator);
         let kind = VInstructionKind::Binary { op, lhs, rhs };
-        self.emit(kind)
+        self.emit(kind, ty)
     }
 
     fn emit_if(
@@ -300,17 +310,21 @@ impl<'a> FunctionBuilder<'a> {
             args.push(v);
         }
 
-        let return_ty = *self
+        // The type of the function  must of course be Type::Function
+        let function_tyid = *self
             .ctx
             .type_info
             .get(f)
             .expect("function expression should have had a type ...");
 
-        self.emit(VInstructionKind::Call {
-            callee,
-            args,
-            return_ty,
-        })
+        let function_ty = self.typedb.get_type_unchecked(function_tyid);
+        assert!(matches!(
+            function_ty,
+            calamars_core::types::Type::Function { .. }
+        ));
+        let return_ty = function_ty.function_output();
+
+        self.emit(VInstructionKind::Call { callee, args }, return_ty)
     }
 
     pub fn emit_load(
@@ -326,30 +340,34 @@ impl<'a> FunctionBuilder<'a> {
             .copied()
             .ok_or(MirErrors::CouldNotGetExpressionType)?;
         let calamars_core::types::Type::Structure(ds_id) =
-            self.global_ctx.types.get_unchecked(struct_ty)
+            self.typedb.get_type_unchecked(struct_ty)
         else {
             return Err(MirErrors::LoweringErr {
                 msg: "field access on non-struct expression reached MIR lowering".to_string(),
             });
         };
-        let index = self
+        let field_info = self
             .mdata
-            .get_field_index_by_name(ds_id, field_name)
+            .get_field_info_by_name(ds_id, field_name)
             .ok_or_else(|| MirErrors::LoweringErr {
                 msg: format!("field `{field_name}` missing from struct metadata"),
             })?;
 
-        self.emit(VInstructionKind::ExtractField {
-            source,
-            ds_id: *ds_id,
-            index,
-        })
+        self.emit(
+            VInstructionKind::ExtractField {
+                source,
+                ds_id: *ds_id,
+                index: field_info.index,
+            },
+            field_info.ftype,
+        )
     }
 
     fn emit_struct_init(
         &mut self,
         ds_id: &ids::DStructId,
         fields: &Box<[(String, ExpressionId)]>,
+        sty: ids::TypeId,
     ) -> MirRes<(ValueId, BlockId)> {
         let mut ordered_fields = vec![None; fields.len()];
         for (field_name, expr_id) in fields.iter() {
@@ -377,10 +395,13 @@ impl<'a> FunctionBuilder<'a> {
             })
             .collect::<MirRes<Vec<_>>>()?;
 
-        self.emit(VInstructionKind::StructInit {
-            ds_id: *ds_id,
-            fields: fields.into_boxed_slice(),
-        })
+        self.emit(
+            VInstructionKind::StructInit {
+                ds_id: *ds_id,
+                fields: fields.into_boxed_slice(),
+            },
+            sty,
+        )
     }
 
     /// Given some expression, turn it into a series of instructions, and return the ValueId where
@@ -400,10 +421,10 @@ impl<'a> FunctionBuilder<'a> {
                     .ok_or(MirErrors::IdentNotFound)?;
                 Ok((vid, self.current_block))
             }
-            hir::Expr::Literal { constant, .. } => self.emit_literal(constant),
+            hir::Expr::Literal { constant, .. } => self.emit_literal(constant, ty),
             hir::Expr::BinaryOperation {
                 operator, lhs, rhs, ..
-            } => self.emit_binary(operator, lhs, rhs),
+            } => self.emit_binary(operator, lhs, rhs, ty),
             hir::Expr::If {
                 predicate,
                 then,
@@ -416,7 +437,7 @@ impl<'a> FunctionBuilder<'a> {
             hir::Expr::Call { f, input, .. } => self.emit_function_call(f, input),
             hir::Expr::StructInit {
                 struct_id, fields, ..
-            } => self.emit_struct_init(struct_id, fields),
+            } => self.emit_struct_init(struct_id, fields, ty),
             hir::Expr::StructFieldAccess {
                 struct_expr,
                 field_name,
@@ -437,7 +458,7 @@ impl<'a> FunctionBuilder<'a> {
     pub fn lower(
         &mut self,
         name: ids::IdentId,
-        return_ty: ids::TypeId,
+        function_type: ids::TypeId,
         params: &[SymbolId],
         body: ExpressionId,
         id: FunctionId,
@@ -454,11 +475,11 @@ impl<'a> FunctionBuilder<'a> {
                 .get(*param)
                 .ok_or(MirErrors::ParamNotFound)?;
 
+            let vtype = sym.ty;
             let kind = VInstructionKind::Parameter {
                 index: index as u16,
-                ty: sym.ty,
             };
-            let vid = self.push_instuction_get_index(VInstruct { kind });
+            let vid = self.push_instuction_get_index(VInstruct { kind, vtype });
             self.block_mut()?.with_instruct(vid);
             self.locals.insert(*param, vid);
             params_inst.push(vid);
@@ -469,7 +490,7 @@ impl<'a> FunctionBuilder<'a> {
 
         Ok(Function {
             name,
-            return_ty,
+            dsign: DirectSignature::from_fntype(function_type, params.len(), self.typedb),
             params: params_inst,
             instructions: std::mem::take(&mut self.instructions),
             blocks: std::mem::take(&mut self.blocks),
@@ -481,7 +502,7 @@ impl<'a> FunctionBuilder<'a> {
 pub struct ModuleBuilder<'a> {
     ctx: &'a hir::TypedModule,
     mdata: &'a mdata::MirData,
-    global_ctx: &'a GlobalContext,
+    typedb: &'a TypeDb<'a>,
     functions: UncheckedArena<Function, FunctionId>,
 
     // internal values for building
@@ -489,15 +510,11 @@ pub struct ModuleBuilder<'a> {
 }
 
 impl<'a> ModuleBuilder<'a> {
-    pub fn new(
-        ctx: &'a hir::TypedModule,
-        mdata: &'a mdata::MirData,
-        global_ctx: &'a GlobalContext,
-    ) -> Self {
+    pub fn new(ctx: &'a hir::TypedModule, mdata: &'a mdata::MirData, typedb: &'a TypeDb) -> Self {
         Self {
             ctx,
             mdata,
-            global_ctx,
+            typedb,
             functions: UncheckedArena::new_unchecked(),
             function_map: hashbrown::HashMap::new(),
         }
@@ -525,7 +542,6 @@ impl<'a> ModuleBuilder<'a> {
         for symbol_id in &self.ctx.hir.roots {
             let symbol = self.ctx.hir.symbols.get_unchecked(*symbol_id);
             let name = symbol.name;
-            let return_ty = symbol.ty;
 
             let (params, body) = match &symbol.kind {
                 SymbolKind::Defn { declaration, .. } => (&declaration.inputs, declaration.body),
@@ -534,8 +550,8 @@ impl<'a> ModuleBuilder<'a> {
 
             let id = *self.function_map.get(&name).expect("Function id missing");
             let mut builder =
-                FunctionBuilder::new(self.ctx, self.mdata, self.global_ctx, &self.function_map);
-            let func = builder.lower(name, return_ty, params, body, id)?;
+                FunctionBuilder::new(self.ctx, self.mdata, self.typedb, &self.function_map);
+            let func = builder.lower(name, symbol.ty, params, body, id)?;
             self.functions.push(func);
         }
         Ok(())
@@ -551,7 +567,7 @@ impl<'a> ModuleBuilder<'a> {
     ) -> MirRes<FunctionId> {
         let id = FunctionId::from(self.functions.len());
         let mut builder =
-            FunctionBuilder::new(self.ctx, self.mdata, self.global_ctx, &self.function_map);
+            FunctionBuilder::new(self.ctx, self.mdata, self.typedb, &self.function_map);
         let lower = builder.lower(name, return_ty, params, body, id)?;
         self.functions.push(lower);
         Ok(id)

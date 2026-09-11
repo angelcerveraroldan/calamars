@@ -120,12 +120,13 @@ fn main() {
             }
 
             let mdata = ir::mdata::MirData::generate_mirdata(&tmodule, &global_ctx);
-            let mut mir_builder = ir::lower::ModuleBuilder::new(&tmodule, &mdata, &global_ctx);
+            let type_db = &global_ctx.type_db();
+            let mut mir_builder = ir::lower::ModuleBuilder::new(&tmodule, &mdata, type_db);
             mir_builder.lower_entire_module().expect("lowering failed");
             let irmodule = mir_builder.finish();
 
             if emit_mir {
-                let printer = MirPrinter::new(irmodule.function_arena.inner());
+                let printer = MirPrinter::new(irmodule.function_arena.inner(), type_db.types);
                 println!("{}", printer.fmt_all_functions());
             }
 
