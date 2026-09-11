@@ -175,10 +175,8 @@ pub enum VInstructionKind {
     Call {
         callee: Callee,
         args: Vec<ValueId>,
-        return_ty: ids::TypeId,
     },
     Phi {
-        ty: ids::TypeId,
         incoming: Box<[(BlockId, ValueId)]>,
     },
     StructInit {
@@ -193,21 +191,15 @@ pub enum VInstructionKind {
     },
     Parameter {
         index: u16,
-        ty: ids::TypeId,
     },
 }
 
 impl VInstructionKind {
     pub fn call_to_terminator(&self) -> MirRes<Terminator> {
         match self {
-            VInstructionKind::Call {
-                callee,
-                args,
-                return_ty,
-            } => Ok(Terminator::Call {
+            VInstructionKind::Call { callee, args } => Ok(Terminator::Call {
                 callee: callee.clone(),
                 args: args.clone(),
-                return_ty: return_ty.clone(),
             }),
             _ => Err(MirErrors::LoweringErr {
                 msg: "Can only convert function calls".to_string(),
@@ -221,6 +213,7 @@ impl VInstructionKind {
 /// Reference: https://releases.llvm.org/18.1.4/docs/LangRef.html#instruction-reference
 #[derive(Debug, PartialEq, Eq)]
 pub struct VInstruct {
+    pub vtype: ids::TypeId,
     pub kind: VInstructionKind,
 }
 
@@ -232,11 +225,7 @@ pub enum Terminator {
     Return(Option<ValueId>),
     /// Return a function call. This is better than VInstructionKind::Call followed by return,
     /// since we know that we can use this for tail call optimization.
-    Call {
-        callee: Callee,
-        args: Vec<ValueId>,
-        return_ty: ids::TypeId,
-    },
+    Call { callee: Callee, args: Vec<ValueId> },
     /// Break out of a block
     Br { target: BlockId },
     BrIf {
