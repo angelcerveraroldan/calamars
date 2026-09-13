@@ -16,7 +16,7 @@ pub mod mdata;
 mod optimizations;
 pub mod printer;
 
-use calamars_core::{UncheckedArena, ids};
+use calamars_core::{UncheckedArena, global::TypeDb, ids, types::Type};
 use front::syntax::span::Span;
 
 use crate::{
@@ -273,10 +273,37 @@ impl BBlock {
     }
 }
 
+/// The signature of a function after fully applying all its declared
+/// parameters
+pub struct DirectSignature {
+    params: Box<[ids::TypeId]>,
+    result: ids::TypeId,
+}
+
+impl DirectSignature {
+    pub fn from_fntype(mut function_type_id: ids::TypeId, arity: usize, typedb: &TypeDb) -> Self {
+        let mut params = Vec::with_capacity(arity);
+        for _ in 0..arity {
+            let function_type = typedb.get_type_unchecked(function_type_id);
+            match function_type {
+                Type::Function { input, output } => {
+                    params.push(*input);
+                    function_type_id = *output;
+                }
+                _ => unreachable!("Too many inputs were provided"),
+            };
+        }
+        Self {
+            params: params.into(),
+            result: function_type_id,
+        }
+    }
+}
+
 pub struct Function {
     pub name: ids::IdentId,
     pub id: FunctionId,
-    pub return_ty: ids::TypeId,
+    pub dsign: DirectSignature,
     pub params: Vec<ValueId>,
 
     pub instructions: Vec<VInstruct>,
@@ -286,6 +313,14 @@ pub struct Function {
 impl Function {
     pub fn arity(&self) -> u16 {
         self.params.len() as u16
+    }
+
+    pub fn output_type(&self) -> &ids::TypeId {
+        &self.dsign.result
+    }
+
+    pub fn input_types(&self) -> &Box<[ids::TypeId]> {
+        &self.dsign.params
     }
 }
 
