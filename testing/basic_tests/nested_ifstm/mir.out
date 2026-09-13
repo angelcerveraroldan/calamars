@@ -1,10 +1,10 @@
-func @0 {
+func @main :: () -> Int {
 bb0:
   %v0 :: Int = const 2
   return call fn#1(%v0)
 }
 
-func @1 {
+func @testfn :: (Int) -> Int {
 bb0:
   %v0 :: Int = param #0
   %v1 :: Int = const 0
