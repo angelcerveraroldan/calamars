@@ -1,9 +1,9 @@
 typ main ::  Int
-def main = f 2
+def main = testfn 2
 
-typ f :: Int -> Int
-def f n =
+typ testfn :: Int -> Int
+def testfn n =
     if n == 0 then 0
     else if n == 1 then 12
-    else f (n - 1)
+    else testfn (n - 1)
 

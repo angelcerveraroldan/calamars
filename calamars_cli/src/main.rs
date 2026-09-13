@@ -126,7 +126,11 @@ fn main() {
             let irmodule = mir_builder.finish();
 
             if emit_mir {
-                let printer = MirPrinter::new(irmodule.function_arena.inner(), type_db.types);
+                let printer = MirPrinter::new(
+                    irmodule.function_arena.inner(),
+                    type_db.types,
+                    &tmodule.hir.idents,
+                );
                 println!("{}", printer.fmt_all_functions());
             }
 

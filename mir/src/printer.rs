@@ -3,6 +3,7 @@ use calamars_core::{
     ids::TypeId,
     types::{TypeArena, type_id_stringify},
 };
+use front::semantic::hir::IdentArena;
 
 use std::fmt::Write;
 
@@ -14,13 +15,19 @@ use crate::{
 pub struct MirPrinter<'a> {
     functions: &'a [Function],
     type_arena: &'a TypeArena,
+    ident_arena: &'a IdentArena,
 }
 
 impl<'a> MirPrinter<'a> {
-    pub fn new(functions: &'a [Function], type_arena: &'a TypeArena) -> Self {
+    pub fn new(
+        functions: &'a [Function],
+        type_arena: &'a TypeArena,
+        ident_arena: &'a IdentArena,
+    ) -> Self {
         Self {
             functions,
             type_arena,
+            ident_arena,
         }
     }
 
@@ -173,9 +180,16 @@ impl<'a> MirPrinter<'a> {
 
     pub fn fmt_function(&self, f: &Function) -> String {
         let mut s = String::new();
-
-        let _ = writeln!(s, "func @{} {{", f.name.inner());
-
+        let fname = self.ident_arena.get_unchecked(f.name);
+        let input = f
+            .dsign
+            .params
+            .iter()
+            .map(|id| type_id_stringify(self.type_arena, *id))
+            .collect::<Vec<_>>()
+            .join(",");
+        let output = type_id_stringify(self.type_arena, f.dsign.result);
+        let _ = writeln!(s, "func @{} :: ({}) -> {} {{", fname, input, output);
         for (bid, _) in f.blocks.iter().enumerate() {
             s.push_str(&self.fmt_block(f, &BlockId(bid)));
         }
