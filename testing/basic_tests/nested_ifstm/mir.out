@@ -1,33 +1,33 @@
 func @0 {
 bb0:
-  %v0 = const 2
-  return call fn#1(%v0) : ty#7
+  %v0 :: Int = const 2
+  return call fn#1(%v0)
 }
 
 func @1 {
 bb0:
-  %v0 = param #0
-  %v1 = const 0
-  %v2 = %v0 == %v1
+  %v0 :: Int = param #0
+  %v1 :: Int = const 0
+  %v2 :: Bool = %v0 == %v1
   br_if %v2, then: bb1 else: bb2
 bb1:
-  %v3 = const 0
+  %v3 :: Int = const 0
   return %v3
 bb2:
-  %v4 = const 1
-  %v5 = %v0 == %v4
+  %v4 :: Int = const 1
+  %v5 :: Bool = %v0 == %v4
   br_if %v5, then: bb4 else: bb5
 bb3:
-  %v11 = phi ty#2 [bb1: %v3, bb6: %v10]
+  %v11 :: Int = phi [bb1: %v3, bb6: %v10]
   return %v11
 bb4:
-  %v6 = const 12
+  %v6 :: Int = const 12
   return %v6
 bb5:
-  %v7 = const 1
-  %v8 = %v0 - %v7
-  return call fn#1(%v8) : ty#7
+  %v7 :: Int = const 1
+  %v8 :: Int = %v0 - %v7
+  return call fn#1(%v8)
 bb6:
-  %v10 = phi ty#2 [bb4: %v6, bb5: %v9]
+  %v10 :: Int = phi [bb4: %v6, bb5: %v9]
   return %v10
 }
