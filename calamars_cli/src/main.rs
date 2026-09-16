@@ -1,3 +1,4 @@
+use calamars_cli::source::SourceFile;
 use calamars_core::ids;
 use clap::{Parser, Subcommand};
 use front::{
@@ -12,9 +13,6 @@ use front::{
 };
 use ir::printer::MirPrinter;
 use std::path::PathBuf;
-use vm::VMachine;
-
-use calamars_cli::source::SourceFile;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -36,10 +34,6 @@ enum Command {
         #[arg(long, alias = "mir")]
         emit_mir: bool,
 
-        /// Run the program on the VM
-        #[arg(long)]
-        run_vm: bool,
-
         /// Path to the source file or project root
         #[arg(value_name = "SOURCE_PATH")]
         path: PathBuf,
@@ -50,11 +44,7 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Build {
-            emit_mir,
-            run_vm,
-            path,
-        } => {
+        Command::Build { emit_mir, path } => {
             let sf = SourceFile::try_from((0, path)).expect("Failed to read source file");
             let tokens = sf.as_spanned_token_stream();
 
@@ -114,7 +104,7 @@ fn main() {
                 type_info,
             };
 
-            if !emit_mir && !run_vm {
+            if !emit_mir {
                 println!("OK");
                 return;
             }
@@ -132,25 +122,6 @@ fn main() {
                     &tmodule.hir.idents,
                 );
                 println!("{}", printer.fmt_all_functions());
-            }
-
-            if run_vm {
-                vm::memlayout::generate_structs_mem_layout(&mut global_ctx);
-                let mut vmlower = vm::lower::Lowerer::new(&irmodule, &global_ctx);
-                let functions = vmlower
-                    .lower_module()
-                    .map_err(|err| {
-                        format!(
-                            "Failed to lower from MIR to VM Bytecode with error: {:?}",
-                            err
-                        )
-                    })
-                    .unwrap();
-
-                let mut vm = VMachine::new(functions.into_boxed_slice(), ir::FunctionId::from(0))
-                    .expect("Failed to lower to vm");
-                let out = vm.run(&global_ctx);
-                println!("Main fn returns: {:?}", out);
             }
         }
     }

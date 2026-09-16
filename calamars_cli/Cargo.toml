@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-vm = { path = "../vm" }
-
 calamars_core = { path="../calamars_core" }
 front = { path = "../front" }
 ir = { path = "../mir" }
@@ -16,6 +14,3 @@ hashbrown = "0.16.0"
 
 [dev-dependencies]
 toml = "0.8.20"
-
-[features]
-logs = ["vm/logs"]
