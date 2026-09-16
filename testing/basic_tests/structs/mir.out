@@ -1,0 +1,26 @@
+func @main :: (Unit) -> Int {
+_start:
+  %v0 :: Unit = param #0
+  %v1 :: Int = const 100
+  %v2 :: Struct#0 = call fn#1(%v1)
+  %v3 :: String = call fn#2(%v2)
+  %v4 :: Int = load %v2 #0->#1
+  return %v4
+}
+
+func @default :: (Int) -> Struct#0 {
+_start:
+  %v0 :: Int = param #0
+  %v1 :: String = const str#StringId(0)
+  %v2 :: Struct#0 = struct #0 {%v1, %v0}
+  return %v2
+}
+
+func @getPersonName :: (Struct#0) -> String {
+_start:
+  %v0 :: Struct#0 = param #0
+  %v1 :: String = load %v0 #0->#0
+  return %v1
+}
+
+

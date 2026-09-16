@@ -1,0 +1,33 @@
+func @main :: () -> Int {
+_start:
+  %v0 :: Int = const 5
+  %v1 :: Int = const 2
+  %v2 :: Int = const 3
+  %v3 :: Int = %v1 * %v2
+  %v4 :: Int = const 9
+  %v5 :: Bool = %v3 == %v4
+  br_if %v5, then: br bb1(): else: br bb2():
+bb1:
+  %v6 :: Int = const 100
+  br bb3(%v6):
+bb2:
+  %v7 :: Int = const 2
+  %v8 :: Int = const 3
+  %v9 :: Int = %v7 * %v8
+  %v10 :: Int = const 6
+  %v11 :: Bool = %v9 == %v10
+  br_if %v11, then: br bb4(): else: br bb5():
+bb3(%v15 :: Int):
+  %v16 :: Int = %v0 * %v15
+  return %v16
+bb4:
+  %v12 :: Int = const 0
+  br bb3(%v12):
+bb5:
+  %v13 :: Int = const 10
+  br bb3(%v13):
+bb6(%v14 :: Int):
+  br bb3(%v14):
+}
+
+

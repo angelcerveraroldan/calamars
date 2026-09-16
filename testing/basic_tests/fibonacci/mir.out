@@ -1,10 +1,10 @@
 func @main :: () -> Int {
 _start:
-  %v0 :: Int = const 2
+  %v0 :: Int = const 20
   return call fn#1(%v0)
 }
 
-func @testfn :: (Int) -> Int {
+func @fib :: (Int) -> Int {
 _start:
   %v0 :: Int = param #0
   %v1 :: Int = const 0
@@ -17,18 +17,22 @@ bb2:
   %v4 :: Int = const 1
   %v5 :: Bool = %v0 == %v4
   br_if %v5, then: br bb4(): else: br bb5():
-bb3(%v11 :: Int):
-  return %v11
+bb3(%v15 :: Int):
+  return %v15
 bb4:
-  %v6 :: Int = const 12
+  %v6 :: Int = const 1
   br bb3(%v6):
 bb5:
   %v7 :: Int = const 1
   %v8 :: Int = %v0 - %v7
   %v9 :: Int = call fn#1(%v8)
-  br bb3(%v9):
-bb6(%v10 :: Int):
-  return %v10
+  %v10 :: Int = const 2
+  %v11 :: Int = %v0 - %v10
+  %v12 :: Int = call fn#1(%v11)
+  %v13 :: Int = %v9 + %v12
+  br bb3(%v13):
+bb6(%v14 :: Int):
+  return %v14
 }
 
 

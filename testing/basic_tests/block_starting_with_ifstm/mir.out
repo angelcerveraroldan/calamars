@@ -1,0 +1,17 @@
+func @main :: () -> Int {
+_start:
+  %v0 :: Int = const 2
+  %v1 :: Int = const 2
+  %v2 :: Bool = %v0 > %v1
+  br_if %v2, then: br bb1(): else: br bb2():
+bb1:
+  %v3 :: Int = const 2
+  return %v3
+bb2:
+  %v4 :: Int = const 3
+  return %v4
+bb3(%v5 :: Int):
+  return %v5
+}
+
+
