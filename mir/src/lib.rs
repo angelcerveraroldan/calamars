@@ -22,7 +22,7 @@ use front::syntax::span::Span;
 use crate::{
     errors::MirErrors,
     lower::MirRes,
-    optimizations::{OptFunction, PhiReturnOptimization, TailCallOptimization},
+    optimizations::{ForwardTerminatorOpt, OptFunction, TailCallOptimization},
 };
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
@@ -43,7 +43,7 @@ impl calamars_core::Identifier for FunctionId {
 /// A local identifier for a `BBlock`
 ///
 /// BlockId(0) is the first block of the working function
-#[derive(Copy, Debug, PartialEq, Eq, Clone)]
+#[derive(Copy, Debug, PartialEq, Eq, Clone, Hash)]
 pub struct BlockId(usize);
 
 impl From<usize> for BlockId {
@@ -176,9 +176,6 @@ pub enum VInstructionKind {
         callee: Callee,
         args: Vec<ValueId>,
     },
-    Phi {
-        incoming: Box<[(BlockId, ValueId)]>,
-    },
     StructInit {
         ds_id: ids::DStructId,
         fields: Box<[ValueId]>,
@@ -189,6 +186,7 @@ pub enum VInstructionKind {
         ds_id: ids::DStructId,
         index: usize,
     },
+    /// A function or a block parameter
     Parameter {
         index: u16,
     },
@@ -217,8 +215,31 @@ pub struct VInstruct {
     pub kind: VInstructionKind,
 }
 
+#[derive(Debug, Clone)]
+pub struct BlockJump {
+    target: BlockId,
+    args: Vec<ValueId>,
+}
+
+impl BlockJump {
+    pub fn new(target: BlockId, args: Vec<ValueId>) -> Self {
+        Self { target, args }
+    }
+
+    fn replace(&self, mapping: &hashbrown::HashMap<ValueId, ValueId>) -> Self {
+        Self {
+            target: self.target.clone(),
+            args: self
+                .args
+                .iter()
+                .map(|id| *mapping.get(id).unwrap_or(id))
+                .collect(),
+        }
+    }
+}
+
 /// Every basic block will end with a terminator instruction.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Terminator {
     /// When a return instruction is executed, control flow will return back to the calling
     /// functions context.
@@ -227,16 +248,47 @@ pub enum Terminator {
     /// since we know that we can use this for tail call optimization.
     Call { callee: Callee, args: Vec<ValueId> },
     /// Break out of a block
-    Br { target: BlockId },
+    Br { jump: BlockJump },
     BrIf {
         /// This is the result value of the predicate in the if statement
         condition: ValueId,
         /// What block to jump to if the predicate was true
-        then_target: BlockId,
+        then_jump: BlockJump,
         /// What block to jump to if the predicate was false
-        else_target: BlockId,
+        else_jump: BlockJump,
     },
     // Switch { .. }
+}
+
+impl Terminator {
+    fn replace(&self, mapping: &hashbrown::HashMap<ValueId, ValueId>) -> Self {
+        match self {
+            Terminator::Return(Some(id)) => {
+                let id = *mapping.get(id).unwrap_or(id);
+                Terminator::Return(Some(id))
+            }
+            Terminator::Return(None) => Terminator::Return(None),
+            Terminator::Call { callee, args } => Terminator::Call {
+                callee: callee.clone(),
+                args: args
+                    .iter()
+                    .map(|id| *mapping.get(id).unwrap_or(id))
+                    .collect(),
+            },
+            Terminator::Br { jump } => Terminator::Br {
+                jump: jump.replace(mapping),
+            },
+            Terminator::BrIf {
+                condition,
+                then_jump,
+                else_jump,
+            } => Terminator::BrIf {
+                condition: *mapping.get(condition).unwrap_or(condition),
+                then_jump: then_jump.replace(mapping),
+                else_jump: else_jump.replace(mapping),
+            },
+        }
+    }
 }
 
 /// Where in the source code did this come from
@@ -251,6 +303,7 @@ pub enum Origin {
 /// A [Basic Block](https://en.wikipedia.org/wiki/Basic_block)
 #[derive(Debug, Default)]
 pub struct BBlock {
+    pub params: Vec<ValueId>,
     pub instructs: Vec<ValueId>,
     pub finally: Option<Terminator>,
 }
@@ -350,10 +403,9 @@ impl Module {
         }
     }
 
-    pub fn remove_uneccesary_phis(&mut self) {
+    pub fn forward_terminators(&mut self) {
         for function in self.function_arena.inner_mut() {
-            let mut pro = PhiReturnOptimization::new();
-            if let Err(error) = pro.optimize(function, 1) {
+            if let Err(error) = ForwardTerminatorOpt.optimize(function, 1) {
                 eprint!("{:?}", error);
             }
         }
@@ -361,7 +413,7 @@ impl Module {
 
     /// Optimize MIR. ORDER OF THE FUNCTIONS IS CRUCIAL
     pub fn optimize(&mut self) {
-        self.remove_uneccesary_phis();
+        self.forward_terminators();
         self.tco();
     }
 }
