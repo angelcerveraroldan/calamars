@@ -1,0 +1,59 @@
+func @main :: () -> Int {
+_start:
+  %v0 :: Int = const 20000
+  %v1 :: Int = const 123456789
+  %v2 :: Int = const 0
+  return call fn#1(%v0, %v1, %v2)
+}
+
+func @bench :: (Int,Int,Int) -> Int {
+_start:
+  %v0 :: Int = param #0
+  %v1 :: Int = param #1
+  %v2 :: Int = param #2
+  %v3 :: Int = const 0
+  %v4 :: Bool = %v0 == %v3
+  br_if %v4, then: br bb1(): else: br bb2():
+bb1:
+  return %v2
+bb2:
+  %v5 :: Int = call fn#2(%v1)
+  %v6 :: Int = call fn#2(%v5)
+  %v7 :: Int = call fn#3(%v5, %v6)
+  %v8 :: Int = const 1
+  %v9 :: Int = %v0 - %v8
+  %v10 :: Int = %v2 + %v7
+  return call fn#1(%v9, %v6, %v10)
+bb3(%v12 :: Int):
+  return %v12
+}
+
+func @lcg :: (Int) -> Int {
+_start:
+  %v0 :: Int = param #0
+  %v1 :: Int = const 1103515245
+  %v2 :: Int = %v1 * %v0
+  %v3 :: Int = const 12345
+  %v4 :: Int = %v2 + %v3
+  %v5 :: Int = const 2147483647
+  %v6 :: Int = %v4 % %v5
+  return %v6
+}
+
+func @gcd :: (Int,Int) -> Int {
+_start:
+  %v0 :: Int = param #0
+  %v1 :: Int = param #1
+  %v2 :: Int = const 0
+  %v3 :: Bool = %v1 == %v2
+  br_if %v3, then: br bb1(): else: br bb2():
+bb1:
+  return %v0
+bb2:
+  %v4 :: Int = %v0 % %v1
+  return call fn#3(%v1, %v4)
+bb3(%v6 :: Int):
+  return %v6
+}
+
+

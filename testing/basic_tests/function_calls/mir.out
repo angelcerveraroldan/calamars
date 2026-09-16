@@ -1,0 +1,42 @@
+func @main :: () -> Int {
+_start:
+  %v0 :: Int = const 3
+  %v1 :: Int = const 2
+  %v2 :: Int = call fn#1(%v1, %v0)
+  %v3 :: Bool = call fn#2(%v0, %v2)
+  br_if %v3, then: br bb1(): else: br bb2():
+bb1:
+  %v4 :: Int = const 2
+  return %v4
+bb2:
+  %v5 :: Int = const 3
+  return %v5
+bb3(%v6 :: Int):
+  return %v6
+}
+
+func @add :: (Int,Int) -> Int {
+_start:
+  %v0 :: Int = param #0
+  %v1 :: Int = param #1
+  %v2 :: Int = %v0 + %v1
+  return %v2
+}
+
+func @equals :: (Int,Int) -> Bool {
+_start:
+  %v0 :: Int = param #0
+  %v1 :: Int = param #1
+  %v2 :: Bool = %v0 == %v1
+  br_if %v2, then: br bb1(): else: br bb2():
+bb1:
+  %v3 :: Bool = const true
+  return %v3
+bb2:
+  %v4 :: Bool = const false
+  return %v4
+bb3(%v5 :: Bool):
+  return %v5
+}
+
+

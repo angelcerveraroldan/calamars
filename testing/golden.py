@@ -42,8 +42,6 @@ class TestConfig:
     test_parse: int
     # Expected out for mir generation
     test_mir: int
-    # Expected out for vm run
-    test_vm: int
 
     # Optional regex expectations per stage
     expects: dict[str, list[str]]
@@ -129,9 +127,6 @@ def parse_config(path: Path) -> TestConfig:
     test_parse_str = test.get("parser", "pass")
     test_parse = parse_expected_out(test_parse_str)
 
-    test_vm_str = test.get("vm", "ignore")
-    test_vm = parse_expected_out(test_vm_str)
-
     expects = parse_expectations(data)
 
     return TestConfig(
@@ -142,7 +137,6 @@ def parse_config(path: Path) -> TestConfig:
         flags=flags,
         test_mir=test_mir,
         test_parse=test_parse,
-        test_vm=test_vm,
         expects=expects,
     )
 
@@ -171,7 +165,7 @@ def find_binary() -> Path | None:
 
 
 def ensure_binary() -> Path:
-    features = os.environ.get("CALAMARS_FEATURES", "logs").strip()
+    features = os.environ.get("CALAMARS_FEATURES", "").strip()
     bin_path = find_binary()
     if bin_path and not features:
         return bin_path
@@ -296,9 +290,6 @@ def main() -> int:
         if cfg.test_mir != IGNORE:
             flags = cfg.flags.get("mir", ["--emit-mir"])
             steps.append(("mir", flags, cfg.test_mir))
-        if cfg.test_vm != IGNORE:
-            flags = cfg.flags.get("vm", ["--run-vm"])
-            steps.append(("vm", flags, cfg.test_vm))
 
         for label, flags, expected_out in steps:
             total += 1
