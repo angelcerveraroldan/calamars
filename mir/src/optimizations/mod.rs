@@ -1,9 +1,10 @@
 ///! Optimizations for the MIR
 use calamars_core::Identifier;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 
 use crate::{
-    BBlock, BlockId, Function, VInstructionKind, ValueId, errors::MirErrors, lower::MirRes,
+    BBlock, BlockId, Function, Terminator, VInstructionKind, ValueId, errors::MirErrors,
+    lower::MirRes,
 };
 
 /// An optimization pass on some function
@@ -154,142 +155,66 @@ impl OptFunction for TailCallOptimization {
     }
 }
 
-/// When returning an if statement, we don't need to return the phi value
-/// generated, we can just move the return into the function body.
-///
-/// I.e.
-/// ```text
-/// bb0:
-///   %v0 = param #0
-///   %v1 = param #1
-///   %v2 = %v0 == %v1
-///   br_if %v2, then: bb1 else: bb2
-/// bb1:
-///   %v3 = const true
-///   br bb3
-/// bb2:
-///   %v4 = const false
-///   br bb3
-/// bb3:
-///   %v5 = phi ty#4 [bb1: %v3, bb2: %v4]
-///   return %v5
-/// ```
-///
-/// Should be optimized to
-/// ```text
-/// bb0:
-///   %v0 = param #0
-///   %v1 = param #1
-///   %v2 = %v0 == %v1
-///   br_if %v2, then: bb1 else: bb2
-/// bb1:
-///   %v3 = const true
-///   return %v3
-/// bb2:
-///   %v4 = const false
-///   return %v4
-/// ```
-///
-/// This allows for better tail call optimization. Note that this optimization
-/// needs to be run many times for the same function, to handle nested ifs.
-pub struct PhiReturnOptimization {
-    // We need a whitelist since we don't delete the block in which the phi is resolved.
-    // Otherwise, we would end up in infinite loops. Once we find a way to delete blocks
-    // we can safely remove this whitelist.
-    whitelist: HashSet<ValueId>,
-}
+pub struct ForwardTerminatorOpt;
 
-impl PhiReturnOptimization {
-    pub fn new() -> Self {
-        Self {
-            whitelist: HashSet::new(),
-        }
-    }
+impl ForwardTerminatorOpt {
+    fn optimize_blocks(f: &mut Function) {
+        for source_id in 0..f.blocks.len() {
+            let block = &f.blocks[source_id];
+            // We can only replace jumps with other instructions for now
+            let Some(Terminator::Br { jump }) = &block.finally else {
+                continue;
+            };
 
-    /// Find which blocks we can optimize
-    fn blocks_to_optimize(&self, f: &Function) -> Vec<(BlockId, ValueId)> {
-        let mut blocks = vec![];
-        for (blockid, block) in f.blocks.iter().enumerate() {
-            if let Some(crate::Terminator::Return(Some(vid))) = block.finally {
-                // check if the value id was from a phi block
-                let ik = f.instructions.get(vid.inner_id()).map(|x| &x.kind);
-                if matches!(ik, Some(VInstructionKind::Phi { .. }))
-                    && !self.whitelist.contains(&vid)
-                {
-                    let blockid = BlockId::from(blockid);
-                    blocks.push((blockid, vid))
-                }
+            let target_block = &f.blocks[jump.target.inner_id()];
+            // If the block we are jumping to needs to perform logic,
+            // then we cannot forward anything back
+            if !target_block.instructs.is_empty() {
+                continue;
             }
-        }
-        blocks
-    }
 
-    /// Given one block, we can now optimize it
-    fn optimize_block(
-        &mut self,
-        f: &mut Function,
-        phi_resolution_block: BlockId,
-        value_id: ValueId,
-    ) {
-        let inst = &f
-            .instructions
-            .get(value_id.inner_id())
-            // This is safe since we make sure it exists when generating the data
-            .unwrap()
-            .kind;
+            // If the we reach this, that means that the block we are
+            // jumping to only has the job of calling a terminator, so
+            // we can forward it
+            let jump_params = &jump.args;
+            let target_params = &target_block.params;
+            let mut map = hashbrown::HashMap::new();
 
-        let VInstructionKind::Phi { incoming, .. } = inst else {
-            unreachable!("optimize_block called with non-phi");
-        };
-
-        for (incoming_block_id, incoming_value_id) in incoming {
-            let block = f.blocks.get_mut(incoming_block_id.inner_id()).unwrap();
-            // Lets make sure that this optimization is safe to do for this specific block
-            // It should always be the cases, buy maybe another optimization later will have
-            // played with this block already ...
-            if let Some(crate::Terminator::Br { target }) = &block.finally
-                && *target == phi_resolution_block
-            {
-                block.finally = Some(crate::Terminator::Return(Some(*incoming_value_id)));
+            if jump_params.len() != target_params.len() {
+                panic!("Invalid block jump arity");
             }
+            for (jump, target) in jump_params.iter().zip(target_params) {
+                map.insert(*target, *jump);
+            }
+
+            let mapped_terminator = target_block
+                .finally
+                .as_ref()
+                .map(|terminator| terminator.replace(&map));
+
+            f.blocks[source_id].finally = mapped_terminator;
         }
-
-        // FIXME: We should delete the block, but right now it messes with the indices ...
-        // for now we will leave it as is, it should be an unreachable block.
-
-        self.whitelist.insert(value_id);
     }
 }
 
-impl OptFunction for PhiReturnOptimization {
+impl OptFunction for ForwardTerminatorOpt {
     type PassContext = usize;
 
     type PassOutput = ();
 
     fn name(&self) -> &'static str {
-        "Phi return optimization"
+        "Forward terminators"
     }
 
     fn desc(&self) -> &'static str {
-        "When returning an ifs value, move the return into the bodies of the statements"
+        "If a block A's only job is to run a terminator, then we can forward that terminator to all blocks that jump to A. This means that we can likely later remove A all-together, and will help with tail optimization."
     }
 
     fn optimize(&mut self, f: &mut Function, ctx: Self::PassContext) -> MirRes<Self::PassOutput> {
         if Into::<OptLevel>::into(ctx) != OptLevel::All {
             return Ok(());
         }
-
-        loop {
-            let opt_spots = self.blocks_to_optimize(&f);
-            if opt_spots.is_empty() {
-                break;
-            }
-
-            for (b, v) in opt_spots {
-                self.optimize_block(f, b, v);
-            }
-        }
-
+        Self::optimize_blocks(f);
         return Ok(());
     }
 }

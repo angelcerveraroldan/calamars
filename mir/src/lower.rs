@@ -8,8 +8,8 @@ use calamars_core::{
 use front::semantic::hir::{self, BinOp, Const, ItemId, SymbolDec, SymbolKind};
 
 use crate::{
-    BBlock, BinaryOperator, BlockId, DirectSignature, Function, FunctionId, Module, VInstruct,
-    VInstructionKind, ValueId, errors::MirErrors, mdata,
+    BBlock, BinaryOperator, BlockId, BlockJump, DirectSignature, Function, FunctionId, Module,
+    VInstruct, VInstructionKind, ValueId, errors::MirErrors, mdata,
 };
 
 fn operator_map(op: &hir::BinOp) -> BinaryOperator {
@@ -74,6 +74,11 @@ impl<'a> FunctionBuilder<'a> {
             .ok_or(MirErrors::NoWorkingBlock)
     }
 
+    pub fn block(&mut self) -> MirRes<&BBlock> {
+        let blockid = self.current_block.inner_id();
+        self.blocks.get(blockid).ok_or(MirErrors::NoWorkingBlock)
+    }
+
     fn new_block(&mut self) -> BlockId {
         self.blocks.push(BBlock::default());
         BlockId(self.blocks.len() - 1)
@@ -81,6 +86,20 @@ impl<'a> FunctionBuilder<'a> {
 
     fn switch_to_block(&mut self, block: BlockId) {
         self.current_block = block;
+    }
+
+    fn add_value_param(&mut self, value: ValueId) -> MirRes<()> {
+        self.block_mut().map(|bblock| bblock.params.push(value))
+    }
+
+    /// Add a new parameter to the current block of a given type
+    fn add_param(&mut self, ty: ids::TypeId) -> MirRes<ValueId> {
+        let index = self.block()?.params.len() as u16;
+        let value = self.push_instuction_get_index(VInstruct {
+            vtype: ty,
+            kind: VInstructionKind::Parameter { index },
+        });
+        self.add_value_param(value).map(|_| value)
     }
 
     fn push_instuction_get_index(&mut self, inst: VInstruct) -> ValueId {
@@ -93,8 +112,10 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    pub fn terminate_br(&mut self, target: BlockId) -> MirRes<()> {
-        let term = crate::Terminator::Br { target };
+    pub fn terminate_br(&mut self, target: BlockId, params: Vec<ValueId>) -> MirRes<()> {
+        let term = crate::Terminator::Br {
+            jump: BlockJump::new(target, params),
+        };
         self.terminate(term)
     }
 
@@ -102,12 +123,14 @@ impl<'a> FunctionBuilder<'a> {
         &mut self,
         condition: ValueId,
         then_target: BlockId,
+        then_inputs: Vec<ValueId>,
         else_target: BlockId,
+        else_inputs: Vec<ValueId>,
     ) -> MirRes<()> {
         let term = crate::Terminator::BrIf {
             condition,
-            then_target,
-            else_target,
+            then_jump: BlockJump::new(then_target, then_inputs),
+            else_jump: BlockJump::new(else_target, else_inputs),
         };
         self.terminate(term)
     }
@@ -135,15 +158,6 @@ impl<'a> FunctionBuilder<'a> {
             .typedb
             .get_typeid_unchecked(&calamars_core::types::Type::Unit);
         self.emit(VInstructionKind::Constant(crate::Consts::Unit), *unit_ty)
-    }
-
-    fn emit_phi(
-        &mut self,
-        ty: ids::TypeId,
-        incoming: Box<[(BlockId, ValueId)]>,
-    ) -> MirRes<(ValueId, BlockId)> {
-        let kind = VInstructionKind::Phi { incoming };
-        self.emit(kind, ty)
     }
 
     fn emit_literal(&mut self, constant: &Const, ty: ids::TypeId) -> MirRes<(ValueId, BlockId)> {
@@ -176,26 +190,29 @@ impl<'a> FunctionBuilder<'a> {
         then: &ExpressionId,
         otherwise: &ExpressionId,
     ) -> MirRes<(ValueId, BlockId)> {
-        let (pred, _) = self.lower_expression_from_id(&predicate)?;
+        let (condition, _) = self.lower_expression_from_id(&predicate)?;
 
-        // Generate blocks for the if and for the then
-        let ifb = self.new_block();
-        let elb = self.new_block();
-        let joinb = self.new_block();
+        // Generate blocks for the if and for the else - note that
+        // they may themselves generate more blocks
+        let then_block = self.new_block();
+        let else_block = self.new_block();
+        // We know that the joining block will take exactly one input
+        // - the result of the if or the else statement
+        let join_block = self.new_block();
 
-        self.term_br_if(pred, ifb, elb)?;
+        self.term_br_if(condition, then_block, vec![], else_block, vec![])?;
 
-        self.switch_to_block(ifb);
-        let (then_vid, then_block) = self.lower_expression_from_id(&then)?;
-        self.terminate_br(joinb)?;
+        self.switch_to_block(then_block);
+        let (then_vid, _) = self.lower_expression_from_id(&then)?;
+        self.terminate_br(join_block, vec![then_vid])?;
 
-        self.switch_to_block(elb);
-        let (otherwise_vid, otherwise_block) = self.lower_expression_from_id(&otherwise)?;
-        self.terminate_br(joinb)?;
+        self.switch_to_block(else_block);
+        let (otherwise_vid, _) = self.lower_expression_from_id(&otherwise)?;
+        self.terminate_br(join_block, vec![otherwise_vid])?;
 
-        self.switch_to_block(joinb);
-        let pairs = [(then_block, then_vid), (otherwise_block, otherwise_vid)];
-        self.emit_phi(expr_ty, Box::new(pairs))
+        self.switch_to_block(join_block);
+        self.add_param(expr_ty)
+            .map(|value_id| (value_id, join_block))
     }
 
     fn emit_block(

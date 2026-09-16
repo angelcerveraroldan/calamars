@@ -1,6 +1,5 @@
 use calamars_core::{
     Identifier,
-    ids::TypeId,
     types::{TypeArena, type_id_stringify},
 };
 use front::semantic::hir::IdentArena;
@@ -8,8 +7,8 @@ use front::semantic::hir::IdentArena;
 use std::fmt::Write;
 
 use crate::{
-    BinaryOperator, BitwiseBinaryOperator, BlockId, Callee, Consts, Function, FunctionId,
-    Terminator, UnaryOperator, VInstructionKind, ValueId,
+    BinaryOperator, BitwiseBinaryOperator, BlockId, BlockJump, Callee, Consts, Function,
+    FunctionId, Terminator, UnaryOperator, VInstructionKind, ValueId,
 };
 
 pub struct MirPrinter<'a> {
@@ -37,8 +36,31 @@ impl<'a> MirPrinter<'a> {
     }
 
     #[inline]
-    fn bb(&self, id: BlockId) -> String {
-        format!("bb{}", id.0)
+    fn bb(&self, function: &Function, id: BlockId) -> String {
+        match id.inner_id() {
+            0 => format!("_start"),
+            id => format!("bb{}", id),
+        }
+    }
+
+    fn bb_params(&self, function: &Function, id: BlockId) -> String {
+        let mut s = String::new();
+        let block = &function.blocks[id.inner_id()];
+        let param_count = block.params.len();
+        if param_count == 0 {
+            return s;
+        }
+        let _ = write!(s, "(");
+        for (index, param) in block.params.iter().enumerate() {
+            let val = function.instructions.get(param.inner_id()).unwrap();
+            let tystr = type_id_stringify(self.type_arena, val.vtype);
+            let _ = write!(s, "{} :: {}", self.v(*param), tystr);
+            if index != param_count - 1 {
+                let _ = write!(s, ", ");
+            }
+        }
+        let _ = write!(s, ")");
+        s
     }
 
     pub fn fmt_call(&self, callee: &Callee, args: &Vec<ValueId>) -> String {
@@ -102,15 +124,6 @@ impl<'a> MirPrinter<'a> {
                 format!("{} {op_s} {}", self.v(*lhs), self.v(*rhs))
             }
             VInstructionKind::Call { callee, args } => self.fmt_call(callee, args),
-            VInstructionKind::Phi { incoming } => {
-                let cs = incoming
-                    .iter()
-                    .map(|(b, v)| format!("{}: {}", self.bb(*b), self.v(*v)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                format!("phi [{}]", cs)
-            }
             VInstructionKind::StructInit { ds_id, fields } => {
                 let fields_s = fields
                     .iter()
@@ -132,43 +145,57 @@ impl<'a> MirPrinter<'a> {
         }
     }
 
+    pub fn fmt_jump(&self, function: &Function, jump: &BlockJump) -> String {
+        let argsfmt = jump
+            .args
+            .iter()
+            .map(|vid| self.v(*vid))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!("br {}({}):", self.bb(function, jump.target), argsfmt)
+    }
+
     /// Format at terminator
-    pub fn fmt_term(&self, t: &Terminator) -> String {
+    pub fn fmt_term(&self, function: &Function, t: &Terminator) -> String {
         match t {
             Terminator::Return(Some(v)) => format!("return {}", self.v(*v)),
             Terminator::Return(None) => "return".to_string(),
             Terminator::Call { callee, args } => format!("return {}", self.fmt_call(callee, args)),
-            Terminator::Br { target } => {
-                format!("br {}", self.bb(*target))
-            }
+            Terminator::Br { jump } => self.fmt_jump(function, jump),
             Terminator::BrIf {
                 condition,
-                then_target,
-                else_target,
+                then_jump,
+                else_jump,
             } => {
                 format!(
                     "br_if {}, then: {} else: {}",
                     self.v(*condition),
-                    self.bb(*then_target),
-                    self.bb(*else_target),
+                    self.fmt_jump(function, then_jump),
+                    self.fmt_jump(function, else_jump),
                 )
             }
         }
     }
 
-    pub fn fmt_block(&self, func: &Function, b: &BlockId) -> String {
+    pub fn fmt_block(&self, function: &Function, b: &BlockId) -> String {
         let mut s = String::new();
-        let _ = writeln!(s, "{}:", self.bb(*b));
+        let block = function.blocks.get(b.inner_id()).unwrap();
+        let _ = writeln!(
+            s,
+            "{}{}:",
+            self.bb(function, *b),
+            self.bb_params(function, *b)
+        );
 
-        let block = func.blocks.get(b.inner_id()).unwrap();
         for inst in &block.instructs {
-            let val = func.instructions.get(inst.inner_id()).unwrap();
+            let val = function.instructions.get(inst.inner_id()).unwrap();
             let rhs = self.fmt_vinst(&val.kind);
             let tystr = type_id_stringify(self.type_arena, val.vtype);
             let _ = writeln!(s, "  {} :: {} = {}", self.v(*inst), tystr, rhs);
         }
         if let Some(t) = &block.finally {
-            let _ = writeln!(s, "  {}", self.fmt_term(t));
+            let _ = writeln!(s, "  {}", self.fmt_term(function, t));
         }
         s
     }
@@ -190,8 +217,9 @@ impl<'a> MirPrinter<'a> {
             .join(",");
         let output = type_id_stringify(self.type_arena, f.dsign.result);
         let _ = writeln!(s, "func @{} :: ({}) -> {} {{", fname, input, output);
-        for (bid, _) in f.blocks.iter().enumerate() {
-            s.push_str(&self.fmt_block(f, &BlockId(bid)));
+        for bid in (0..f.blocks.len()).map(BlockId::from) {
+            let blockfmt = self.fmt_block(f, &bid);
+            s.push_str(&blockfmt);
         }
 
         let _ = writeln!(s, "}}");
