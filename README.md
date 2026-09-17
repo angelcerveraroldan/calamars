@@ -1,5 +1,11 @@
 <h1>🐙 Calamars 🌕</h1>
 
+---
+
+Development now takes place in Codeberg! See the repository [here](https://codeberg.org/calamars/calamars-front)
+
+---
+
 
 Calamars is an experimental programming language that’s still very
 much in development, but with some clear goals:
