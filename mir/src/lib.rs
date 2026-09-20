@@ -236,6 +236,14 @@ impl BlockJump {
                 .collect(),
         }
     }
+
+    pub fn target(&self) -> BlockId {
+        self.target
+    }
+
+    pub fn args(&self) -> &[ValueId] {
+        &self.args
+    }
 }
 
 /// Every basic block will end with a terminator instruction.
@@ -351,6 +359,14 @@ impl DirectSignature {
             result: function_type_id,
         }
     }
+
+    pub fn params(&self) -> &[ids::TypeId] {
+        &self.params
+    }
+
+    pub fn result(&self) -> ids::TypeId {
+        self.result
+    }
 }
 
 pub struct Function {
@@ -388,13 +404,13 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn new(function_arena: UncheckedArena<Function, FunctionId>) -> Self {
+    pub(crate) fn new(function_arena: UncheckedArena<Function, FunctionId>) -> Self {
         let mut raw = Self { function_arena };
         raw.optimize();
         raw
     }
 
-    pub fn tco(&mut self) {
+    pub(crate) fn tco(&mut self) {
         for function in self.function_arena.inner_mut() {
             let mut tco = TailCallOptimization::new();
             if let Err(error) = tco.optimize(function, 1) {
@@ -403,7 +419,7 @@ impl Module {
         }
     }
 
-    pub fn forward_terminators(&mut self) {
+    pub(crate) fn forward_terminators(&mut self) {
         for function in self.function_arena.inner_mut() {
             if let Err(error) = ForwardTerminatorOpt.optimize(function, 1) {
                 eprint!("{:?}", error);
@@ -412,8 +428,24 @@ impl Module {
     }
 
     /// Optimize MIR. ORDER OF THE FUNCTIONS IS CRUCIAL
-    pub fn optimize(&mut self) {
+    pub(crate) fn optimize(&mut self) {
         self.forward_terminators();
         self.tco();
+    }
+
+    pub fn iter_functions(&self) -> impl Iterator<Item = (FunctionId, &Function)> {
+        self.function_arena
+            .inner()
+            .iter()
+            .enumerate()
+            .map(|(foo, bar)| (FunctionId::from(foo), bar))
+    }
+
+    pub fn get(&self, id: FunctionId) -> Option<&Function> {
+        self.function_arena.get(id)
+    }
+
+    pub fn get_unchecked(&self, id: FunctionId) -> &Function {
+        self.function_arena.get_unchecked(id)
     }
 }
